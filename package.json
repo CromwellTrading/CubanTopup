@@ -1,0 +1,16 @@
+{
+  "name": "sistema-recargas-cuba",
+  "version": "1.0.0",
+  "description": "Bot de Gestión de Recargas",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "node-telegram-bot-api": "^0.61.0",
+    "axios": "^1.6.0",
+    "dotenv": "^16.3.1",
+    "crypto-js": "^4.2.0",
+    "@supabase/supabase-js": "^2.38.4"
+  }
+}
