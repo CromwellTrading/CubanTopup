@@ -3,6 +3,9 @@ import re
 import json
 import requests
 import os
+import threading
+import time
+import schedule
 from datetime import datetime
 
 app = Flask(__name__)
@@ -140,6 +143,67 @@ def extraer_tipo_pago_y_datos(mensaje, remitente):
     
     # No reconocido
     return None
+
+# --- KEEP ALIVE INTERNO ---
+def ping_nodejs_service():
+    """Hace ping al servicio Node.js para mantenerlo activo"""
+    nodejs_url = os.getenv("NODEJS_WEBHOOK_URL", "http://localhost:3000").replace("/payment-notification", "/keepalive")
+    try:
+        response = requests.get(nodejs_url, timeout=10)
+        print(f"✅ Ping a Node.js exitoso: {response.status_code}")
+        return True
+    except Exception as e:
+        print(f"⚠️ No se pudo hacer ping a Node.js: {e}")
+        return False
+
+def self_ping():
+    """Hace ping a sí mismo para mantenerse activo"""
+    base_url = os.getenv("PYTHON_WEBHOOK_URL", "http://localhost:5000")
+    try:
+        response = requests.get(f"{base_url}/keepalive", timeout=10)
+        print(f"✅ Self-ping exitoso: {response.status_code}")
+        return True
+    except Exception as e:
+        print(f"⚠️ Self-ping falló: {e}")
+        return False
+
+def keep_alive_job():
+    """Tarea programada para mantener servicios activos"""
+    print(f"\n🔄 Ejecutando Keep Alive - {datetime.now().strftime('%H:%M:%S')}")
+    
+    # Ping a Node.js
+    nodejs_ok = ping_nodejs_service()
+    
+    # Self-ping
+    self_ok = self_ping()
+    
+    # Resumen
+    if nodejs_ok and self_ok:
+        print("✅ Todos los servicios responden correctamente")
+    else:
+        print("⚠️ Algunos servicios tienen problemas")
+    
+    print("-" * 50)
+
+def start_keep_alive_scheduler():
+    """Inicia el programador de keep alive"""
+    print("🚀 Iniciando Keep Alive Scheduler...")
+    
+    # Ejecutar cada 4 minutos (menos de 5 para evitar que Render duerma los servicios)
+    schedule.every(4).minutes.do(keep_alive_job)
+    
+    # También ejecutar al inicio
+    keep_alive_job()
+    
+    # Ejecutar el scheduler en un hilo separado
+    def run_scheduler():
+        while True:
+            schedule.run_pending()
+            time.sleep(60)  # Revisar cada minuto
+    
+    scheduler_thread = threading.Thread(target=run_scheduler, daemon=True)
+    scheduler_thread.start()
+    print("✅ Keep Alive Scheduler iniciado (cada 4 minutos)")
 
 @app.route('/webhook', methods=['POST'])
 def gateway():
@@ -343,6 +407,14 @@ def test_webhook():
         return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
+    # Iniciar el keep alive scheduler
+    start_keep_alive_scheduler()
+    
     port = int(os.getenv("PORT", 5000))
     debug = os.getenv("DEBUG", "False").lower() == "true"
+    
+    print(f"🌐 Servicio Python Webhook iniciando en puerto {port}")
+    print(f"🔧 Debug mode: {debug}")
+    print(f"💳 Tarjeta configurada: {MI_TARJETA}")
+    
     app.run(host='0.0.0.0', port=port, debug=debug)
