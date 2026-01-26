@@ -25,6 +25,70 @@ const PAGO_SALDO_MOVIL = process.env.PAGO_SALDO_MOVIL;
 const USDT_RATE_CUP = parseFloat(process.env.USDT_RATE_CUP || 280);
 const USDT_RATE_SALDO = parseFloat(process.env.USDT_RATE_SALDO || 275);
 
+// --- KEEP ALIVE INTERNO ---
+async function pingPythonService() {
+    const pythonUrl = process.env.PYTHON_WEBHOOK_URL?.replace('/webhook', '/keepalive') || 'http://localhost:5000/keepalive';
+    
+    try {
+        const response = await axios.get(pythonUrl, { timeout: 10000 });
+        console.log(`✅ Ping a Python exitoso: ${response.status}`);
+        return { success: true, status: response.status };
+    } catch (error) {
+        console.error(`⚠️ No se pudo hacer ping a Python: ${error.message}`);
+        return { success: false, error: error.message };
+    }
+}
+
+async function selfPing() {
+    const port = process.env.PORT || 3000;
+    const url = `http://localhost:${port}/keepalive`;
+    
+    try {
+        const response = await axios.get(url, { timeout: 10000 });
+        console.log(`✅ Self-ping exitoso: ${response.status}`);
+        return { success: true, status: response.status };
+    } catch (error) {
+        console.error(`⚠️ Self-ping falló: ${error.message}`);
+        return { success: false, error: error.message };
+    }
+}
+
+async function keepAliveJob() {
+    console.log(`\n🔄 Ejecutando Keep Alive - ${new Date().toLocaleTimeString()}`);
+    
+    // Ping a Python
+    const pythonResult = await pingPythonService();
+    
+    // Self-ping
+    const selfResult = await selfPing();
+    
+    // Resumen
+    if (pythonResult.success && selfResult.success) {
+        console.log('✅ Todos los servicios responden correctamente');
+    } else {
+        console.log('⚠️ Algunos servicios tienen problemas');
+        
+        // Si ambos fallan, podría ser un problema grave
+        if (!pythonResult.success && !selfResult.success) {
+            console.error('🚨 CRÍTICO: Ambos servicios están caídos');
+        }
+    }
+    
+    console.log('-'.repeat(50));
+}
+
+function startKeepAliveScheduler() {
+    console.log('🚀 Iniciando Keep Alive Scheduler...');
+    
+    // Ejecutar cada 4 minutos (240,000 ms)
+    setInterval(keepAliveJob, 4 * 60 * 1000);
+    
+    // También ejecutar al inicio después de 10 segundos
+    setTimeout(keepAliveJob, 10000);
+    
+    console.log('✅ Keep Alive Scheduler iniciado (cada 4 minutos)');
+}
+
 // --- Teclados (Keyboards) ---
 const mainKeyboard = {
     inline_keyboard: [
@@ -1911,6 +1975,10 @@ setInterval(() => {
 
 // --- Iniciar Servidor ---
 const PORT = process.env.PORT || 3000;
+
+// Iniciar el keep alive scheduler
+startKeepAliveScheduler();
+
 app.listen(PORT, () => {
     console.log(`🤖 Bot Telegram escuchando en puerto ${PORT}`);
     console.log(`🌐 Webhook disponible en: http://localhost:${PORT}/payment-notification`);
@@ -1919,13 +1987,5 @@ app.listen(PORT, () => {
     console.log(`💰 Mínimos: CUP=${MIN_CUP}, Saldo=${MIN_SALDO}, USDT=${MIN_USDT}`);
     console.log(`📞 Teléfono para pagos: ${PAGO_SALDO_MOVIL}`);
     console.log(`💳 Tarjeta para pagos: ${PAGO_CUP_TARJETA}`);
-});
-
-// --- Manejo de errores no capturados ---
-process.on('uncaughtException', (error) => {
-    console.error('❌ Error no capturado:', error);
-});
-
-process.on('unhandledRejection', (reason, promise) => {
-    console.error('❌ Promesa rechazada no manejada:', reason);
+    console.log(`🔄 Keep Alive interno activado (cada 4 minutos)`);
 });
