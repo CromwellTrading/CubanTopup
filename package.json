@@ -1,27 +1,52 @@
 {
-  "name": "telegram-bot-pagos-automaticos",
+  "name": "cromwell-store",
   "version": "1.0.0",
-  "description": "Bot de Telegram con detección automática de pagos Transfermóvil",
+  "description": "Sistema completo Cromwell Store - Bot Telegram + Web + API",
   "main": "bot.js",
   "scripts": {
     "start": "node bot.js",
-    "keepalive": "node keep_alive.js",
     "dev": "nodemon bot.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "web": "node server.js",
+    "dev:web": "nodemon server.js",
+    "bot": "node bot.js",
+    "dev:bot": "nodemon bot.js",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "setup": "npm install && echo \"Setup completado\""
   },
+  "keywords": [
+    "cromwell",
+    "store",
+    "wallet",
+    "telegram",
+    "bot",
+    "crypto",
+    "payments"
+  ],
+  "author": "Cromwell Store",
+  "license": "MIT",
   "dependencies": {
-    "node-telegram-bot-api": "^0.64.0",
-    "axios": "^1.6.2",
-    "crypto-js": "^4.2.0",
-    "@supabase/supabase-js": "^2.39.0",
+    "node-telegram-bot-api": "^0.61.0",
     "express": "^4.18.2",
-    "body-parser": "^1.20.2",
-    "dotenv": "^16.3.1"
+    "express-session": "^1.17.3",
+    "bcryptjs": "^2.4.3",
+    "jsonwebtoken": "^9.0.2",
+    "axios": "^1.5.0",
+    "web3": "^1.9.0",
+    "chart.js": "^4.4.0",
+    "dotenv": "^16.3.1",
+    "@supabase/supabase-js": "^2.38.0",
+    "cors": "^2.8.5",
+    "helmet": "^7.0.0",
+    "morgan": "^1.10.0",
+    "compression": "^1.7.4",
+    "rate-limiter-flexible": "^2.4.2",
+    "node-cron": "^3.0.2"
   },
   "devDependencies": {
     "nodemon": "^3.0.1"
   },
   "engines": {
-    "node": ">=16.0.0"
+    "node": ">=16.0.0",
+    "npm": ">=8.0.0"
   }
 }
