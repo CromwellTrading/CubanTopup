@@ -2517,6 +2517,300 @@ setInterval(() => {
     }
 }, 10 * 60 * 1000); // Every 10 minutes
 
+// AÑADE ESTAS RUTAS ANTES DE LA LÍNEA DE START SERVERS en bot.js:
+
+// 15. Ruta para pagos pendientes (compatibilidad con dashboard)
+app.get('/api/pagos-pendientes', requireAuth, async (req, res) => {
+  try {
+    const userId = req.session.userId;
+    const user = await getUser(userId);
+    
+    const { data: pendingPayments } = await supabase
+      .from('pending_sms_payments')
+      .select('*')
+      .eq('claimed', false)
+      .or(`user_id.eq.${userId},phone.eq.${user.phone_number}`);
+    
+    res.json({
+      success: true,
+      pendingPayments: pendingPayments || []
+    });
+  } catch (error) {
+    console.error('Error obteniendo pagos pendientes:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Error interno del servidor' 
+    });
+  }
+});
+
+// 16. Ruta para información de pago
+app.get('/api/payment-info', requireAuth, (req, res) => {
+  res.json({
+    cup_target: PAGO_CUP_TARJETA,
+    saldo_target: PAGO_SALDO_MOVIL,
+    usdt_target: PAGO_USDT_ADDRESS,
+    minimo_cup: MINIMO_CUP,
+    minimo_saldo: MINIMO_SALDO,
+    minimo_usdt: MINIMO_USDT,
+    maximo_cup: MAXIMO_CUP,
+    cws_per_100: CWS_PER_100_SALDO,
+    cwt_per_10: CWT_PER_10_USDT,
+    min_cwt: MIN_CWT_USE,
+    min_cws: MIN_CWS_USE
+  });
+});
+
+// 17. Ruta para notificaciones
+app.get('/api/notifications', requireAuth, async (req, res) => {
+  try {
+    const userId = req.session.userId;
+    
+    // Obtener transacciones recientes como notificaciones
+    const { data: transactions } = await supabase
+      .from('transactions')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(10);
+    
+    // Convertir transacciones a formato de notificación
+    const notifications = (transactions || []).map(tx => ({
+      id: tx.id,
+      title: tx.type === 'DEPOSIT' ? 'Depósito' : 
+             tx.type === 'AUTO_DEPOSIT' ? 'Depósito Automático' : tx.type,
+      message: `${tx.status === 'completed' ? '✅' : '⏳'} ${formatCurrency(tx.amount || tx.amount_requested, tx.currency)}`,
+      type: tx.status === 'completed' ? 'success' : 
+            tx.status === 'pending' ? 'warning' : 'info',
+      timestamp: tx.created_at,
+      read: true,
+      icon: 'payment'
+    }));
+    
+    res.json({
+      success: true,
+      notifications: notifications
+    });
+  } catch (error) {
+    console.error('Error obteniendo notificaciones:', error);
+    res.json({ success: true, notifications: [] });
+  }
+});
+
+// 18. Ruta para check-payment
+app.get('/api/check-payment/:orderId', requireAuth, async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const userId = req.session.userId;
+    
+    const { data: transaction, error } = await supabase
+      .from('transactions')
+      .select('*')
+      .eq('id', orderId)
+      .eq('user_id', userId)
+      .single();
+    
+    if (error || !transaction) {
+      return res.status(404).json({ 
+        success: false, 
+        error: 'Orden no encontrada' 
+      });
+    }
+    
+    res.json({
+      success: true,
+      status: transaction.status,
+      message: transaction.status === 'completed' ? 'Pago completado' :
+              transaction.status === 'pending' ? 'Pago pendiente' : 'Estado desconocido',
+      transaction: transaction
+    });
+  } catch (error) {
+    console.error('Error verificando pago:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Error interno del servidor' 
+    });
+  }
+});
+
+// 19. Ruta para cancelar depósito
+app.post('/api/cancel-deposit/:orderId', requireAuth, async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const userId = req.session.userId;
+    
+    const { data: transaction, error: fetchError } = await supabase
+      .from('transactions')
+      .select('*')
+      .eq('id', orderId)
+      .eq('user_id', userId)
+      .eq('status', 'pending')
+      .single();
+    
+    if (fetchError || !transaction) {
+      return res.status(404).json({ 
+        success: false, 
+        error: 'Orden no encontrada o no cancelable' 
+      });
+    }
+    
+    const { error: updateError } = await supabase
+      .from('transactions')
+      .update({ status: 'cancelled' })
+      .eq('id', orderId);
+    
+    if (updateError) {
+      throw updateError;
+    }
+    
+    res.json({
+      success: true,
+      message: 'Orden cancelada exitosamente'
+    });
+  } catch (error) {
+    console.error('Error cancelando depósito:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Error interno del servidor' 
+    });
+  }
+});
+
+// 20. Ruta para buscar pago por ID
+app.get('/api/search-payment/:txId', requireAuth, async (req, res) => {
+  try {
+    const { txId } = req.params;
+    const userId = req.session.userId;
+    const user = await getUser(userId);
+    
+    const { data: pendingPayments, error } = await supabase
+      .from('pending_sms_payments')
+      .select('*')
+      .or(`tx_id.ilike.%${txId}%,tx_id.ilike.%${txId.toUpperCase()}%`)
+      .eq('claimed', false);
+    
+    if (error) {
+      throw error;
+    }
+    
+    // Filtrar solo los que pertenecen al usuario
+    const userPayments = (pendingPayments || []).filter(payment => 
+      payment.user_id == userId || payment.phone === user.phone_number
+    );
+    
+    res.json({
+      success: true,
+      results: userPayments
+    });
+  } catch (error) {
+    console.error('Error buscando pago:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Error interno del servidor' 
+    });
+  }
+});
+
+// 21. Ruta para verificación manual
+app.post('/api/manual-verification', requireAuth, async (req, res) => {
+  try {
+    // Esta es una ruta simplificada - en producción necesitarías manejar archivos
+    const { amount, method, date, description } = req.body;
+    
+    if (!amount || !method || !date || !description) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Faltan datos requeridos' 
+      });
+    }
+    
+    // Crear una solicitud de verificación manual
+    const { data, error } = await supabase
+      .from('manual_verifications')
+      .insert([{
+        user_id: req.session.userId,
+        amount: parseFloat(amount),
+        currency: method,
+        description: description,
+        requested_at: new Date().toISOString(),
+        status: 'pending'
+      }]);
+    
+    if (error) {
+      throw error;
+    }
+    
+    res.json({
+      success: true,
+      message: 'Solicitud de verificación manual enviada. Un administrador la revisará en 24-48 horas.'
+    });
+  } catch (error) {
+    console.error('Error en verificación manual:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Error interno del servidor' 
+    });
+  }
+});
+
+// 22. Ruta para actualizar perfil
+app.post('/api/update-profile', requireAuth, async (req, res) => {
+  try {
+    const { first_name, phone_number, usdt_wallet, current_password } = req.body;
+    const userId = req.session.userId;
+    
+    const user = await getUser(userId);
+    if (!user) {
+      return res.status(404).json({ error: 'Usuario no encontrado' });
+    }
+    
+    // Verificar contraseña actual si se está cambiando información sensible
+    if ((phone_number || usdt_wallet) && !current_password) {
+      return res.status(400).json({ error: 'Se requiere contraseña actual para cambiar información sensible' });
+    }
+    
+    if (current_password && user.web_password) {
+      const validPassword = await bcrypt.compare(current_password, user.web_password);
+      if (!validPassword) {
+        return res.status(401).json({ error: 'Contraseña actual incorrecta' });
+      }
+    }
+    
+    const updates = {};
+    if (first_name) updates.first_name = first_name;
+    if (phone_number) {
+      // Validar formato de teléfono
+      const cleanPhone = phone_number.replace(/[^\d]/g, '');
+      if (!cleanPhone.startsWith('53') || cleanPhone.length !== 10) {
+        return res.status(400).json({ error: 'Formato de teléfono inválido. Debe ser 535XXXXXXX' });
+      }
+      updates.phone_number = cleanPhone;
+    }
+    if (usdt_wallet) {
+      if (!usdt_wallet.startsWith('0x') || usdt_wallet.length !== 42) {
+        return res.status(400).json({ error: 'Wallet USDT inválida. Debe comenzar con 0x y tener 42 caracteres' });
+      }
+      updates.usdt_wallet = usdt_wallet;
+    }
+    
+    const { error } = await supabase
+      .from('users')
+      .update(updates)
+      .eq('telegram_id', userId);
+    
+    if (error) {
+      throw error;
+    }
+    
+    res.json({ 
+      success: true, 
+      message: 'Perfil actualizado exitosamente' 
+    });
+  } catch (error) {
+    console.error('Error actualizando perfil:', error);
+    res.status(500).json({ error: 'Error interno del servidor' });
+  }
+});
 // ============================================
 // START SERVERS
 // ============================================
