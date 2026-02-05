@@ -1,0 +1,1121 @@
+<!DOCTYPE html>
+<html lang="es" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - Cromwell Store</title>
+    <link rel="stylesheet" href="/css/styles.css">
+    <link rel="stylesheet" href="/css/dashboard.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=Orbitron:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="icon" type="image/x-icon" href="/assets/favicon.ico">
+</head>
+<body>
+    <div class="stars"></div>
+    <div class="twinkling"></div>
+    <div class="clouds"></div>
+    
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="nav-brand">
+                <div class="logo">
+                    <i class="fas fa-wallet"></i>
+                    <span>Cromwell Store</span>
+                </div>
+                <div class="user-greeting" id="userGreeting">Hola, <span id="userName">Usuario</span></div>
+            </div>
+            
+            <div class="nav-menu">
+                <button class="nav-btn active" data-page="dashboard">
+                    <i class="fas fa-home"></i> Dashboard
+                </button>
+                <button class="nav-btn" data-page="wallet">
+                    <i class="fas fa-wallet"></i> Mi Wallet
+                </button>
+                <button class="nav-btn" data-page="deposit">
+                    <i class="fas fa-plus-circle"></i> Recargar
+                </button>
+                <button class="nav-btn" data-page="history">
+                    <i class="fas fa-history"></i> Historial
+                </button>
+                <button class="nav-btn" data-page="claims">
+                    <i class="fas fa-gift"></i> Reclamar
+                </button>
+                <button class="nav-btn" id="logoutBtn">
+                    <i class="fas fa-sign-out-alt"></i> Salir
+                </button>
+            </div>
+            
+            <button class="mobile-menu-btn" id="mobileMenuBtn">
+                <i class="fas fa-bars"></i>
+            </button>
+        </div>
+    </nav>
+    
+    <div class="container">
+        <!-- Page: Dashboard -->
+        <div class="page active" id="dashboard-page">
+            <div class="page-header">
+                <h1><i class="fas fa-tachometer-alt"></i> Dashboard</h1>
+                <button class="btn-refresh" id="refreshDashboard">
+                    <i class="fas fa-sync-alt"></i> Actualizar
+                </button>
+            </div>
+            
+            <div class="stats-grid">
+                <div class="stat-card primary">
+                    <div class="stat-icon">
+                        <i class="fas fa-coins"></i>
+                    </div>
+                    <div class="stat-info">
+                        <div class="stat-label">Saldo Total</div>
+                        <div class="stat-value" id="totalBalance">$0.00</div>
+                    </div>
+                    <div class="stat-trend">
+                        <i class="fas fa-chart-line"></i> +0%
+                    </div>
+                </div>
+                
+                <div class="stat-card success">
+                    <div class="stat-icon">
+                        <i class="fas fa-gem"></i>
+                    </div>
+                    <div class="stat-info">
+                        <div class="stat-label">Tokens CWS</div>
+                        <div class="stat-value" id="cwsTokens">0</div>
+                    </div>
+                    <div class="stat-trend">
+                        <i class="fas fa-bolt"></i> Activos
+                    </div>
+                </div>
+                
+                <div class="stat-card warning">
+                    <div class="stat-icon">
+                        <i class="fas fa-award"></i>
+                    </div>
+                    <div class="stat-info">
+                        <div class="stat-label">Tokens CWT</div>
+                        <div class="stat-value" id="cwtTokens">0.00</div>
+                    </div>
+                    <div class="stat-trend">
+                        <i class="fas fa-fire"></i> Ganando
+                    </div>
+                </div>
+                
+                <div class="stat-card info">
+                    <div class="stat-icon">
+                        <i class="fas fa-exchange-alt"></i>
+                    </div>
+                    <div class="stat-info">
+                        <div class="stat-label">Transacciones</div>
+                        <div class="stat-value" id="totalTransactions">0</div>
+                    </div>
+                    <div class="stat-trend">
+                        <i class="fas fa-history"></i> 24h
+                    </div>
+                </div>
+            </div>
+            
+            <div class="dashboard-grid">
+                <div class="card main-card">
+                    <div class="card-header">
+                        <h3><i class="fas fa-chart-line"></i> Actividad Reciente</h3>
+                        <div class="card-actions">
+                            <button class="btn-small" id="viewAllActivity">Ver Todo</button>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="activity-list" id="recentActivity">
+                            <!-- Actividad se carga aquí -->
+                            <div class="empty-state">
+                                <i class="fas fa-history"></i>
+                                <p>No hay actividad reciente</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="card">
+                    <div class="card-header">
+                        <h3><i class="fas fa-wallet"></i> Wallet Rápida</h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="quick-balance">
+                            <div class="balance-item">
+                                <div class="balance-icon cup">
+                                    <i class="fas fa-credit-card"></i>
+                                </div>
+                                <div class="balance-info">
+                                    <div class="balance-label">CUP</div>
+                                    <div class="balance-value" id="cupBalance">$0.00</div>
+                                </div>
+                            </div>
+                            
+                            <div class="balance-item">
+                                <div class="balance-icon saldo">
+                                    <i class="fas fa-mobile-alt"></i>
+                                </div>
+                                <div class="balance-info">
+                                    <div class="balance-label">Saldo Móvil</div>
+                                    <div class="balance-value" id="saldoBalance">$0.00</div>
+                                </div>
+                            </div>
+                            
+                            <div class="balance-item">
+                                <div class="balance-icon usdt">
+                                    <i class="fab fa-usd"></i>
+                                </div>
+                                <div class="balance-info">
+                                    <div class="balance-label">USDT</div>
+                                    <div class="balance-value" id="usdtBalance">$0.00</div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <button class="btn-primary full-width" id="quickDeposit">
+                            <i class="fas fa-plus-circle"></i> Recargar Wallet
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="card">
+                    <div class="card-header">
+                        <h3><i class="fas fa-bell"></i> Notificaciones</h3>
+                        <span class="badge" id="notificationCount">0</span>
+                    </div>
+                    <div class="card-body">
+                        <div class="notifications-list" id="notificationsList">
+                            <!-- Notificaciones se cargan aquí -->
+                            <div class="empty-state">
+                                <i class="fas fa-bell-slash"></i>
+                                <p>No hay notificaciones</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="card">
+                    <div class="card-header">
+                        <h3><i class="fas fa-rocket"></i> Acciones Rápidas</h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="quick-actions">
+                            <button class="action-btn" data-action="link-phone">
+                                <i class="fas fa-mobile-alt"></i>
+                                <span>Vincular Teléfono</span>
+                            </button>
+                            <button class="action-btn" data-action="claim-payment">
+                                <i class="fas fa-gift"></i>
+                                <span>Reclamar Pago</span>
+                            </button>
+                            <button class="action-btn" data-action="view-terms">
+                                <i class="fas fa-file-contract"></i>
+                                <span>Términos</span>
+                            </button>
+                            <button class="action-btn" data-action="support">
+                                <i class="fas fa-headset"></i>
+                                <span>Soporte</span>
+                            </button>
+                        </div>
+                        
+                        <div class="info-box">
+                            <i class="fas fa-info-circle"></i>
+                            <p>Recuerda tomar capturas de todas tus transacciones</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Page: Wallet -->
+        <div class="page" id="wallet-page">
+            <div class="page-header">
+                <h1><i class="fas fa-wallet"></i> Mi Wallet</h1>
+                <div class="header-actions">
+                    <button class="btn-secondary" id="exportWallet">
+                        <i class="fas fa-download"></i> Exportar
+                    </button>
+                    <button class="btn-refresh" id="refreshWallet">
+                        <i class="fas fa-sync-alt"></i>
+                    </button>
+                </div>
+            </div>
+            
+            <div class="wallet-container">
+                <div class="wallet-main">
+                    <div class="wallet-card premium">
+                        <div class="wallet-header">
+                            <div class="wallet-icon">
+                                <i class="fas fa-wallet"></i>
+                            </div>
+                            <div class="wallet-info">
+                                <div class="wallet-name">Cromwell Wallet</div>
+                                <div class="wallet-id" id="walletId">ID: CROM-000000</div>
+                            </div>
+                            <div class="wallet-status">
+                                <span class="status-badge active">
+                                    <i class="fas fa-check-circle"></i> Activa
+                                </span>
+                            </div>
+                        </div>
+                        
+                        <div class="wallet-balance">
+                            <div class="total-balance">
+                                <div class="balance-label">Balance Total</div>
+                                <div class="balance-amount" id="walletTotalBalance">$0.00</div>
+                            </div>
+                            
+                            <div class="currency-breakdown">
+                                <div class="currency-item">
+                                    <span class="currency-name">CUP</span>
+                                    <span class="currency-amount" id="walletCupBalance">$0.00</span>
+                                </div>
+                                <div class="currency-item">
+                                    <span class="currency-name">Saldo Móvil</span>
+                                    <span class="currency-amount" id="walletSaldoBalance">$0.00</span>
+                                </div>
+                                <div class="currency-item">
+                                    <span class="currency-name">USDT</span>
+                                    <span class="currency-amount" id="walletUsdtBalance">$0.00</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="wallet-footer">
+                            <div class="wallet-stats">
+                                <div class="stat">
+                                    <i class="fas fa-exchange-alt"></i>
+                                    <span id="walletTxCount">0 Transacciones</span>
+                                </div>
+                                <div class="stat">
+                                    <i class="fas fa-calendar-alt"></i>
+                                    <span id="walletSince">Miembro desde: -</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="tokens-section">
+                        <h3><i class="fas fa-gem"></i> Mis Tokens</h3>
+                        
+                        <div class="tokens-grid">
+                            <div class="token-card cws">
+                                <div class="token-header">
+                                    <div class="token-icon">
+                                        <i class="fas fa-bolt"></i>
+                                    </div>
+                                    <div class="token-info">
+                                        <div class="token-name">CWS</div>
+                                        <div class="token-desc">Tokens Saldo Móvil</div>
+                                    </div>
+                                </div>
+                                <div class="token-balance" id="tokenCwsBalance">0</div>
+                                <div class="token-requirements">
+                                    <i class="fas fa-info-circle"></i>
+                                    Mínimo para usar: 100 CWS
+                                </div>
+                            </div>
+                            
+                            <div class="token-card cwt">
+                                <div class="token-header">
+                                    <div class="token-icon">
+                                        <i class="fas fa-fire"></i>
+                                    </div>
+                                    <div class="token-info">
+                                        <div class="token-name">CWT</div>
+                                        <div class="token-desc">Tokens USDT</div>
+                                    </div>
+                                </div>
+                                <div class="token-balance" id="tokenCwtBalance">0.00</div>
+                                <div class="token-requirements">
+                                    <i class="fas fa-info-circle"></i>
+                                    Mínimo para usar: 5 CWT
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="token-info-box">
+                            <h4><i class="fas fa-chart-line"></i> Cómo ganar tokens:</h4>
+                            <ul>
+                                <li><strong>CWS:</strong> 10 tokens por cada 100 de saldo móvil enviado</li>
+                                <li><strong>CWT:</strong> 0.5 tokens por cada 10 USDT enviados</li>
+                                <li>Los tokens son usables en Cromwell Store</li>
+                                <li>No son retirables, solo para compras</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="wallet-sidebar">
+                    <div class="sidebar-card">
+                        <h4><i class="fas fa-user-circle"></i> Mi Perfil</h4>
+                        <div class="profile-info">
+                            <div class="profile-item">
+                                <i class="fas fa-id-card"></i>
+                                <div>
+                                    <div class="label">ID Telegram</div>
+                                    <div class="value" id="profileTelegramId">@username</div>
+                                </div>
+                            </div>
+                            <div class="profile-item">
+                                <i class="fas fa-phone"></i>
+                                <div>
+                                    <div class="label">Teléfono</div>
+                                    <div class="value" id="profilePhone">No vinculado</div>
+                                </div>
+                            </div>
+                            <div class="profile-item">
+                                <i class="fab fa-usb"></i>
+                                <div>
+                                    <div class="label">Wallet USDT</div>
+                                    <div class="value" id="profileUsdtWallet">
+                                        <small>No configurada</small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <button class="btn-secondary full-width" id="editProfile">
+                            <i class="fas fa-edit"></i> Editar Perfil
+                        </button>
+                    </div>
+                    
+                    <div class="sidebar-card">
+                        <h4><i class="fas fa-shield-alt"></i> Seguridad</h4>
+                        <div class="security-status">
+                            <div class="security-item verified">
+                                <i class="fas fa-check-circle"></i>
+                                <span>Teléfono Verificado</span>
+                            </div>
+                            <div class="security-item pending" id="phoneVerificationStatus">
+                                <i class="fas fa-exclamation-circle"></i>
+                                <span>Teléfono Pendiente</span>
+                            </div>
+                            <div class="security-item good">
+                                <i class="fas fa-lock"></i>
+                                <span>Contraseña Segura</span>
+                            </div>
+                        </div>
+                        
+                        <div class="security-tips">
+                            <p><strong>Consejos de seguridad:</strong></p>
+                            <ul>
+                                <li>Nunca compartas tu contraseña</li>
+                                <li>Toma capturas de todas las transacciones</li>
+                                <li>Verifica siempre la dirección de destino</li>
+                                <li>Activa 2FA si está disponible</li>
+                            </ul>
+                        </div>
+                    </div>
+                    
+                    <div class="sidebar-card">
+                        <h4><i class="fas fa-question-circle"></i> Ayuda Rápida</h4>
+                        <div class="help-links">
+                            <a href="#" class="help-link">
+                                <i class="fas fa-file-contract"></i> Términos y Condiciones
+                            </a>
+                            <a href="#" class="help-link">
+                                <i class="fas fa-question"></i> Preguntas Frecuentes
+                            </a>
+                            <a href="#" class="help-link">
+                                <i class="fas fa-headset"></i> Soporte 24/7
+                            </a>
+                            <a href="https://t.me/cromwell_store_bot" target="_blank" class="help-link">
+                                <i class="fab fa-telegram"></i> Bot de Telegram
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Page: Deposit -->
+        <div class="page" id="deposit-page">
+            <div class="page-header">
+                <h1><i class="fas fa-plus-circle"></i> Recargar Wallet</h1>
+                <div class="header-info">
+                    <div class="info-badge">
+                        <i class="fas fa-gift"></i> +10% Bono primer depósito
+                    </div>
+                </div>
+            </div>
+            
+            <div class="deposit-container">
+                <div class="deposit-sidebar">
+                    <div class="deposit-methods">
+                        <h4><i class="fas fa-credit-card"></i> Métodos de Pago</h4>
+                        
+                        <div class="method-selector">
+                            <div class="method-option active" data-method="cup">
+                                <div class="method-icon">
+                                    <i class="fas fa-credit-card"></i>
+                                </div>
+                                <div class="method-info">
+                                    <div class="method-name">CUP (Tarjeta)</div>
+                                    <div class="method-desc">Transferencia bancaria</div>
+                                </div>
+                                <div class="method-bonus">
+                                    <span class="bonus-badge">+10%</span>
+                                </div>
+                            </div>
+                            
+                            <div class="method-option" data-method="saldo">
+                                <div class="method-icon">
+                                    <i class="fas fa-mobile-alt"></i>
+                                </div>
+                                <div class="method-info">
+                                    <div class="method-name">Saldo Móvil</div>
+                                    <div class="method-desc">Transfermóvil saldo</div>
+                                </div>
+                                <div class="method-bonus">
+                                    <span class="bonus-badge">+10% +CWS</span>
+                                </div>
+                            </div>
+                            
+                            <div class="method-option" data-method="usdt">
+                                <div class="method-icon">
+                                    <i class="fab fa-usd"></i>
+                                </div>
+                                <div class="method-info">
+                                    <div class="method-name">USDT BEP20</div>
+                                    <div class="method-desc">Criptomoneda</div>
+                                </div>
+                                <div class="method-bonus">
+                                    <span class="bonus-badge">+5% +CWT</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="limits-card">
+                        <h4><i class="fas fa-chart-bar"></i> Límites de Depósito</h4>
+                        <div class="limits-list">
+                            <div class="limit-item">
+                                <span class="limit-label">CUP Mínimo:</span>
+                                <span class="limit-value">$1,000.00</span>
+                            </div>
+                            <div class="limit-item">
+                                <span class="limit-label">CUP Máximo:</span>
+                                <span class="limit-value">$50,000.00</span>
+                            </div>
+                            <div class="limit-item">
+                                <span class="limit-label">Saldo Mínimo:</span>
+                                <span class="limit-value">$500.00</span>
+                            </div>
+                            <div class="limit-item">
+                                <span class="limit-label">USDT Mínimo:</span>
+                                <span class="limit-value">$10.00</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="info-card">
+                        <h4><i class="fas fa-lightbulb"></i> Consejos</h4>
+                        <ul class="tips-list">
+                            <li>Usa el mismo teléfono vinculado</li>
+                            <li>Activa "Mostrar número" en Transfermóvil</li>
+                            <li>Toma capturas de todas las transacciones</li>
+                            <li>El bono solo aplica en primer depósito por método</li>
+                        </ul>
+                    </div>
+                </div>
+                
+                <div class="deposit-main">
+                    <div class="deposit-step active" id="step-method">
+                        <div class="step-header">
+                            <div class="step-number active">1</div>
+                            <div class="step-title">Seleccionar Método</div>
+                        </div>
+                        
+                        <div class="method-details">
+                            <div class="method-detail active" data-method="cup">
+                                <div class="detail-header">
+                                    <h3><i class="fas fa-credit-card"></i> Depósito por Tarjeta (CUP)</h3>
+                                    <div class="detail-bonus">
+                                        <i class="fas fa-gift"></i> Bono: +10% primer depósito
+                                    </div>
+                                </div>
+                                
+                                <div class="detail-info">
+                                    <div class="info-box">
+                                        <i class="fas fa-info-circle"></i>
+                                        <p>Transfiere desde tu tarjeta a nuestra tarjeta destino</p>
+                                    </div>
+                                    
+                                    <div class="requirements">
+                                        <h4><i class="fas fa-requirements"></i> Requisitos:</h4>
+                                        <ul>
+                                            <li>Teléfono vinculado obligatorio</li>
+                                            <li>Activar "Mostrar número al destinatario"</li>
+                                            <li>Transferir monto EXACTO solicitado</li>
+                                            <li>Usar el mismo teléfono vinculado</li>
+                                        </ul>
+                                    </div>
+                                    
+                                    <div class="instructions">
+                                        <h4><i class="fas fa-list-ol"></i> Instrucciones:</h4>
+                                        <ol>
+                                            <li>Activa "Mostrar número al destinatario" en Transfermóvil</li>
+                                            <li>Transfiere el monto exacto que solicites</li>
+                                            <li>A la tarjeta: <code id="cupTarget">Cargando...</code></li>
+                                            <li>El sistema detectará automáticamente tu pago</li>
+                                        </ol>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="method-detail" data-method="saldo">
+                                <!-- Similar estructura para saldo -->
+                            </div>
+                            
+                            <div class="method-detail" data-method="usdt">
+                                <!-- Similar estructura para USDT -->
+                            </div>
+                        </div>
+                        
+                        <div class="step-actions">
+                            <button class="btn-primary" id="nextStep">
+                                <i class="fas fa-arrow-right"></i> Continuar
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="deposit-step" id="step-amount">
+                        <div class="step-header">
+                            <div class="step-number">2</div>
+                            <div class="step-title">Especificar Monto</div>
+                        </div>
+                        
+                        <div class="amount-selector">
+                            <div class="amount-header">
+                                <h3 id="selectedMethodName">CUP (Tarjeta)</h3>
+                                <div class="amount-limits">
+                                    Mínimo: <span id="minAmount">$1,000.00</span> •
+                                    Máximo: <span id="maxAmount">$50,000.00</span>
+                                </div>
+                            </div>
+                            
+                            <div class="amount-input-container">
+                                <div class="currency-symbol">$</div>
+                                <input type="number" 
+                                       id="depositAmount" 
+                                       placeholder="0.00"
+                                       step="0.01"
+                                       min="1000"
+                                       max="50000">
+                                <div class="currency-code" id="currencyCode">CUP</div>
+                            </div>
+                            
+                            <div class="quick-amounts">
+                                <button class="quick-amount" data-amount="1000">$1,000</button>
+                                <button class="quick-amount" data-amount="5000">$5,000</button>
+                                <button class="quick-amount" data-amount="10000">$10,000</button>
+                                <button class="quick-amount" data-amount="20000">$20,000</button>
+                                <button class="quick-amount" data-amount="50000">$50,000</button>
+                            </div>
+                            
+                            <div class="amount-preview">
+                                <div class="preview-item">
+                                    <span>Monto a enviar:</span>
+                                    <span id="previewAmount">$0.00</span>
+                                </div>
+                                <div class="preview-item bonus">
+                                    <span>Bono primer depósito:</span>
+                                    <span id="previewBonus">$0.00</span>
+                                </div>
+                                <div class="preview-item tokens">
+                                    <span>Tokens a ganar:</span>
+                                    <span id="previewTokens">0</span>
+                                </div>
+                                <div class="preview-item total">
+                                    <span>Total a acreditar:</span>
+                                    <span id="previewTotal">$0.00</span>
+                                </div>
+                            </div>
+                            
+                            <!-- Para USDT: campo de wallet -->
+                            <div class="usdt-wallet-input hidden" id="usdtWalletSection">
+                                <label for="usdtWallet">
+                                    <i class="fab fa-usb"></i> Wallet USDT (BEP20)
+                                </label>
+                                <input type="text" 
+                                       id="usdtWallet" 
+                                       placeholder="0x..."
+                                       pattern="^0x[a-fA-F0-9]{40}$">
+                                <div class="input-hint">
+                                    Dirección desde la que enviarás los USDT
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="step-actions">
+                            <button class="btn-secondary" id="prevStep">
+                                <i class="fas fa-arrow-left"></i> Atrás
+                            </button>
+                            <button class="btn-primary" id="confirmAmount">
+                                <i class="fas fa-check"></i> Confirmar Monto
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="deposit-step" id="step-confirm">
+                        <div class="step-header">
+                            <div class="step-number">3</div>
+                            <div class="step-title">Confirmar Depósito</div>
+                        </div>
+                        
+                        <div class="confirmation-card">
+                            <div class="confirmation-header">
+                                <h3><i class="fas fa-clipboard-check"></i> Resumen del Depósito</h3>
+                                <div class="order-id" id="orderId">Orden: #000000</div>
+                            </div>
+                            
+                            <div class="confirmation-details">
+                                <div class="detail-row">
+                                    <span>Método:</span>
+                                    <span id="confirmMethod">CUP (Tarjeta)</span>
+                                </div>
+                                <div class="detail-row">
+                                    <span>Monto a pagar:</span>
+                                    <span id="confirmAmount">$0.00</span>
+                                </div>
+                                <div class="detail-row bonus">
+                                    <span>Bono aplicado:</span>
+                                    <span id="confirmBonus">$0.00</span>
+                                </div>
+                                <div class="detail-row tokens">
+                                    <span>Tokens ganados:</span>
+                                    <span id="confirmTokens">0</span>
+                                </div>
+                                <div class="detail-row total">
+                                    <span>Total a acreditar:</span>
+                                    <span id="confirmTotal">$0.00</span>
+                                </div>
+                                <div class="detail-row target">
+                                    <span>Destino:</span>
+                                    <span id="confirmTarget">Cargando...</span>
+                                </div>
+                            </div>
+                            
+                            <div class="confirmation-instructions" id="confirmationInstructions">
+                                <!-- Instrucciones específicas del método -->
+                            </div>
+                            
+                            <div class="confirmation-warning">
+                                <div class="warning-icon">
+                                    <i class="fas fa-exclamation-triangle"></i>
+                                </div>
+                                <div class="warning-content">
+                                    <p><strong>IMPORTANTE:</strong> Toma captura de pantalla de la transferencia. Si ETECSA no envía el SMS, esta será tu prueba.</p>
+                                    <p>El pago se detectará automáticamente en 1-10 minutos.</p>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="step-actions">
+                            <button class="btn-secondary" id="editDeposit">
+                                <i class="fas fa-edit"></i> Editar
+                            </button>
+                            <button class="btn-primary" id="createDeposit">
+                                <i class="fas fa-check-circle"></i> Crear Solicitud
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="deposit-step" id="step-pending">
+                        <div class="step-header">
+                            <div class="step-number">4</div>
+                            <div class="step-title">Esperando Pago</div>
+                        </div>
+                        
+                        <div class="pending-card">
+                            <div class="pending-icon">
+                                <i class="fas fa-clock"></i>
+                            </div>
+                            <div class="pending-info">
+                                <h3>Orden <span id="pendingOrderId">#000000</span> Pendiente</h3>
+                                <p>Esperando que realices el pago...</p>
+                            </div>
+                            
+                            <div class="payment-details">
+                                <div class="detail-box">
+                                    <div class="detail-label">Monto a pagar</div>
+                                    <div class="detail-value" id="pendingAmount">$0.00</div>
+                                </div>
+                                <div class="detail-box">
+                                    <div class="detail-label">Destino</div>
+                                    <div class="detail-value" id="pendingTarget">Cargando...</div>
+                                </div>
+                                <div class="detail-box">
+                                    <div class="detail-label">Tiempo restante</div>
+                                    <div class="detail-value">
+                                        <div class="timer" id="paymentTimer">30:00</div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="instructions-box" id="pendingInstructions">
+                                <!-- Instrucciones específicas -->
+                            </div>
+                            
+                            <!-- Para USDT: verificación de hash -->
+                            <div class="usdt-verification hidden" id="usdtVerification">
+                                <h4><i class="fas fa-check-circle"></i> Verificar Transacción USDT</h4>
+                                <div class="verification-input">
+                                    <input type="text" 
+                                           id="usdtTxHash" 
+                                           placeholder="Ingresa el hash de la transacción (0x...)">
+                                    <button class="btn-small" id="verifyUsdtTx">
+                                        Verificar
+                                    </button>
+                                </div>
+                                <div class="verification-help">
+                                    <i class="fas fa-question-circle"></i>
+                                    <p>Encuentra el hash en tu wallet (SafePal, Trust Wallet, etc.)</p>
+                                </div>
+                            </div>
+                            
+                            <div class="pending-actions">
+                                <button class="btn-secondary" id="cancelDeposit">
+                                    <i class="fas fa-times"></i> Cancelar
+                                </button>
+                                <button class="btn-primary" id="checkPayment">
+                                    <i class="fas fa-sync-alt"></i> Verificar Pago
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="deposit-step" id="step-completed">
+                        <!-- Similar estructura para pago completado -->
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Page: History -->
+        <div class="page" id="history-page">
+            <div class="page-header">
+                <h1><i class="fas fa-history"></i> Historial de Transacciones</h1>
+                <div class="header-actions">
+                    <div class="filter-group">
+                        <select id="historyFilter">
+                            <option value="all">Todas las transacciones</option>
+                            <option value="deposit">Depósitos</option>
+                            <option value="completed">Completadas</option>
+                            <option value="pending">Pendientes</option>
+                        </select>
+                        <select id="historyPeriod">
+                            <option value="7">Últimos 7 días</option>
+                            <option value="30" selected>Últimos 30 días</option>
+                            <option value="90">Últimos 3 meses</option>
+                            <option value="365">Último año</option>
+                        </select>
+                    </div>
+                    <button class="btn-secondary" id="exportHistory">
+                        <i class="fas fa-file-export"></i> Exportar
+                    </button>
+                </div>
+            </div>
+            
+            <div class="history-container">
+                <div class="history-stats">
+                    <div class="stat-card small">
+                        <div class="stat-label">Depósitos Totales</div>
+                        <div class="stat-value" id="totalDeposits">0</div>
+                    </div>
+                    <div class="stat-card small">
+                        <div class="stat-label">Monto Total</div>
+                        <div class="stat-value" id="totalDepositsAmount">$0.00</div>
+                    </div>
+                    <div class="stat-card small">
+                        <div class="stat-label">Tokens Ganados</div>
+                        <div class="stat-value" id="totalTokensEarned">0</div>
+                    </div>
+                    <div class="stat-card small">
+                        <div class="stat-label">Promedio por depósito</div>
+                        <div class="stat-value" id="avgDeposit">$0.00</div>
+                    </div>
+                </div>
+                
+                <div class="history-table-container">
+                    <table class="history-table">
+                        <thead>
+                            <tr>
+                                <th>Fecha</th>
+                                <th>Tipo</th>
+                                <th>Método</th>
+                                <th>Monto</th>
+                                <th>Estado</th>
+                                <th>ID Transacción</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="historyTableBody">
+                            <!-- Las transacciones se cargan aquí -->
+                        </tbody>
+                    </table>
+                    
+                    <div class="empty-history hidden" id="emptyHistory">
+                        <i class="fas fa-history"></i>
+                        <p>No hay transacciones registradas</p>
+                        <button class="btn-secondary" id="makeFirstDeposit">
+                            <i class="fas fa-plus-circle"></i> Haz tu primer depósito
+                        </button>
+                    </div>
+                    
+                    <div class="table-footer">
+                        <div class="pagination">
+                            <button class="page-btn" disabled id="prevPage">
+                                <i class="fas fa-chevron-left"></i>
+                            </button>
+                            <span class="page-info">
+                                Página <span id="currentPage">1</span> de <span id="totalPages">1</span>
+                            </span>
+                            <button class="page-btn" disabled id="nextPage">
+                                <i class="fas fa-chevron-right"></i>
+                            </button>
+                        </div>
+                        <div class="items-per-page">
+                            <span>Mostrar:</span>
+                            <select id="itemsPerPage">
+                                <option value="10">10</option>
+                                <option value="25" selected>25</option>
+                                <option value="50">50</option>
+                                <option value="100">100</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="history-chart">
+                    <div class="chart-header">
+                        <h3><i class="fas fa-chart-bar"></i> Actividad Mensual</h3>
+                        <div class="chart-legend">
+                            <div class="legend-item">
+                                <span class="legend-color cup"></span>
+                                <span>CUP</span>
+                            </div>
+                            <div class="legend-item">
+                                <span class="legend-color saldo"></span>
+                                <span>Saldo</span>
+                            </div>
+                            <div class="legend-item">
+                                <span class="legend-color usdt"></span>
+                                <span>USDT</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="chart-container">
+                        <canvas id="historyChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Page: Claims -->
+        <div class="page" id="claims-page">
+            <div class="page-header">
+                <h1><i class="fas fa-gift"></i> Reclamar Pagos</h1>
+                <div class="header-info">
+                    <div class="info-badge warning">
+                        <i class="fas fa-exclamation-triangle"></i> Para pagos no detectados automáticamente
+                    </div>
+                </div>
+            </div>
+            
+            <div class="claims-container">
+                <div class="claims-intro">
+                    <div class="intro-card">
+                        <div class="intro-icon">
+                            <i class="fas fa-question-circle"></i>
+                        </div>
+                        <div class="intro-content">
+                            <h3>¿Cuándo usar esta función?</h3>
+                            <p>Usa "Reclamar Pagos" cuando:</p>
+                            <ul>
+                                <li>Hiciste un pago <strong>Tarjeta → Monedero</strong> (sin número visible)</li>
+                                <li>ETECSA no envió el SMS de confirmación</li>
+                                <li>El pago no se detectó automáticamente después de 10 minutos</li>
+                                <li>Tienes el ID de transacción pero no se acreditó</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="claims-options">
+                    <div class="option-card" id="searchByIdOption">
+                        <div class="option-icon">
+                            <i class="fas fa-search"></i>
+                        </div>
+                        <div class="option-content">
+                            <h3>Buscar por ID de Transacción</h3>
+                            <p>Si tienes el ID del SMS de Transfermóvil</p>
+                            <button class="btn-primary" data-action="search-by-id">
+                                <i class="fas fa-search"></i> Buscar
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="option-card" id="viewPendingOption">
+                        <div class="option-icon">
+                            <i class="fas fa-list"></i>
+                        </div>
+                        <div class="option-content">
+                            <h3>Ver Pagos Pendientes</h3>
+                            <p>Revisa todos tus pagos por confirmar</p>
+                            <button class="btn-primary" data-action="view-pending">
+                                <i class="fas fa-eye"></i> Ver
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="option-card" id="manualVerificationOption">
+                        <div class="option-icon">
+                            <i class="fas fa-hand-paper"></i>
+                        </div>
+                        <div class="option-content">
+                            <h3>Verificación Manual</h3>
+                            <p>Si no tienes ID pero tienes capturas</p>
+                            <button class="btn-secondary" data-action="manual-verify">
+                                <i class="fas fa-upload"></i> Subir Comprobante
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="claims-search hidden" id="claimsSearch">
+                    <div class="search-header">
+                        <h3><i class="fas fa-search"></i> Buscar por ID de Transacción</h3>
+                        <button class="btn-text" id="closeSearch">
+                            <i class="fas fa-times"></i> Cerrar
+                        </button>
+                    </div>
+                    
+                    <div class="search-form">
+                        <div class="form-group">
+                            <label for="txIdSearch">
+                                <i class="fas fa-hashtag"></i> ID de Transacción
+                            </label>
+                            <input type="text" 
+                                   id="txIdSearch" 
+                                   placeholder="Ejemplo: TMW162915233 o 162915233">
+                            <div class="input-hint">
+                                Encuéntralo en el SMS de Transfermóvil: "Id Transaccion: TMW162915233"
+                            </div>
+                        </div>
+                        
+                        <div class="search-actions">
+                            <button class="btn-primary" id="searchTxId">
+                                <i class="fas fa-search"></i> Buscar
+                            </button>
+                            <button class="btn-secondary" id="scanQr">
+                                <i class="fas fa-qrcode"></i> Escanear QR
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="search-results" id="searchResults">
+                        <!-- Resultados de búsqueda -->
+                    </div>
+                </div>
+                
+                <div class="pending-payments hidden" id="pendingPayments">
+                    <div class="pending-header">
+                        <h3><i class="fas fa-clock"></i> Pagos Pendientes por Reclamar</h3>
+                        <div class="header-actions">
+                            <button class="btn-refresh" id="refreshPending">
+                                <i class="fas fa-sync-alt"></i>
+                            </button>
+                            <button class="btn-text" id="closePending">
+                                <i class="fas fa-times"></i> Cerrar
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="payments-list" id="paymentsList">
+                        <!-- Lista de pagos pendientes -->
+                    </div>
+                </div>
+                
+                <div class="claims-info">
+                    <div class="info-box warning">
+                        <div class="info-icon">
+                            <i class="fas fa-exclamation-triangle"></i>
+                        </div>
+                        <div class="info-content">
+                            <h4>Política de Reembolsos y Soporte</h4>
+                            <p>Si envías dinero y no se acredita pero tienes captura válida:</p>
+                            <ol>
+                                <li>Contacta al administrador dentro de las 24 horas</li>
+                                <li>Proporciona captura de pantalla del pago</li>
+                                <li>Incluye tu ID de Telegram y número de teléfono</li>
+                                <li>Se resolverá en un máximo de 48 horas</li>
+                            </ol>
+                            <p><strong>Soporte:</strong> <a href="https://t.me/cromwell_support" target="_blank">@cromwell_support</a></p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Modal para mostrar detalles de transacción -->
+    <div class="modal" id="transactionModal">
+        <div class="modal-content large">
+            <div class="modal-header">
+                <h2><i class="fas fa-receipt"></i> Detalles de Transacción</h2>
+                <button class="close-modal">&times;</button>
+            </div>
+            <div class="modal-body" id="transactionDetails">
+                <!-- Detalles se cargan aquí -->
+            </div>
+        </div>
+    </div>
+    
+    <!-- Modal para editar perfil -->
+    <div class="modal" id="profileModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2><i class="fas fa-user-edit"></i> Editar Perfil</h2>
+                <button class="close-modal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <!-- Formulario de edición -->
+            </div>
+        </div>
+    </div>
+    
+    <!-- Modal para ver términos -->
+    <div class="modal" id="termsModal">
+        <div class="modal-content large">
+            <div class="modal-header">
+                <h2><i class="fas fa-file-contract"></i> Términos y Condiciones</h2>
+                <button class="close-modal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <!-- Términos se cargan aquí -->
+            </div>
+        </div>
+    </div>
+    
+    <!-- Notification System -->
+    <div class="notification-container" id="notificationContainer"></div>
+    
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="loading-content">
+            <div class="loading-spinner"></div>
+            <div class="loading-text">Cargando...</div>
+        </div>
+    </div>
+    
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="/js/dashboard.js"></script>
+    <script src="/js/wallet.js"></script>
+    <script src="/js/deposit.js"></script>
+    <script src="/js/history.js"></script>
+    <script src="/js/claims.js"></script>
+    <script src="/js/notifications.js"></script>
+</body>
+</html>
