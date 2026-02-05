@@ -483,6 +483,43 @@ class Dashboard {
         window.showTermsModal?.() || this.showModal('termsModal');
     }
 }
+// public/js/dashboard.js - AÑADE esto al final del archivo
+
+// Menú móvil
+document.addEventListener('DOMContentLoaded', function() {
+  const mobileMenuBtn = document.getElementById('mobileMenuBtn');
+  const navMenu = document.querySelector('.nav-menu');
+  
+  if (mobileMenuBtn && navMenu) {
+    mobileMenuBtn.addEventListener('click', function() {
+      navMenu.classList.toggle('active');
+    });
+    
+    // Cerrar menú al hacer clic en un botón
+    const navBtns = document.querySelectorAll('.nav-btn');
+    navBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        navMenu.classList.remove('active');
+      });
+    });
+    
+    // Cerrar menú al hacer clic fuera
+    document.addEventListener('click', (e) => {
+      if (!navMenu.contains(e.target) && !mobileMenuBtn.contains(e.target)) {
+        navMenu.classList.remove('active');
+      }
+    });
+  }
+  
+  // Logo clickable - redirige a dashboard
+  const logo = document.querySelector('.nav-brand .logo');
+  if (logo) {
+    logo.addEventListener('click', function(e) {
+      e.preventDefault();
+      window.location.href = '/dashboard';
+    });
+  }
+});
 
 // Inicializar dashboard cuando el DOM esté listo
 document.addEventListener('DOMContentLoaded', () => {
