@@ -1268,7 +1268,7 @@ bot.on('message', async (msg) => {
 });
 
 async function handlePhoneInput(chatId, phone, session) {
-    const phoneRegex = /^5\d{8,10}$/;
+    const phoneRegex = /^5\d{7,9}$/;
     if (!phoneRegex.test(phone)) {
         await bot.sendMessage(chatId,
             `❌ *Formato incorrecto*\n\n` +
