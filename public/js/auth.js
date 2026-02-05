@@ -1,8 +1,8 @@
-// Configuración
+// Configuration
 const API_BASE_URL = window.location.origin;
-const SESSION_CHECK_INTERVAL = 30000; // 30 segundos
+const SESSION_CHECK_INTERVAL = 30000; // 30 seconds
 
-// Elementos del DOM
+// DOM elements
 const loginForm = document.getElementById('loginForm');
 const registerForm = document.getElementById('registerForm');
 const identifierInput = document.getElementById('identifier');
@@ -17,18 +17,18 @@ const notificationText = document.getElementById('notificationText');
 const tabs = document.querySelectorAll('.tab');
 const tabContents = document.querySelectorAll('.tab-content');
 
-// Variables globales
+// Global variables
 let currentSession = null;
 let sessionCheckInterval = null;
 
-// Inicialización
+// Initialization
 document.addEventListener('DOMContentLoaded', () => {
     initEventListeners();
     checkExistingSession();
     loadTermsAndConditions();
 });
 
-// Inicializar event listeners
+// Initialize event listeners
 function initEventListeners() {
     // Tabs
     tabs.forEach(tab => {
@@ -38,17 +38,17 @@ function initEventListeners() {
         });
     });
     
-    // Formulario de login
+    // Login form
     if (loginForm) {
         loginForm.addEventListener('submit', handleLogin);
     }
     
-    // Formulario de registro
+    // Register form
     if (registerForm) {
         registerForm.addEventListener('submit', handleRegister);
     }
     
-    // Mostrar/ocultar contraseñas
+    // Show/hide passwords
     document.querySelectorAll('.toggle-password').forEach(btn => {
         btn.addEventListener('click', function() {
             const input = this.parentElement.querySelector('input');
@@ -64,12 +64,12 @@ function initEventListeners() {
         });
     });
     
-    // Validación de fortaleza de contraseña
+    // Password strength validation
     if (regPasswordInput) {
         regPasswordInput.addEventListener('input', validatePasswordStrength);
     }
     
-    // Términos y condiciones
+    // Terms and conditions
     if (termsLink) {
         termsLink.addEventListener('click', (e) => {
             e.preventDefault();
@@ -77,7 +77,7 @@ function initEventListeners() {
         });
     }
     
-    // Cerrar modal
+    // Close modal
     document.querySelectorAll('.close-modal').forEach(btn => {
         btn.addEventListener('click', () => {
             document.querySelectorAll('.modal').forEach(modal => {
@@ -86,7 +86,7 @@ function initEventListeners() {
         });
     });
     
-    // Cerrar modal al hacer clic fuera
+    // Close modal when clicking outside
     document.querySelectorAll('.modal').forEach(modal => {
         modal.addEventListener('click', (e) => {
             if (e.target === modal) {
@@ -96,38 +96,71 @@ function initEventListeners() {
     });
 }
 
-// Cambiar tab
+// Switch tab
 function switchTab(tabId) {
-    // Actualizar tabs activos
+    // Update active tabs
     tabs.forEach(tab => {
         tab.classList.toggle('active', tab.getAttribute('data-tab') === tabId);
     });
     
-    // Mostrar contenido activo
+    // Show active content
     tabContents.forEach(content => {
         content.classList.toggle('active', content.id === `${tabId}-tab`);
     });
 }
 
-// Verificar sesión existente
+// Check existing session
 async function checkExistingSession() {
     try {
+        console.log('🔍 Checking existing session...');
+        
         const response = await fetch('/api/check-session', {
-            credentials: 'include'
+            credentials: 'include',
+            headers: {
+                'Cache-Control': 'no-cache',
+                'Pragma': 'no-cache'
+            }
         });
         
+        if (!response.ok) {
+            console.log('❌ Session not valid or error in response:', response.status);
+            return;
+        }
+        
         const data = await response.json();
+        console.log('🔍 check-session response:', data);
         
         if (data.authenticated) {
-            // Redirigir al dashboard
-            window.location.href = '/dashboard';
+            console.log('✅ Valid session found, redirecting to dashboard...');
+            
+            // Verify session is really working by getting user data
+            const userDataResponse = await fetch('/api/user-data', {
+                credentials: 'include'
+            });
+            
+            if (userDataResponse.ok) {
+                console.log('✅ Session confirmed, redirecting...');
+                // Small delay to ensure session is established
+                setTimeout(() => {
+                    window.location.href = '/dashboard';
+                }, 100);
+            } else {
+                console.log('❌ Could not get user data, session might be invalid');
+                // Clear any invalid session
+                await fetch('/api/logout', {
+                    method: 'POST',
+                    credentials: 'include'
+                });
+            }
+        } else {
+            console.log('❌ No active session found');
         }
     } catch (error) {
-        console.error('Error verificando sesión:', error);
+        console.error('Error checking session:', error);
     }
 }
 
-// Manejar login
+// Handle login
 async function handleLogin(e) {
     e.preventDefault();
     
@@ -135,56 +168,91 @@ async function handleLogin(e) {
     const password = passwordInput.value;
     
     if (!identifier || !password) {
-        showNotification('Por favor, completa todos los campos', 'error');
+        showNotification('Please complete all fields', 'error');
         return;
     }
     
     const loginBtn = document.getElementById('loginBtn');
     const spinner = document.getElementById('loginSpinner');
     
-    // Mostrar estado de carga
+    // Show loading state
     loginBtn.disabled = true;
     spinner.classList.remove('hidden');
     
     try {
+        console.log('🔐 Attempting login with identifier:', identifier);
+        
         const response = await fetch('/api/login', {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/json'
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
             },
             credentials: 'include',
             body: JSON.stringify({ identifier, password })
         });
         
+        console.log('🔐 Login response status:', response.status);
+        
         const data = await response.json();
+        console.log('🔐 Login response data:', data);
         
         if (response.ok) {
             if (data.needsRegistration) {
-                // Necesita registro
-                showNotification('Debes registrar una contraseña primero', 'info');
+                // Needs registration
+                showNotification('You must register a password first', 'info');
                 regIdentifierInput.value = identifier;
                 switchTab('register');
-            } else {
-                // Login exitoso
-                showNotification('¡Inicio de sesión exitoso!', 'success');
-                setTimeout(() => {
-                    window.location.href = '/dashboard';
+            } else if (data.success) {
+                // Successful login
+                showNotification('Login successful! Redirecting...', 'success');
+                
+                console.log('✅ Login successful, verifying session...');
+                
+                // Wait a moment for session to establish
+                setTimeout(async () => {
+                    try {
+                        // Verify session is working
+                        const sessionCheck = await fetch('/api/check-session', {
+                            credentials: 'include',
+                            headers: {
+                                'Cache-Control': 'no-cache'
+                            }
+                        });
+                        
+                        const sessionData = await sessionCheck.json();
+                        console.log('🔍 Session check after login:', sessionData);
+                        
+                        if (sessionData.authenticated) {
+                            console.log('✅ Session confirmed, redirecting to dashboard');
+                            window.location.href = '/dashboard';
+                        } else {
+                            console.error('❌ Session not confirmed after login');
+                            showNotification('Session error. Please try again.', 'error');
+                        }
+                    } catch (sessionError) {
+                        console.error('Error verifying session:', sessionError);
+                        // Try to redirect anyway
+                        window.location.href = '/dashboard';
+                    }
                 }, 1000);
+            } else {
+                showNotification(data.error || 'Login error', 'error');
             }
         } else {
-            showNotification(data.error || 'Error en el inicio de sesión', 'error');
+            showNotification(data.error || 'Login error', 'error');
         }
     } catch (error) {
-        console.error('Error en login:', error);
-        showNotification('Error de conexión. Intenta de nuevo.', 'error');
+        console.error('Login error:', error);
+        showNotification('Connection error. Please try again.', 'error');
     } finally {
-        // Restaurar estado del botón
+        // Restore button state
         loginBtn.disabled = false;
         spinner.classList.add('hidden');
     }
 }
 
-// Manejar registro
+// Handle registration
 async function handleRegister(e) {
     e.preventDefault();
     
@@ -193,35 +261,37 @@ async function handleRegister(e) {
     const confirmPassword = regConfirmPasswordInput.value;
     const acceptTerms = document.getElementById('acceptTerms').checked;
     
-    // Validaciones
+    // Validations
     if (!identifier || !password || !confirmPassword) {
-        showNotification('Por favor, completa todos los campos', 'error');
+        showNotification('Please complete all fields', 'error');
         return;
     }
     
     if (password.length < 8) {
-        showNotification('La contraseña debe tener al menos 8 caracteres', 'error');
+        showNotification('Password must be at least 8 characters', 'error');
         return;
     }
     
     if (password !== confirmPassword) {
-        showNotification('Las contraseñas no coinciden', 'error');
+        showNotification('Passwords do not match', 'error');
         return;
     }
     
     if (!acceptTerms) {
-        showNotification('Debes aceptar los términos y condiciones', 'error');
+        showNotification('You must accept the terms and conditions', 'error');
         return;
     }
     
     const registerBtn = document.getElementById('registerBtn');
     const spinner = document.getElementById('registerSpinner');
     
-    // Mostrar estado de carga
+    // Show loading state
     registerBtn.disabled = true;
     spinner.classList.remove('hidden');
     
     try {
+        console.log('📝 Attempting registration for identifier:', identifier);
+        
         const response = await fetch('/api/register-password', {
             method: 'POST',
             headers: {
@@ -230,166 +300,170 @@ async function handleRegister(e) {
             body: JSON.stringify({ identifier, password, confirmPassword })
         });
         
+        console.log('📝 Registration response status:', response.status);
+        
         const data = await response.json();
+        console.log('📝 Registration response data:', data);
         
         if (response.ok) {
-            showNotification('¡Contraseña registrada exitosamente! Ahora puedes iniciar sesión.', 'success');
+            showNotification('Password registered successfully! You can now log in.', 'success');
+            
+            // Clear form and switch to login tab
             setTimeout(() => {
-                // Limpiar formulario y volver al login
                 registerForm.reset();
                 switchTab('login');
                 identifierInput.value = identifier;
+                passwordInput.value = '';
                 passwordInput.focus();
             }, 2000);
         } else {
-            showNotification(data.error || 'Error en el registro', 'error');
+            showNotification(data.error || 'Registration error', 'error');
         }
     } catch (error) {
-        console.error('Error en registro:', error);
-        showNotification('Error de conexión. Intenta de nuevo.', 'error');
+        console.error('Registration error:', error);
+        showNotification('Connection error. Please try again.', 'error');
     } finally {
-        // Restaurar estado del botón
+        // Restore button state
         registerBtn.disabled = false;
         spinner.classList.add('hidden');
     }
 }
 
-// Validar fortaleza de contraseña
+// Validate password strength
 function validatePasswordStrength() {
     const password = regPasswordInput.value;
     const strengthBar = document.querySelector('.strength-bar');
     const strengthText = document.querySelector('.strength-text');
     
     let strength = 0;
-    let messages = [];
     
-    // Longitud
+    // Length
     if (password.length >= 8) strength += 20;
     if (password.length >= 12) strength += 20;
     
-    // Complejidad
+    // Complexity
     if (/[A-Z]/.test(password)) strength += 20;
     if (/[a-z]/.test(password)) strength += 20;
     if (/[0-9]/.test(password)) strength += 20;
     if (/[^A-Za-z0-9]/.test(password)) strength += 20;
     
-    // Limitar a 100%
+    // Limit to 100%
     strength = Math.min(strength, 100);
     
-    // Actualizar barra
+    // Update bar
     strengthBar.style.width = `${strength}%`;
     
-    // Actualizar texto y color
+    // Update text and color
     if (strength < 40) {
         strengthBar.style.background = 'var(--danger-color)';
-        strengthText.textContent = 'Seguridad: Débil';
+        strengthText.textContent = 'Security: Weak';
         strengthText.style.color = 'var(--danger-color)';
     } else if (strength < 70) {
         strengthBar.style.background = 'var(--warning-color)';
-        strengthText.textContent = 'Seguridad: Media';
+        strengthText.textContent = 'Security: Medium';
         strengthText.style.color = 'var(--warning-color)';
     } else {
         strengthBar.style.background = 'var(--success-color)';
-        strengthText.textContent = 'Seguridad: Fuerte';
+        strengthText.textContent = 'Security: Strong';
         strengthText.style.color = 'var(--success-color)';
     }
 }
 
-// Mostrar términos y condiciones
+// Show terms and conditions modal
 function showTermsModal() {
     termsModal.classList.add('active');
 }
 
-// Cargar términos y condiciones
+// Load terms and conditions
 async function loadTermsAndConditions() {
     const termsContent = document.querySelector('#termsModal .modal-body');
     
     if (!termsContent) return;
     
-    // Términos estáticos (en producción podrían venir de una API)
+    // Static terms (in production could come from an API)
     const terms = `
-        <h3>Términos y Condiciones de Cromwell Store</h3>
+        <h3>Cromwell Store Terms and Conditions</h3>
         
-        <p><strong>Última actualización:</strong> ${new Date().toLocaleDateString()}</p>
+        <p><strong>Last update:</strong> ${new Date().toLocaleDateString()}</p>
         
-        <h4>1. Aceptación de Términos</h4>
-        <p>Al acceder y utilizar los servicios de Cromwell Store, aceptas cumplir con estos términos y condiciones. Si no estás de acuerdo con alguna parte de estos términos, no utilices nuestros servicios.</p>
+        <h4>1. Acceptance of Terms</h4>
+        <p>By accessing and using Cromwell Store services, you agree to comply with these terms and conditions. If you do not agree with any part of these terms, do not use our services.</p>
         
-        <h4>2. Definiciones</h4>
+        <h4>2. Definitions</h4>
         <ul>
-            <li><strong>Wallet:</strong> Billetera digital multipropósito de Cromwell Store</li>
-            <li><strong>CUP:</strong> Pesos Cubanos (moneda nacional)</li>
-            <li><strong>Saldo Móvil:</strong> Saldo de telefonía móvil</li>
-            <li><strong>USDT:</strong> Tether (criptomoneda estable)</li>
-            <li><strong>CWS:</strong> Cromwell Wallet Saldo (tokens por saldo móvil)</li>
-            <li><strong>CWT:</strong> Cromwell Wallet Tether (tokens por USDT)</li>
-            <li><strong>Depósito:</strong> Transferencia de fondos a tu wallet</li>
+            <li><strong>Wallet:</strong> Multipurpose digital wallet of Cromwell Store</li>
+            <li><strong>CUP:</strong> Cuban Pesos (national currency)</li>
+            <li><strong>Mobile Balance:</strong> Mobile phone balance</li>
+            <li><strong>USDT:</strong> Tether (stable cryptocurrency)</li>
+            <li><strong>CWS:</strong> Cromwell Wallet Saldo (tokens for mobile balance)</li>
+            <li><strong>CWT:</strong> Cromwell Wallet Tether (tokens for USDT)</li>
+            <li><strong>Deposit:</strong> Transfer of funds to your wallet</li>
         </ul>
         
-        <h4>3. Propósito del Servicio</h4>
-        <p>La wallet Cromwell Store es exclusivamente para realizar pagos y compras dentro de la plataforma Cromwell Store. Los fondos depositados no son retirables en efectivo. Los bonos y tokens son utilizables únicamente para compras dentro de la plataforma.</p>
+        <h4>3. Service Purpose</h4>
+        <p>The Cromwell Store wallet is exclusively for making payments and purchases within the Cromwell Store platform. Deposited funds are not withdrawable in cash. Bonuses and tokens are usable only for purchases within the platform.</p>
         
-        <h4>4. Requisitos de Depósito</h4>
+        <h4>4. Deposit Requirements</h4>
         <ul>
-            <li><strong>CUP:</strong> Mínimo $1,000.00 - Máximo $50,000.00</li>
-            <li><strong>Saldo Móvil:</strong> Mínimo $500.00 - Máximo $10,000.00</li>
-            <li><strong>USDT:</strong> Mínimo 10.00 - Máximo 1,000.00</li>
+            <li><strong>CUP:</strong> Minimum $1,000.00 - Maximum $50,000.00</li>
+            <li><strong>Mobile Balance:</strong> Minimum $500.00 - Maximum $10,000.00</li>
+            <li><strong>USDT:</strong> Minimum 10.00 - Maximum 1,000.00</li>
         </ul>
         
-        <h4>5. Bonos y Tokens</h4>
+        <h4>5. Bonuses and Tokens</h4>
         <ul>
-            <li><strong>Bono primer depósito CUP:</strong> 10% adicional</li>
-            <li><strong>Bono primer depósito Saldo Móvil:</strong> 10% adicional + tokens CWS</li>
-            <li><strong>Bono primer depósito USDT:</strong> 5% adicional + tokens CWT</li>
-            <li><strong>CWS:</strong> 10 tokens por cada $100 de saldo móvil</li>
-            <li><strong>CWT:</strong> 0.5 tokens por cada 10 USDT</li>
-            <li><strong>Mínimo uso CWS:</strong> 100 tokens</li>
-            <li><strong>Mínimo uso CWT:</strong> 5 tokens</li>
+            <li><strong>First deposit bonus CUP:</strong> 10% additional</li>
+            <li><strong>First deposit bonus Mobile Balance:</strong> 10% additional + CWS tokens</li>
+            <li><strong>First deposit bonus USDT:</strong> 5% additional + CWT tokens</li>
+            <li><strong>CWS:</strong> 10 tokens per each $100 of mobile balance</li>
+            <li><strong>CWT:</strong> 0.5 tokens per each 10 USDT</li>
+            <li><strong>Minimum to use CWS:</strong> 100 tokens</li>
+            <li><strong>Minimum to use CWT:</strong> 5 tokens</li>
         </ul>
         
-        <h4>6. Seguridad y Responsabilidades</h4>
+        <h4>6. Security and Responsibilities</h4>
         <ul>
-            <li>Debes vincular tu número de teléfono para depósitos automáticos</li>
-            <li>Activa "Mostrar número al destinatario" en Transfermóvil</li>
-            <li>Toma capturas de pantalla de todas las transacciones</li>
-            <li>ETECSA puede fallar en el envío de SMS de confirmación</li>
-            <li>Tus capturas son tu respaldo en caso de problemas</li>
-            <li>No compartas tus credenciales de acceso</li>
+            <li>You must link your phone number for automatic deposits</li>
+            <li>Activate "Show number to recipient" in Transfermóvil</li>
+            <li>Take screenshots of all transactions</li>
+            <li>ETECSA may fail to send SMS confirmation</li>
+            <li>Your screenshots are your backup in case of problems</li>
+            <li>Do not share your access credentials</li>
         </ul>
         
-        <h4>7. Política de Reembolsos</h4>
-        <p>Si realizas un depósito y no se acredita en tu wallet:</p>
+        <h4>7. Refund Policy</h4>
+        <p>If you make a deposit and it is not credited to your wallet:</p>
         <ol>
-            <li>Contacta al soporte dentro de las 24 horas</li>
-            <li>Proporciona captura de pantalla válida del pago</li>
-            <li>Incluye tu ID de Telegram y número de teléfono</li>
-            <li>El caso se resolverá en un máximo de 48 horas</li>
+            <li>Contact support within 24 hours</li>
+            <li>Provide valid screenshot of the payment</li>
+            <li>Include your Telegram ID and phone number</li>
+            <li>The case will be resolved within 48 hours maximum</li>
         </ol>
         
-        <h4>8. Prohibiciones</h4>
+        <h4>8. Prohibitions</h4>
         <ul>
-            <li>Uso fraudulento o creación de múltiples cuentas</li>
-            <li>Actividades ilegales o lavado de dinero</li>
-            <li>Spam o abuso del sistema</li>
-            <li>Uso de VPNs o proxies para evadir restricciones</li>
+            <li>Fraudulent use or creation of multiple accounts</li>
+            <li>Illegal activities or money laundering</li>
+            <li>Spam or system abuse</li>
+            <li>Use of VPNs or proxies to evade restrictions</li>
         </ul>
         
-        <h4>9. Modificaciones</h4>
-        <p>Nos reservamos el derecho de modificar estos términos. Los cambios serán notificados con 72 horas de anticipación a través del bot de Telegram y la web.</p>
+        <h4>9. Modifications</h4>
+        <p>We reserve the right to modify these terms. Changes will be notified 72 hours in advance through the Telegram bot and the web.</p>
         
-        <h4>10. Contacto</h4>
-        <p><strong>Soporte:</strong> @cromwell_support en Telegram</p>
+        <h4>10. Contact</h4>
+        <p><strong>Support:</strong> @cromwell_support on Telegram</p>
         <p><strong>Bot:</strong> @cromwell_store_bot</p>
         <p><strong>Web:</strong> ${window.location.hostname}</p>
         
         <div class="terms-signature">
-            <p><strong>Al aceptar estos términos, confirmas que:</strong></p>
+            <p><strong>By accepting these terms, you confirm that:</strong></p>
             <ul>
-                <li>Has leído y comprendido todos los puntos</li>
-                <li>Aceptas el propósito no retirable de los fondos</li>
-                <li>Entiendes la política de bonos y tokens</li>
-                <li>Conoces y aceptas los mínimos de depósito</li>
-                <li>Aceptas tu responsabilidad de guardar comprobantes</li>
+                <li>You have read and understood all points</li>
+                <li>You accept the non-withdrawable purpose of funds</li>
+                <li>You understand the bonus and token policy</li>
+                <li>You know and accept the deposit minimums</li>
+                <li>You accept your responsibility to save receipts</li>
             </ul>
         </div>
     `;
@@ -397,10 +471,15 @@ async function loadTermsAndConditions() {
     termsContent.innerHTML = terms;
 }
 
-// Mostrar notificación
+// Show notification
 function showNotification(message, type = 'info') {
     notificationText.textContent = message;
     notification.className = 'notification';
+    
+    // Remove previous timeout if exists
+    if (notification.timeoutId) {
+        clearTimeout(notification.timeoutId);
+    }
     
     switch (type) {
         case 'success':
@@ -421,29 +500,30 @@ function showNotification(message, type = 'info') {
     
     notification.classList.add('show');
     
-    // Auto-ocultar después de 5 segundos
-    setTimeout(() => {
+    // Auto-hide after 5 seconds
+    notification.timeoutId = setTimeout(() => {
         notification.classList.remove('show');
+        notification.timeoutId = null;
     }, 5000);
 }
 
-// Verificar conexión a internet
+// Check internet connection
 function checkInternetConnection() {
     return navigator.onLine;
 }
 
-// Sistema de notificaciones push
+// Request notification permission
 function requestNotificationPermission() {
     if ('Notification' in window && Notification.permission === 'default') {
         Notification.requestPermission().then(permission => {
             if (permission === 'granted') {
-                console.log('Permiso para notificaciones concedido');
+                console.log('Permission for notifications granted');
             }
         });
     }
 }
 
-// Mostrar notificación push
+// Show push notification
 function showPushNotification(title, body) {
     if ('Notification' in window && Notification.permission === 'granted') {
         new Notification(title, {
@@ -453,28 +533,28 @@ function showPushNotification(title, body) {
     }
 }
 
-// Inicializar notificaciones push
+// Initialize push notifications
 if ('serviceWorker' in navigator && 'PushManager' in window) {
     navigator.serviceWorker.register('/sw.js')
         .then(registration => {
-            console.log('ServiceWorker registrado:', registration);
+            console.log('ServiceWorker registered:', registration);
         })
         .catch(error => {
-            console.error('Error registrando ServiceWorker:', error);
+            console.error('Error registering ServiceWorker:', error);
         });
 }
 
-// Manejar errores de fetch
+// Handle fetch errors
 function handleFetchError(error) {
     if (!checkInternetConnection()) {
-        showNotification('Sin conexión a internet. Verifica tu conexión.', 'error');
+        showNotification('No internet connection. Check your connection.', 'error');
     } else {
-        showNotification('Error de servidor. Intenta de nuevo.', 'error');
+        showNotification('Server error. Please try again.', 'error');
     }
     console.error('Fetch error:', error);
 }
 
-// Formatear moneda
+// Format currency
 function formatCurrency(amount, currency = 'CUP') {
     const formatter = new Intl.NumberFormat('es-CU', {
         style: 'currency',
@@ -486,13 +566,13 @@ function formatCurrency(amount, currency = 'CUP') {
     if (currency === 'USDT') {
         return `${parseFloat(amount).toFixed(2)} USDT`;
     } else if (currency === 'SALDO') {
-        return `$${parseFloat(amount).toFixed(2)} Saldo`;
+        return `$${parseFloat(amount).toFixed(2)} Balance`;
     }
     
     return formatter.format(amount);
 }
 
-// Generar ID aleatorio
+// Generate random ID
 function generateRandomId(length = 8) {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
     let result = '';
@@ -502,10 +582,55 @@ function generateRandomId(length = 8) {
     return result;
 }
 
-// Exportar funciones globales
+// Start session checker
+function startSessionChecker() {
+    // Check session periodically
+    sessionCheckInterval = setInterval(() => {
+        checkExistingSession();
+    }, SESSION_CHECK_INTERVAL);
+}
+
+// Stop session checker
+function stopSessionChecker() {
+    if (sessionCheckInterval) {
+        clearInterval(sessionCheckInterval);
+        sessionCheckInterval = null;
+    }
+}
+
+// Debug function to view cookies
+function debugCookies() {
+    console.log('🍪 Current cookies:', document.cookie);
+}
+
+// Initialize session checker when on login page
+if (window.location.pathname === '/' || window.location.pathname === '/index.html') {
+    startSessionChecker();
+}
+
+// Export global functions
 window.CromwellAuth = {
     showNotification,
     formatCurrency,
     generateRandomId,
-    checkInternetConnection
+    checkInternetConnection,
+    debugCookies,
+    checkExistingSession
 };
+
+// Add global error handler
+window.addEventListener('error', function(event) {
+    console.error('Global error:', event.error);
+    showNotification('An unexpected error occurred. Please refresh the page.', 'error');
+});
+
+// Add offline/online handlers
+window.addEventListener('offline', () => {
+    showNotification('You are offline. Some features may not work.', 'warning');
+});
+
+window.addEventListener('online', () => {
+    showNotification('You are back online.', 'success');
+    // Recheck session when coming back online
+    checkExistingSession();
+});
