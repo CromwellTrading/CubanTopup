@@ -2811,6 +2811,19 @@ app.post('/api/update-profile', requireAuth, async (req, res) => {
     res.status(500).json({ error: 'Error interno del servidor' });
   }
 });
+
+// 23. Ruta para información de pago simplificada
+app.get('/api/payment-info-simple', (req, res) => {
+    res.json({
+        cup_target: PAGO_CUP_TARJETA || 'NO CONFIGURADO',
+        saldo_target: PAGO_SALDO_MOVIL || 'NO CONFIGURADO',
+        usdt_target: PAGO_USDT_ADDRESS || 'NO CONFIGURADO',
+        minimo_cup: MINIMO_CUP,
+        minimo_saldo: MINIMO_SALDO,
+        minimo_usdt: MINIMO_USDT,
+        maximo_cup: MAXIMO_CUP
+    });
+});
 // ============================================
 // START SERVERS
 // ============================================
