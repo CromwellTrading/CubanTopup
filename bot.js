@@ -11,6 +11,7 @@ const bodyParser = require('body-parser');
 const Web3 = require('web3');
 const session = require('express-session');
 const bcrypt = require('bcryptjs');
+const cors = require('cors');
 
 // ============================================
 // CONFIGURACIÓN DESDE .ENV
@@ -68,18 +69,27 @@ if (!WEBHOOK_SECRET_KEY) {
 const app = express();
 
 // Middleware
+app.use(cors({
+    origin: true,
+    credentials: true
+}));
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(express.static('public'));
+app.use('/css', express.static(__dirname + '/public/css'));
+app.use('/js', express.static(__dirname + '/public/js'));
+app.use('/assets', express.static(__dirname + '/public/assets'));
 
 // Configuración de sesiones para el dashboard web
 app.use(session({
-    secret: WEBHOOK_SECRET_KEY,
-    resave: false,
-    saveUninitialized: false,
+    secret: WEBHOOK_SECRET_KEY || 'cromwell-store-session-secret',
+    resave: true,
+    saveUninitialized: true,
     cookie: { 
         secure: process.env.NODE_ENV === 'production',
-        maxAge: 24 * 60 * 60 * 1000 // 24 horas
+        maxAge: 24 * 60 * 60 * 1000, // 24 horas
+        httpOnly: true,
+        sameSite: 'lax'
     }
 }));
 
@@ -132,8 +142,10 @@ const verifyWebhookToken = (req, res, next) => {
 // Middleware para autenticación web
 function requireAuth(req, res, next) {
     if (req.session.userId && req.session.authenticated) {
+        console.log('✅ Usuario autenticado:', req.session.userId);
         next();
     } else {
+        console.log('❌ Usuario no autenticado');
         res.status(401).json({ error: 'No autorizado' });
     }
 }
@@ -160,7 +172,10 @@ async function getUser(telegramId) {
         .eq('telegram_id', telegramId)
         .single();
     
-    if (error) return null;
+    if (error) {
+        console.log('Error obteniendo usuario:', error);
+        return null;
+    }
     return data;
 }
 
@@ -176,17 +191,24 @@ async function updateUser(telegramId, updates) {
 
 // Obtener usuario por teléfono
 async function getUserByPhone(phone) {
-    // NORMALIZAR siempre el phone aquí también
+    // Normalizar el phone: quitar todos los caracteres no numéricos
     const normalizedPhone = phone.replace(/[^\d]/g, '');
+    
+    console.log('🔍 Buscando usuario por phone normalizado:', normalizedPhone);
     
     const { data, error } = await supabase
         .from('users')
         .select('*')
-        .eq('phone_number', normalizedPhone)  // ← Busca NORMALIZADO
+        .eq('phone_number', normalizedPhone)
         .single();
-    if (error) return null;
+    
+    if (error) {
+        console.log('Error buscando usuario por phone:', error);
+        return null;
+    }
     return data;
 }
+
 // Verificar transacción BSC
 async function checkBSCTransaction(txHash, expectedAmount, expectedTo) {
     try {
@@ -461,17 +483,17 @@ async function procesarDepositoConOrden(userId, amount, currency, txId, tipoPago
 }
 
 // ============================================
-// RUTAS DE TELEGRAM BOT
+// TELEGRAM BOT - NUEVO FLUJO CON CAMBIOS
 // ============================================
 
-// Teclados
+// Teclados actualizados
 const mainKeyboard = {
     inline_keyboard: [
         [{ text: '👛 Mi Billetera', callback_data: 'wallet' }],
         [{ text: '💰 Recargar Wallet', callback_data: 'recharge_menu' }],
-        [{ text: '📱 Vincular Teléfono', callback_data: 'link_phone' }],
+        [{ text: '📱 Cambiar Teléfono', callback_data: 'link_phone' }],
         [{ text: '🎁 Reclamar Pago', callback_data: 'claim_payment' }],
-        [{ text: '📜 Términos y Condiciones', callback_data: 'terms' }],
+        [{ text: '📜 Ver Términos Web', callback_data: 'view_terms_web' }],
         [{ text: '🔄 Actualizar', callback_data: 'refresh_wallet' }]
     ]
 };
@@ -480,7 +502,7 @@ const walletKeyboard = {
     inline_keyboard: [
         [{ text: '💰 Recargar Wallet', callback_data: 'recharge_menu' }],
         [{ text: '📜 Historial', callback_data: 'history' }],
-        [{ text: '📱 Vincular Teléfono', callback_data: 'link_phone' }],
+        [{ text: '📱 Cambiar Teléfono', callback_data: 'link_phone' }],
         [{ text: '📊 Saldo Pendiente', callback_data: 'view_pending' }],
         [{ text: '🔙 Volver', callback_data: 'start_back' }]
     ]
@@ -511,110 +533,75 @@ const claimPaymentKeyboard = {
     ]
 };
 
-// Webhook para recibir pagos del parser Python
-app.post('/payment-notification', verifyWebhookToken, async (req, res) => {
-    try {
-        const { type, user_id, amount, currency, tx_id, tipo_pago, phone, message } = req.body;
-        
-        console.log(`📥 Notificación recibida: ${type}, Usuario: ${user_id}, Monto: ${amount} ${currency}`);
-        
-        if (type === 'AUTO_PAYMENT') {
-            const result = await procesarPagoAutomatico(user_id, amount, currency, tx_id, tipo_pago);
-            res.json(result);
-        } 
-        else if (type === 'PENDING_PAYMENT') {
-            // Guardar pago pendiente
-            const { data, error } = await supabase.from('pending_sms_payments').insert({
-                user_id: user_id,
-                phone: phone,
-                amount: amount,
-                currency: currency,
-                tx_id: tx_id,
-                tipo_pago: tipo_pago,
-                raw_message: message,
-                claimed: false
-            });
-            
-            if (error) {
-                res.status(500).json({ success: false, error: error.message });
-            } else {
-                res.json({ success: true, message: 'Pago pendiente registrado' });
-            }
-        }
-        else if (type === 'USDT_VERIFIED') {
-            const result = await procesarPagoAutomatico(user_id, amount, 'usdt', tx_id, 'USDT_WEB');
-            res.json(result);
-        }
-        else if (type === 'CLAIM_PAYMENT') {
-            const user = await getUser(user_id);
-            const result = await procesarPagoAutomatico(user_id, amount, currency, tx_id, tipo_pago);
-            res.json(result);
-        }
-        else if (type === 'WEB_REGISTRATION') {
-            // Solo registrar en logs
-            console.log(`📝 Registro web completado para usuario: ${user_id}`);
-            res.json({ success: true });
-        }
-        else {
-            res.status(400).json({ success: false, message: 'Tipo de notificación desconocido' });
-        }
-    } catch (error) {
-        console.error('❌ Error en payment-notification:', error);
-        res.status(500).json({ success: false, message: error.message });
-    }
-});
-
-// Keep alive endpoint
-app.get('/keepalive', (req, res) => {
-    res.json({ 
-        status: 'alive', 
-        timestamp: new Date().toISOString(),
-        service: 'cromwell-bot-server',
-        uptime: process.uptime(),
-        security_enabled: !!WEBHOOK_SECRET_KEY
-    });
-});
-
 // ============================================
 // MANEJO DE COMANDOS DE TELEGRAM
 // ============================================
 
-// Comando /start
+// Comando /start - NUEVO FLUJO
 bot.onText(/\/start/, async (msg) => {
     const chatId = msg.chat.id;
     const { id, first_name, username } = msg.from;
     
-    await supabase.from('users').upsert({ 
-        telegram_id: id, 
-        first_name, 
-        username: username,
-        phone_number: null,
-        first_dep_cup: true,
-        first_dep_saldo: true,
-        first_dep_usdt: true,
-        accepted_terms: false,
-        pending_balance_cup: 0,
-        balance_cup: 0,
-        balance_saldo: 0,
-        balance_usdt: 0,
-        tokens_cws: 0,
-        tokens_cwt: 0,
-        usdt_wallet: null,
-        last_active: new Date().toISOString()
-    }, { onConflict: 'telegram_id' });
+    console.log(`🚀 Usuario ${id} (${first_name}) inició el bot`);
     
-    const welcomeMessage = `👋 ¡Hola, **${first_name}**!\n\n` +
-        `Bienvenido a **Cromwell Store Wallet**\n\n` +
-        `✨ *Características:*\n` +
-        `✅ Wallet multipropósito\n` +
-        `✅ Detección automática de pagos\n` +
-        `✅ Tokens CWS y CWT\n` +
-        `✅ Bonos en primer depósito\n\n` +
-        `🎁 *Beneficios primer depósito:*\n` +
-        `• 💳 CUP: 10% extra\n` +
-        `• 📱 Saldo Móvil: 10% extra + Tokens CWS\n` +
-        `• 🪙 USDT: 5% extra + Tokens CWT\n\n` +
-        `⚠️ *Debes aceptar los términos y condiciones para continuar.*`;
+    // Verificar si el usuario existe
+    let user = await getUser(chatId);
+    
+    if (!user) {
+        // Crear usuario nuevo
+        user = {
+            telegram_id: id,
+            first_name: first_name,
+            username: username,
+            phone_number: null,
+            first_dep_cup: true,
+            first_dep_saldo: true,
+            first_dep_usdt: true,
+            accepted_terms: false,
+            pending_balance_cup: 0,
+            balance_cup: 0,
+            balance_saldo: 0,
+            balance_usdt: 0,
+            tokens_cws: 0,
+            tokens_cwt: 0,
+            usdt_wallet: null,
+            last_active: new Date().toISOString()
+        };
+        
+        await supabase.from('users').upsert(user, { onConflict: 'telegram_id' });
+        user = await getUser(chatId);
+    }
+    
+    // PASO 1: Verificar si tiene número vinculado
+    if (!user.phone_number) {
+        const message = `📱 *¡Bienvenido a Cromwell Store Wallet!*\n\n` +
+            `👋 Hola **${first_name}**, para comenzar necesitamos vincular tu número de teléfono.\n\n` +
+            `⚠️ *IMPORTANTE:* Este debe ser el número *desde el cual realizarás los pagos* en Transfermóvil.\n\n` +
+            `🔢 *Formato requerido:*\n` +
+            `• 10 dígitos\n` +
+            `• Comienza con 53\n` +
+            `• Ejemplo: *5351234567*\n\n` +
+            `Por favor, escribe tu número de teléfono:`;
+        
+        activeSessions[chatId] = { step: 'waiting_phone_start' };
+        
+        return bot.sendMessage(chatId, message, { 
+            parse_mode: 'Markdown',
+            reply_markup: { remove_keyboard: true }
+        });
+    }
+    
+    // PASO 2: Verificar si aceptó términos
+    if (!user.accepted_terms) {
+        return handleTerms(chatId, null);
+    }
+    
+    // PASO 3: Usuario completo - Mostrar menú principal
+    const welcomeMessage = `✅ *¡Bienvenido de nuevo, ${first_name}!*\n\n` +
+        `🆔 *Tu ID de Telegram es:* \`${id}\`\n\n` +
+        `⚠️ *GUARDA ESTE ID* - Lo necesitarás para acceder a la web.\n\n` +
+        `Solo puedes acceder a la web con tu ID de Telegram.\n\n` +
+        `¿En qué puedo ayudarte hoy?`;
     
     await bot.sendMessage(chatId, welcomeMessage, { 
         parse_mode: 'Markdown', 
@@ -622,7 +609,10 @@ bot.onText(/\/start/, async (msg) => {
     });
 });
 
-// Manejo de callbacks
+// ============================================
+// MANEJO DE CALLBACKS DEL BOT
+// ============================================
+
 bot.on('callback_query', async (query) => {
     const chatId = query.message.chat.id;
     const messageId = query.message.message_id;
@@ -680,6 +670,9 @@ bot.on('callback_query', async (query) => {
             case 'enter_usdt_wallet':
                 await handleEnterUsdtWallet(chatId, messageId);
                 break;
+            case 'view_terms_web':
+                await handleViewTermsWeb(chatId, messageId);
+                break;
             default:
                 console.log(`Acción no reconocida: ${action}`);
         }
@@ -689,13 +682,19 @@ bot.on('callback_query', async (query) => {
     }
 });
 
-// Funciones de manejo de callbacks
+// ============================================
+// FUNCIONES DE MANEJO DE CALLBACKS (ACTUALIZADAS)
+// ============================================
+
 async function handleStartBack(chatId, messageId) {
     const user = await getUser(chatId);
-    const welcomeMessage = `👋 ¡Hola, **${user.first_name}**!\n\n` +
+    const message = `✅ *¡Bienvenido de nuevo, ${user.first_name}!*\n\n` +
+        `🆔 *Tu ID de Telegram es:* \`${chatId}\`\n\n` +
+        `⚠️ *GUARDA ESTE ID* - Lo necesitarás para acceder a la web.\n\n` +
+        `Solo puedes acceder a la web con tu ID de Telegram.\n\n` +
         `¿En qué puedo ayudarte hoy?`;
     
-    await bot.editMessageText(welcomeMessage, {
+    await bot.editMessageText(message, {
         chat_id: chatId,
         message_id: messageId,
         parse_mode: 'Markdown',
@@ -718,6 +717,7 @@ async function handleWallet(chatId, messageId) {
     const faltante = MINIMO_CUP - pendiente;
     
     let message = `👛 *Tu Billetera Cromwell*\n\n` +
+        `🆔 *ID Telegram:* \`${chatId}\`\n\n` +
         `💰 *CUP:* **${formatCurrency(user.balance_cup, 'cup')}**\n` +
         `📱 *Saldo Móvil:* **${formatCurrency(user.balance_saldo, 'saldo')}**\n` +
         `🪙 *USDT:* **${formatCurrency(user.balance_usdt, 'usdt')}**\n` +
@@ -731,7 +731,7 @@ async function handleWallet(chatId, messageId) {
         }
     }
     
-    message += `📞 *Teléfono:* ${user.phone_number ? `+53 ${user.phone_number}` : '❌ No vinculado'}\n\n` +
+    message += `📞 *Teléfono vinculado:* ${user.phone_number ? `+53 ${user.phone_number.substring(2)}` : '❌ No vinculado'}\n\n` +
         `💡 *Mínimos para usar tokens:*\n` +
         `• CWT: ${MIN_CWT_USE} CWT\n` +
         `• CWS: ${MIN_CWS_USE} CWS\n\n` +
@@ -764,8 +764,9 @@ async function handleRechargeMenu(chatId, messageId) {
     }
     
     const message = `💰 *Recargar Tu Wallet*\n\n` +
+        `📞 *Teléfono vinculado:* +53 ${user.phone_number ? user.phone_number.substring(2) : 'No vinculado'}\n\n` +
         `Selecciona el método de pago:\n\n` +
-        `💡 *Consejo:* Vincula tu teléfono para pagos automáticos.`;
+        `⚠️ *Importante:* Usa el mismo teléfono vinculado para pagar.`;
     
     await bot.editMessageText(message, {
         chat_id: chatId,
@@ -802,9 +803,6 @@ async function handleDepositInit(chatId, messageId, currency) {
             instrucciones = `💳 *Pagar a Tarjeta:* \`${PAGO_CUP_TARJETA}\``;
         } else {
             instrucciones = `💳 *Pagar a Tarjeta:* \`[NO CONFIGURADA]\``;
-        }
-        if (PAGO_SALDO_MOVIL) {
-            extraInfo = `\n📱 *# a confirmar:* \`${PAGO_SALDO_MOVIL}\``;
         }
     } else if (currency === 'saldo') {
         minimo = MINIMO_SALDO;
@@ -858,122 +856,6 @@ async function handleDepositInit(chatId, messageId, currency) {
     });
 }
 
-async function handleConfirmDeposit(chatId, messageId, currency, txId) {
-    const session = activeSessions[chatId];
-    if (!session || !session.amount) return;
-    
-    const user = await getUser(chatId);
-    const monto = session.amount;
-    
-    const bonoPorcentaje = currency === 'usdt' ? 0.05 : 0.10;
-    const bono = user[`first_dep_${currency}`] ? monto * bonoPorcentaje : 0;
-    const totalConBono = monto + bono;
-    const tokens = calcularTokens(monto, currency);
-    
-    const { data: tx } = await supabase.from('transactions').insert([{
-        user_id: chatId,
-        type: 'DEPOSIT',
-        currency: currency,
-        amount_requested: monto,
-        estimated_bonus: bono,
-        estimated_tokens: tokens,
-        status: 'pending',
-        user_name: user.first_name,
-        user_username: user.username,
-        user_phone: user.phone_number,
-        usdt_wallet: currency === 'usdt' ? session.usdtWallet : null
-    }]).select().single();
-    
-    let instruccionesFinales = '';
-    
-    if (currency === 'cup') {
-        if (PAGO_CUP_TARJETA) {
-            instruccionesFinales = `💳 *INSTRUCCIONES PARA PAGAR:*\n\n` +
-                `1. Ve a Transfermóvil\n` +
-                `2. Activa *"Mostrar número al destinatario"*\n` +
-                `3. Transfiere *EXACTAMENTE* ${formatCurrency(monto, 'cup')}\n` +
-                `4. A la tarjeta: \`${PAGO_CUP_TARJETA}\`\n\n` +
-                `⚠️ *IMPORTANTE:*\n` +
-                `• El monto debe ser exacto\n` +
-                `• Tu número debe estar visible\n` +
-                `• Usa el mismo teléfono vinculado`;
-        } else {
-            instruccionesFinales = `❌ *Tarjeta no configurada*\n\n` +
-                `Contacta al administrador para obtener la tarjeta de destino.`;
-        }
-    } else if (currency === 'saldo') {
-        if (PAGO_SALDO_MOVIL) {
-            instruccionesFinales = `📱 *INSTRUCCIONES PARA PAGAR:*\n\n` +
-                `1. Ve a Transfermóvil\n` +
-                `2. Envía saldo a: \`${PAGO_SALDO_MOVIL}\`\n` +
-                `3. Monto exacto: ${formatCurrency(monto, 'saldo')}\n\n` +
-                `⚠️ *IMPORTANTE:*\n` +
-                `• Toma captura de pantalla de la transferencia\n` +
-                `• No esperes al SMS de confirmación\n` +
-                `• Si no llega notificación, usa la captura`;
-        } else {
-            instruccionesFinales = `❌ *Número de saldo no configurado*\n\n` +
-                `Contacta al administrador para obtener el número de destino.`;
-        }
-    } else if (currency === 'usdt') {
-        if (PAGO_USDT_ADDRESS) {
-            instruccionesFinales = `🪙 *INSTRUCCIONES PARA PAGAR:*\n\n` +
-                `1. Ve a SafePal o tu wallet\n` +
-                `2. Envía USDT (BEP20) a:\n\`${PAGO_USDT_ADDRESS}\`\n` +
-                `3. Monto exacto: ${formatCurrency(monto, 'usdt')}\n` +
-                `4. Desde wallet: \`${session.usdtWallet}\`\n\n` +
-                `⚠️ *IMPORTANTE:*\n` +
-                `• SOLO red BEP20 (Binance Smart Chain)\n` +
-                `• Guarda el hash de transacción\n` +
-                `• La verificación puede tomar 5-15 minutos`;
-        } else {
-            instruccionesFinales = `❌ *Dirección USDT no configurada*\n\n` +
-                `Contacta al administrador para obtener la dirección de destino.`;
-        }
-    }
-    
-    const message = `✅ *Orden Creada #${tx.id}*\n\n` +
-        `💰 *Monto a pagar:* ${formatCurrency(monto, currency)}\n` +
-        `🎁 *Bono estimado:* ${formatCurrency(bono, currency)}\n` +
-        `🎫 *Tokens estimados:* ${tokens} ${currency === 'saldo' ? 'CWS' : 'CWT'}\n` +
-        `💵 *Total a acreditar:* ${formatCurrency(totalConBono, currency)}\n\n` +
-        `${instruccionesFinales}\n\n` +
-        `Presiona *"✅ Entendido"* cuando hayas leído y estés listo para pagar.`;
-    
-    const keyboard = {
-        inline_keyboard: [
-            [{ text: '✅ Entendido - Listo para Pagar', callback_data: `deposit_confirmed:${tx.id}` }],
-            [{ text: '❌ Cancelar', callback_data: 'recharge_menu' }]
-        ]
-    };
-    
-    await bot.editMessageText(message, {
-        chat_id: chatId,
-        message_id: messageId,
-        parse_mode: 'Markdown',
-        reply_markup: keyboard
-    });
-    
-    if (ADMIN_CHAT_ID) {
-        const adminMessage = `📋 *NUEVA SOLICITUD DE DEPÓSITO #${tx.id}*\n\n` +
-            `👤 Usuario: ${user.first_name} (@${user.username || 'sin usuario'})\n` +
-            `📞 Teléfono: ${user.phone_number || 'No vinculado'}\n` +
-            `💰 Monto: ${formatCurrency(monto, currency)}\n` +
-            `💳 Método: ${currency.toUpperCase()}\n` +
-            `🎁 Bono: ${formatCurrency(bono, currency)}\n` +
-            `🎫 Tokens: ${tokens}\n\n` +
-            `Estado: ⏳ PENDIENTE`;
-        
-        if (currency === 'usdt') {
-            adminMessage += `\n👛 Wallet: \`${session.usdtWallet}\``;
-        }
-        
-        await bot.sendMessage(ADMIN_CHAT_ID, adminMessage, { parse_mode: 'Markdown' });
-    }
-    
-    delete activeSessions[chatId];
-}
-
 async function handleTerms(chatId, messageId) {
     const terms = `📜 *Términos y Condiciones de Cromwell Store*\n\n` +
         `1. *ACEPTACIÓN*: Al usar este servicio, aceptas estos términos.\n\n` +
@@ -999,20 +881,41 @@ async function handleTerms(chatId, messageId) {
         `   • Lavado de dinero o actividades ilegales\n` +
         `   • Spam o abuso del sistema\n\n` +
         `8. *MODIFICACIONES*: Podemos cambiar estos términos notificando con 72 horas de anticipación.\n\n` +
-        `_Última actualización: ${new Date().toLocaleDateString()}_`;
+        `_Última actualización: ${new Date().toLocaleDateString()}_\n\n` +
+        `⚠️ *Para volver a ver estos términos y condiciones, visita nuestra web.*`;
     
-    await bot.editMessageText(terms, {
-        chat_id: chatId,
-        message_id: messageId,
-        parse_mode: 'Markdown',
-        reply_markup: termsKeyboard
-    });
+    const keyboard = {
+        inline_keyboard: [
+            [{ text: '✅ Aceptar Términos', callback_data: 'accept_terms' }]
+        ]
+    };
+    
+    if (messageId) {
+        await bot.editMessageText(terms, {
+            chat_id: chatId,
+            message_id: messageId,
+            parse_mode: 'Markdown',
+            reply_markup: keyboard
+        });
+    } else {
+        await bot.sendMessage(chatId, terms, {
+            parse_mode: 'Markdown',
+            reply_markup: keyboard
+        });
+    }
 }
 
 async function handleAcceptTerms(chatId, messageId) {
     await updateUser(chatId, { accepted_terms: true });
     
-    await bot.editMessageText('✅ *¡Términos aceptados!*\n\nAhora puedes usar todos los servicios de Cromwell Store.', {
+    const user = await getUser(chatId);
+    const message = `✅ *¡Términos aceptados!*\n\n` +
+        `🆔 *Tu ID de Telegram es:* \`${chatId}\`\n\n` +
+        `⚠️ *GUARDA ESTE ID* - Lo necesitarás para acceder a la web.\n\n` +
+        `Solo puedes acceder a la web con tu ID de Telegram.\n\n` +
+        `Ahora puedes usar todos los servicios de Cromwell Store.`;
+    
+    await bot.editMessageText(message, {
         chat_id: chatId,
         message_id: messageId,
         parse_mode: 'Markdown',
@@ -1023,22 +926,23 @@ async function handleAcceptTerms(chatId, messageId) {
 async function handleLinkPhone(chatId, messageId) {
     const user = await getUser(chatId);
     
-    let message = `📱 *Vincular Teléfono*\n\n`;
+    let message = `📱 *Cambiar Teléfono Vinculado*\n\n`;
     
     if (user.phone_number) {
-        message += `✅ *Teléfono actual:* +53 ${user.phone_number}\n\n`;
-        message += `Para cambiar, escribe tu nuevo número (ejemplo: 5351234567):`;
-        
-        activeSessions[chatId] = { 
-            step: 'waiting_phone_change',
-            oldPhone: user.phone_number 
-        };
-    } else {
-        message += `Para pagos automáticos, vincula tu número de Cuba.\n\n`;
-        message += `Escribe tu número (ejemplo: 5351234567):`;
-        
-        activeSessions[chatId] = { step: 'waiting_phone' };
+        message += `📞 *Teléfono actual:* +53 ${user.phone_number.substring(2)}\n\n`;
     }
+    
+    message += `Por favor, escribe tu nuevo número de teléfono:\n\n` +
+        `🔢 *Formato requerido:*\n` +
+        `• 10 dígitos\n` +
+        `• Comienza con 53\n` +
+        `• Ejemplo: *5351234567*\n\n` +
+        `⚠️ *IMPORTANTE:* Este debe ser el número *desde el cual realizarás los pagos* en Transfermóvil.`;
+    
+    activeSessions[chatId] = { 
+        step: 'waiting_phone_change',
+        oldPhone: user.phone_number 
+    };
     
     await bot.editMessageText(message, {
         chat_id: chatId,
@@ -1049,9 +953,9 @@ async function handleLinkPhone(chatId, messageId) {
 
 async function handleEnterPhone(chatId, messageId) {
     const message = `📱 *Ingresa tu número*\n\n` +
-        `Formato: 5XXXXXXXX\n` +
+        `Formato: 535XXXXXXX\n` +
         `Ejemplo: 5351234567\n\n` +
-        `⚠️ Debe ser el mismo de Transfermóvil.`;
+        `⚠️ Debe ser el mismo de Transfermóvil desde el que pagarás.`;
     
     await bot.editMessageText(message, {
         chat_id: chatId,
@@ -1092,11 +996,14 @@ async function handleSearchPaymentId(chatId, messageId) {
 }
 
 async function handleViewPendingPayments(chatId, messageId) {
+    const user = await getUser(chatId);
+    const phone = user.phone_number;
+    
     const { data: pendingPayments } = await supabase
         .from('pending_sms_payments')
         .select('*')
         .eq('claimed', false)
-        .or(`user_id.eq.${chatId},phone.eq.${(await getUser(chatId))?.phone_number}`)
+        .or(`user_id.eq.${chatId},phone.eq.${phone}`)
         .order('created_at', { ascending: false });
     
     let message = `📋 *Tus Pagos Pendientes*\n\n`;
@@ -1222,6 +1129,20 @@ e8e64dA7F2E\n\n` +
     });
 }
 
+async function handleViewTermsWeb(chatId, messageId) {
+    const message = `🌐 *Términos y Condiciones en la Web*\n\n` +
+        `Para ver los términos y condiciones actualizados, visita nuestra web.\n\n` +
+        `Una vez que hayas iniciado sesión con tu ID de Telegram, podrás verlos en la sección correspondiente.\n\n` +
+        `⚠️ *Recuerda:* Tu ID de Telegram es: \`${chatId}\``;
+    
+    await bot.editMessageText(message, {
+        chat_id: chatId,
+        message_id: messageId,
+        parse_mode: 'Markdown',
+        reply_markup: backKeyboard('start_back')
+    });
+}
+
 // ============================================
 // MANEJO DE MENSAJES DE TEXTO DE TELEGRAM
 // ============================================
@@ -1238,6 +1159,7 @@ bot.on('message', async (msg) => {
             switch (session.step) {
                 case 'waiting_phone':
                 case 'waiting_phone_change':
+                case 'waiting_phone_start':
                     await handlePhoneInput(chatId, text, session);
                     break;
                     
@@ -1267,23 +1189,63 @@ bot.on('message', async (msg) => {
     }
 });
 
+// Función para manejar entrada de teléfono (ACTUALIZADA)
 async function handlePhoneInput(chatId, phone, session) {
-    const phoneRegex = /^5\d{7,9}$/;
-    if (!phoneRegex.test(phone)) {
+    // Limpiar el número: quitar espacios, guiones, paréntesis, etc.
+    let cleanPhone = phone.replace(/[^\d]/g, '');
+    
+    console.log(`📱 Número recibido: ${phone}, Limpio: ${cleanPhone}`);
+    
+    // Validar formato
+    if (!cleanPhone.startsWith('53')) {
+        // Si no empieza con 53, agregarlo (asumiendo que es número cubano)
+        if (cleanPhone.length === 8) {
+            cleanPhone = '53' + cleanPhone;
+        } else if (cleanPhone.length === 9 && cleanPhone.startsWith('5')) {
+            // Si tiene 9 dígitos y empieza con 5, agregar 53 al inicio
+            cleanPhone = '53' + cleanPhone;
+        } else {
+            await bot.sendMessage(chatId,
+                `❌ *Formato incorrecto*\n\n` +
+                `El número debe comenzar con *53* y tener 10 dígitos.\n\n` +
+                `Ejemplos válidos:\n` +
+                `• *5351234567* (10 dígitos)\n` +
+                `• *51234567* (8 dígitos, se completará a 5351234567)\n\n` +
+                `Intenta de nuevo:`,
+                { parse_mode: 'Markdown' }
+            );
+            return;
+        }
+    }
+    
+    // Validar longitud final (debe ser 10 dígitos: 53 + 8 dígitos)
+    if (cleanPhone.length !== 10) {
         await bot.sendMessage(chatId,
-            `❌ *Formato incorrecto*\n\n` +
-            `Usa: 5XXXXXXXX\n` +
-            `Ejemplo: 5351234567\n\n` +
+            `❌ *Longitud incorrecta*\n\n` +
+            `El número debe tener *10 dígitos* (53 + 8 dígitos).\n\n` +
+            `Ejemplo: *5351234567*\n\n` +
             `Intenta de nuevo:`,
             { parse_mode: 'Markdown' }
         );
         return;
     }
     
+    // Verificar que sea un número válido (solo dígitos después de limpiar)
+    if (!/^\d+$/.test(cleanPhone)) {
+        await bot.sendMessage(chatId,
+            `❌ *Caracteres inválidos*\n\n` +
+            `El número solo debe contener dígitos.\n\n` +
+            `Intenta de nuevo:`,
+            { parse_mode: 'Markdown' }
+        );
+        return;
+    }
+    
+    // Verificar si el número ya está en uso por otro usuario
     const { data: existingUser } = await supabase
         .from('users')
         .select('telegram_id, first_name')
-        .eq('phone_number', phone)
+        .eq('phone_number', cleanPhone)
         .neq('telegram_id', chatId)
         .single();
     
@@ -1293,23 +1255,37 @@ async function handlePhoneInput(chatId, phone, session) {
             `Este número ya está vinculado a otra cuenta.\n` +
             `👤 Usuario: ${existingUser.first_name}\n\n` +
             `Si es tu número, contacta al administrador.`,
-            { parse_mode: 'Markdown', reply_markup: mainKeyboard }
+            { parse_mode: 'Markdown' }
         );
-        delete activeSessions[chatId];
+        
+        // Si es el flujo de inicio, mostrar el mensaje para intentar de nuevo
+        if (session.step === 'waiting_phone_start') {
+            activeSessions[chatId] = { step: 'waiting_phone_start' };
+        }
+        
         return;
     }
     
-    await updateUser(chatId, { phone_number: phone });
+    // Guardar el número normalizado
+    await updateUser(chatId, { phone_number: cleanPhone });
     
     let message = '';
     if (session.step === 'waiting_phone_change' && session.oldPhone) {
         message = `✅ *Teléfono actualizado*\n\n` +
-            `📱 *Anterior:* +53 ${session.oldPhone}\n` +
-            `📱 *Nuevo:* +53 ${phone}\n\n` +
+            `📱 *Anterior:* +53 ${session.oldPhone.substring(2)}\n` +
+            `📱 *Nuevo:* +53 ${cleanPhone.substring(2)}\n\n` +
             `Ahora los pagos se detectarán con este número.`;
+    } else if (session.step === 'waiting_phone_start') {
+        message = `✅ *¡Teléfono vinculado!*\n\n` +
+            `📱 *Número:* +53 ${cleanPhone.substring(2)}\n\n` +
+            `⚠️ *IMPORTANTE:*\n` +
+            `• Usa este mismo número en Transfermóvil\n` +
+            `• Desde este número realizarás los pagos\n` +
+            `• Mantén activa la opción "Mostrar número al destinatario"\n\n` +
+            `Ahora debes aceptar los términos y condiciones para continuar.`;
     } else {
         message = `✅ *¡Teléfono vinculado!*\n\n` +
-            `📱 *Número:* +53 ${phone}\n\n` +
+            `📱 *Número:* +53 ${cleanPhone.substring(2)}\n\n` +
             `Ahora tus pagos se detectarán automáticamente cuando:\n` +
             `✅ Envíes de Tarjeta→Tarjeta\n` +
             `✅ Envíes de Monedero→Tarjeta\n` +
@@ -1319,10 +1295,17 @@ async function handlePhoneInput(chatId, phone, session) {
             `💡 Siempre usa este número en Transfermóvil.`;
     }
     
-    await bot.sendMessage(chatId, message, {
-        parse_mode: 'Markdown',
-        reply_markup: mainKeyboard
-    });
+    // Enviar mensaje apropiado
+    if (session.step === 'waiting_phone_start') {
+        // Después de vincular teléfono en el inicio, mostrar términos
+        await bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
+        await handleTerms(chatId, null);
+    } else {
+        await bot.sendMessage(chatId, message, {
+            parse_mode: 'Markdown',
+            reply_markup: mainKeyboard
+        });
+    }
     
     delete activeSessions[chatId];
 }
@@ -1507,29 +1490,91 @@ async function handleUsdtHashInput(chatId, hash, session) {
 // RUTAS DEL DASHBOARD WEB
 // ============================================
 
-// 1. Login web
+// Webhook para recibir pagos del parser Python
+app.post('/payment-notification', verifyWebhookToken, async (req, res) => {
+    try {
+        const { type, user_id, amount, currency, tx_id, tipo_pago, phone, message } = req.body;
+        
+        console.log(`📥 Notificación recibida: ${type}, Usuario: ${user_id}, Monto: ${amount} ${currency}`);
+        
+        if (type === 'AUTO_PAYMENT') {
+            const result = await procesarPagoAutomatico(user_id, amount, currency, tx_id, tipo_pago);
+            res.json(result);
+        } 
+        else if (type === 'PENDING_PAYMENT') {
+            // Guardar pago pendiente
+            const { data, error } = await supabase.from('pending_sms_payments').insert({
+                user_id: user_id,
+                phone: phone,
+                amount: amount,
+                currency: currency,
+                tx_id: tx_id,
+                tipo_pago: tipo_pago,
+                raw_message: message,
+                claimed: false
+            });
+            
+            if (error) {
+                res.status(500).json({ success: false, error: error.message });
+            } else {
+                res.json({ success: true, message: 'Pago pendiente registrado' });
+            }
+        }
+        else if (type === 'USDT_VERIFIED') {
+            const result = await procesarPagoAutomatico(user_id, amount, 'usdt', tx_id, 'USDT_WEB');
+            res.json(result);
+        }
+        else if (type === 'CLAIM_PAYMENT') {
+            const user = await getUser(user_id);
+            const result = await procesarPagoAutomatico(user_id, amount, currency, tx_id, tipo_pago);
+            res.json(result);
+        }
+        else if (type === 'WEB_REGISTRATION') {
+            // Solo registrar en logs
+            console.log(`📝 Registro web completado para usuario: ${user_id}`);
+            res.json({ success: true });
+        }
+        else {
+            res.status(400).json({ success: false, message: 'Tipo de notificación desconocido' });
+        }
+    } catch (error) {
+        console.error('❌ Error en payment-notification:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+// Keep alive endpoint
+app.get('/keepalive', (req, res) => {
+    res.json({ 
+        status: 'alive', 
+        timestamp: new Date().toISOString(),
+        service: 'cromwell-bot-server',
+        uptime: process.uptime(),
+        security_enabled: !!WEBHOOK_SECRET_KEY
+    });
+});
+
+// 1. Login web - SOLO CON ID DE TELEGRAM
 app.post('/api/login', async (req, res) => {
     try {
+        console.log('🔑 Intento de login:', req.body);
         const { identifier, password } = req.body;
         
         if (!identifier || !password) {
             return res.status(400).json({ error: 'Faltan credenciales' });
         }
         
-        // Buscar usuario por Telegram ID o teléfono
-        let user;
-        
-        if (identifier.startsWith('@') || !isNaN(identifier)) {
-            // Es un Telegram ID
-            const telegramId = identifier.replace('@', '');
-            user = await getUser(parseInt(telegramId));
-        } else {
-            // Es un teléfono
-            const phone = identifier.replace(/[^\d]/g, '');
-            user = await getUserByPhone(phone);
+        // SOLO aceptar ID de Telegram (debe ser un número)
+        const telegramId = parseInt(identifier);
+        if (isNaN(telegramId)) {
+            return res.status(400).json({ error: 'Solo se permite el ID de Telegram (número)' });
         }
         
+        // Buscar usuario por Telegram ID
+        const user = await getUser(telegramId);
+        
         if (!user) {
+            console.log('❌ Usuario no encontrado:', telegramId);
             return res.status(404).json({ error: 'Usuario no encontrado' });
         }
         
@@ -1537,10 +1582,12 @@ app.post('/api/login', async (req, res) => {
         if (user.web_password) {
             const validPassword = await bcrypt.compare(password, user.web_password);
             if (!validPassword) {
+                console.log('❌ Contraseña incorrecta para usuario:', telegramId);
                 return res.status(401).json({ error: 'Contraseña incorrecta' });
             }
         } else {
             // Usuario no tiene contraseña web registrada
+            console.log('ℹ️ Usuario sin contraseña web:', telegramId);
             return res.status(403).json({ 
                 error: 'Debes registrar una contraseña primero',
                 needsRegistration: true,
@@ -1558,6 +1605,8 @@ app.post('/api/login', async (req, res) => {
             phone: user.phone_number
         };
         
+        console.log('✅ Login exitoso para:', user.telegram_id);
+        
         res.json({ 
             success: true, 
             user: {
@@ -1574,12 +1623,12 @@ app.post('/api/login', async (req, res) => {
         });
         
     } catch (error) {
-        console.error('Error en login web:', error);
+        console.error('❌ Error en login web:', error);
         res.status(500).json({ error: 'Error interno del servidor' });
     }
 });
 
-// 2. Registro de contraseña web
+// 2. Registro de contraseña web - SOLO CON ID DE TELEGRAM
 app.post('/api/register-password', async (req, res) => {
     try {
         const { identifier, password, confirmPassword } = req.body;
@@ -1596,16 +1645,13 @@ app.post('/api/register-password', async (req, res) => {
             return res.status(400).json({ error: 'La contraseña debe tener al menos 8 caracteres' });
         }
         
-        // Buscar usuario
-        let user;
-        
-        if (identifier.startsWith('@') || !isNaN(identifier)) {
-            const telegramId = identifier.replace('@', '');
-            user = await getUser(parseInt(telegramId));
-        } else {
-            const phone = identifier.replace(/[^\d]/g, '');
-            user = await getUserByPhone(phone);
+        // SOLO aceptar ID de Telegram
+        const telegramId = parseInt(identifier);
+        if (isNaN(telegramId)) {
+            return res.status(400).json({ error: 'Solo se permite el ID de Telegram (número)' });
         }
+        
+        const user = await getUser(telegramId);
         
         if (!user) {
             return res.status(404).json({ error: 'Usuario no encontrado' });
@@ -1654,9 +1700,12 @@ app.post('/api/register-password', async (req, res) => {
 // 3. Obtener datos del usuario (protegido)
 app.get('/api/user-data', requireAuth, async (req, res) => {
     try {
+        console.log('📊 Obteniendo datos para usuario:', req.session.userId);
+        
         const user = await getUser(req.session.userId);
         
         if (!user) {
+            console.log('❌ Usuario no encontrado en sesión:', req.session.userId);
             req.session.destroy();
             return res.status(404).json({ error: 'Usuario no encontrado' });
         }
@@ -1690,7 +1739,10 @@ app.get('/api/user-data', requireAuth, async (req, res) => {
                 tokens_cws: user.tokens_cws || 0,
                 tokens_cwt: user.tokens_cwt || 0,
                 pending_balance_cup: user.pending_balance_cup || 0,
-                accepted_terms: user.accepted_terms || false
+                accepted_terms: user.accepted_terms || false,
+                first_dep_cup: user.first_dep_cup || true,
+                first_dep_saldo: user.first_dep_saldo || true,
+                first_dep_usdt: user.first_dep_usdt || true
             },
             transactions: transactions || [],
             pendingPayments: pendingPayments || [],
@@ -1701,8 +1753,10 @@ app.get('/api/user-data', requireAuth, async (req, res) => {
             }
         });
         
+        console.log('✅ Datos enviados para usuario:', user.telegram_id);
+        
     } catch (error) {
-        console.error('Error obteniendo datos:', error);
+        console.error('❌ Error obteniendo datos:', error);
         res.status(500).json({ error: 'Error interno del servidor' });
     }
 });
@@ -2013,18 +2067,29 @@ app.post('/api/claim-payment', requireAuth, async (req, res) => {
 app.post('/api/logout', (req, res) => {
     req.session.destroy(err => {
         if (err) {
+            console.error('Error en logout:', err);
             return res.status(500).json({ error: 'Error cerrando sesión' });
         }
+        console.log('✅ Sesión cerrada exitosamente');
         res.json({ success: true });
     });
 });
 
 // 8. Verificar sesión web
 app.get('/api/check-session', (req, res) => {
+    console.log('🔍 Verificando sesión:', req.session);
+    
     if (req.session.userId && req.session.authenticated) {
-        res.json({ authenticated: true, userId: req.session.userId });
+        res.json({ 
+            authenticated: true, 
+            userId: req.session.userId,
+            sessionId: req.sessionID
+        });
     } else {
-        res.json({ authenticated: false });
+        res.json({ 
+            authenticated: false,
+            sessionId: req.sessionID
+        });
     }
 });
 
@@ -2170,7 +2235,17 @@ app.get('/api/admin/stats', requireAuth, async (req, res) => {
     }
 });
 
-// 11. Ruta para servir archivos HTML
+// 11. Debug endpoint para ver sesiones
+app.get('/api/debug', (req, res) => {
+    res.json({
+        session: req.session,
+        sessionId: req.sessionID,
+        cookies: req.cookies,
+        headers: req.headers
+    });
+});
+
+// 12. Ruta para servir archivos HTML
 app.get('/', (req, res) => {
     if (req.session.authenticated) {
         res.redirect('/dashboard');
@@ -2192,6 +2267,16 @@ app.get('/admin', requireAuth, async (req, res) => {
     }
     
     res.sendFile(__dirname + '/public/admin.html');
+});
+
+// Ruta para servir cualquier archivo del dashboard
+app.get('/:page', (req, res) => {
+    const page = req.params.page;
+    if (page.includes('.html') || page.includes('.css') || page.includes('.js') || page.includes('.ico')) {
+        res.sendFile(__dirname + '/public/' + page);
+    } else {
+        res.redirect('/');
+    }
 });
 
 // ============================================
@@ -2325,11 +2410,19 @@ app.listen(PORT, () => {
     console.log(`📊 Dashboard: http://localhost:${PORT}/dashboard`);
     console.log(`🛠️ Admin: http://localhost:${PORT}/admin`);
     console.log(`🔄 Keep alive: http://localhost:${PORT}/keepalive`);
-    console.log(`🤖 Bot Token: ${TELEGRAM_TOKEN ? '✅ CONFIGURADO' : '❌ NO CONFIGURADO'}`);
     console.log(`🔐 Seguridad: ${WEBHOOK_SECRET_KEY ? '✅ ACTIVADA' : '⚠️ DESACTIVADA'}`);
     console.log(`💰 Mínimos: CUP=${MINIMO_CUP}, Saldo=${MINIMO_SALDO}, USDT=${MINIMO_USDT}`);
-    console.log(`🎫 Tokens: ${CWS_PER_100_SALDO} CWS/100 saldo, ${CWT_PER_10_USDT} CWT/10 USDT`);
-    console.log(`📞 Teléfono: ${PAGO_SALDO_MOVIL || '❌ No configurado'}`);
-    console.log(`💳 Tarjeta: ${PAGO_CUP_TARJETA ? PAGO_CUP_TARJETA.substring(0, 4) + '...' + PAGO_CUP_TARJETA.substring(-4) : '❌ No configurada'}`);
-    console.log(`🪙 USDT Address: ${PAGO_USDT_ADDRESS ? PAGO_USDT_ADDRESS.substring(0, 10) + '...' + PAGO_USDT_ADDRESS.substring(-10) : '❌ No configurada'}`);
+    console.log(`📞 Teléfono para pagos: ${PAGO_SALDO_MOVIL || '❌ No configurado'}`);
+    console.log(`💳 Tarjeta para pagos: ${PAGO_CUP_TARJETA ? '✅ Configurada' : '❌ No configurada'}`);
+    console.log(`🪙 USDT Address: ${PAGO_USDT_ADDRESS ? '✅ Configurada' : '❌ No configurada'}`);
+    console.log(`\n🚀 Bot listo para recibir mensajes...`);
+});
+
+// Manejo de errores global
+process.on('uncaughtException', (error) => {
+    console.error('❌ Error no capturado:', error);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('❌ Promesa rechazada no manejada:', reason);
 });
