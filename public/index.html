@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="es" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cromwell Store - Wallet Digital</title>
+    <link rel="stylesheet" href="/css/styles.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=Orbitron:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="icon" type="image/x-icon" href="/assets/favicon.ico">
+</head>
+<body>
+    <div class="stars"></div>
+    <div class="twinkling"></div>
+    <div class="clouds"></div>
+    
+    <div class="container">
+        <div class="login-card">
+            <div class="logo-container">
+                <div class="logo">
+                    <i class="fas fa-wallet"></i>
+                    <span>Cromwell Store</span>
+                </div>
+                <div class="tagline">Wallet Digital Multipropósito</div>
+            </div>
+            
+            <div class="tabs">
+                <button class="tab active" data-tab="login">Iniciar Sesión</button>
+                <button class="tab" data-tab="register">Registrarse</button>
+            </div>
+            
+            <div class="tab-content active" id="login-tab">
+                <form id="loginForm">
+                    <div class="form-group">
+                        <label for="identifier">
+                            <i class="fas fa-user"></i> ID de Telegram o Teléfono
+                        </label>
+                        <input type="text" id="identifier" placeholder="@username o 5351234567" required>
+                        <div class="hint">Usa tu ID de Telegram (@username) o número de teléfono</div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="password">
+                            <i class="fas fa-lock"></i> Contraseña
+                        </label>
+                        <div class="password-input">
+                            <input type="password" id="password" placeholder="Tu contraseña" required>
+                            <button type="button" class="toggle-password" id="togglePassword">
+                                <i class="fas fa-eye"></i>
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <button type="submit" class="btn-primary" id="loginBtn">
+                            <i class="fas fa-sign-in-alt"></i> Iniciar Sesión
+                            <div class="spinner hidden" id="loginSpinner"></div>
+                        </button>
+                    </div>
+                    
+                    <div class="links">
+                        <a href="#" id="forgotPassword">
+                            <i class="fas fa-key"></i> ¿Olvidaste tu contraseña?
+                        </a>
+                        <a href="https://t.me/cromwell_store_bot" target="_blank">
+                            <i class="fab fa-telegram"></i> Ir al Bot de Telegram
+                        </a>
+                    </div>
+                </form>
+            </div>
+            
+            <div class="tab-content" id="register-tab">
+                <form id="registerForm">
+                    <div class="form-group">
+                        <label for="regIdentifier">
+                            <i class="fas fa-user"></i> ID de Telegram o Teléfono
+                        </label>
+                        <input type="text" id="regIdentifier" placeholder="@username o 5351234567" required>
+                        <div class="hint">Debes estar registrado en el bot de Telegram primero</div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="regPassword">
+                            <i class="fas fa-lock"></i> Nueva Contraseña
+                        </label>
+                        <div class="password-input">
+                            <input type="password" id="regPassword" placeholder="Mínimo 8 caracteres" required>
+                            <button type="button" class="toggle-password" id="toggleRegPassword">
+                                <i class="fas fa-eye"></i>
+                            </button>
+                        </div>
+                        <div class="password-strength">
+                            <div class="strength-bar"></div>
+                            <div class="strength-text">Seguridad: Baja</div>
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="regConfirmPassword">
+                            <i class="fas fa-lock"></i> Confirmar Contraseña
+                        </label>
+                        <div class="password-input">
+                            <input type="password" id="regConfirmPassword" placeholder="Repite tu contraseña" required>
+                            <button type="button" class="toggle-password" id="toggleRegConfirmPassword">
+                                <i class="fas fa-eye"></i>
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="terms">
+                        <input type="checkbox" id="acceptTerms" required>
+                        <label for="acceptTerms">
+                            Acepto los <a href="#" id="termsLink">Términos y Condiciones</a> de Cromwell Store
+                        </label>
+                    </div>
+                    
+                    <div class="form-group">
+                        <button type="submit" class="btn-primary" id="registerBtn">
+                            <i class="fas fa-user-plus"></i> Registrar Contraseña
+                            <div class="spinner hidden" id="registerSpinner"></div>
+                        </button>
+                    </div>
+                </form>
+            </div>
+            
+            <div class="features">
+                <div class="feature">
+                    <i class="fas fa-bolt"></i>
+                    <span>Pagos Automáticos</span>
+                </div>
+                <div class="feature">
+                    <i class="fas fa-gem"></i>
+                    <span>Tokens CWS/CWT</span>
+                </div>
+                <div class="feature">
+                    <i class="fas fa-shield-alt"></i>
+                    <span>Seguridad 3 Niveles</span>
+                </div>
+                <div class="feature">
+                    <i class="fas fa-rocket"></i>
+                    <span>Interface Moderna</span>
+                </div>
+            </div>
+        </div>
+        
+        <div class="floating-cards">
+            <div class="float-card card-1">
+                <i class="fas fa-coins"></i>
+                <div class="float-text">+10% Bono</div>
+            </div>
+            <div class="float-card card-2">
+                <i class="fas fa-shield-alt"></i>
+                <div class="float-text">Seguro</div>
+            </div>
+            <div class="float-card card-3">
+                <i class="fas fa-bolt"></i>
+                <div class="float-text">Rápido</div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="notification" id="notification">
+        <div class="notification-content">
+            <i class="fas fa-check-circle"></i>
+            <span id="notificationText">Notificación</span>
+        </div>
+    </div>
+    
+    <div class="modal" id="termsModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2><i class="fas fa-file-contract"></i> Términos y Condiciones</h2>
+                <button class="close-modal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <!-- Los términos se cargarán aquí -->
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary close-modal">Cerrar</button>
+            </div>
+        </div>
+    </div>
+    
+    <script src="/js/auth.js"></script>
+    <script src="/js/effects.js"></script>
+</body>
+</html>
