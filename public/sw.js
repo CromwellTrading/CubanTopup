@@ -1,15 +1,29 @@
-// public/sw.js
-self.addEventListener('install', event => {
-  console.log('Service Worker instalado');
-  self.skipWaiting();
-});
+// Service Worker básico - cache estático
+const CACHE_NAME = 'cromwell-store-v1';
+const urlsToCache = [
+  '/',
+  '/dashboard',
+  '/css/styles.css',
+  '/css/dashboard.css',
+  '/js/dashboard.js',
+  '/js/wallet.js',
+  '/js/deposit.js',
+  '/js/history.js',
+  '/js/claims.js',
+  '/js/notifications.js',
+  '/assets/favicon.ico'
+];
 
-self.addEventListener('activate', event => {
-  console.log('Service Worker activado');
-  event.waitUntil(clients.claim());
+self.addEventListener('install', event => {
+  event.waitUntil(
+    caches.open(CACHE_NAME)
+      .then(cache => cache.addAll(urlsToCache))
+  );
 });
 
 self.addEventListener('fetch', event => {
-  // Puedes añadir lógica de cache aquí si necesitas
-  event.respondWith(fetch(event.request));
+  event.respondWith(
+    caches.match(event.request)
+      .then(response => response || fetch(event.request))
+  );
 });
