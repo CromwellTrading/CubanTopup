@@ -176,16 +176,17 @@ async function updateUser(telegramId, updates) {
 
 // Obtener usuario por teléfono
 async function getUserByPhone(phone) {
+    // NORMALIZAR siempre el phone aquí también
+    const normalizedPhone = phone.replace(/[^\d]/g, '');
+    
     const { data, error } = await supabase
         .from('users')
         .select('*')
-        .eq('phone_number', phone)
+        .eq('phone_number', normalizedPhone)  // ← Busca NORMALIZADO
         .single();
-    
     if (error) return null;
     return data;
 }
-
 // Verificar transacción BSC
 async function checkBSCTransaction(txHash, expectedAmount, expectedTo) {
     try {
@@ -1267,7 +1268,7 @@ bot.on('message', async (msg) => {
 });
 
 async function handlePhoneInput(chatId, phone, session) {
-    const phoneRegex = /^5\d{7,9}$/;
+    const phoneRegex = /^5\d{8,10}$/;
     if (!phoneRegex.test(phone)) {
         await bot.sendMessage(chatId,
             `❌ *Formato incorrecto*\n\n` +
