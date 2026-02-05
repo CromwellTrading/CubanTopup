@@ -126,7 +126,6 @@
                     </div>
                     <div class="card-body">
                         <div class="activity-list" id="recentActivity">
-                            <!-- Actividad se carga aquí -->
                             <div class="empty-state">
                                 <i class="fas fa-history"></i>
                                 <p>No hay actividad reciente</p>
@@ -185,7 +184,6 @@
                     </div>
                     <div class="card-body">
                         <div class="notifications-list" id="notificationsList">
-                            <!-- Notificaciones se cargan aquí -->
                             <div class="empty-state">
                                 <i class="fas fa-bell-slash"></i>
                                 <p>No hay notificaciones</p>
@@ -383,11 +381,7 @@
                     <div class="sidebar-card">
                         <h4><i class="fas fa-shield-alt"></i> Seguridad</h4>
                         <div class="security-status">
-                            <div class="security-item verified">
-                                <i class="fas fa-check-circle"></i>
-                                <span>Teléfono Verificado</span>
-                            </div>
-                            <div class="security-item pending" id="phoneVerificationStatus">
+                            <div class="security-item verified" id="phoneVerificationStatus">
                                 <i class="fas fa-exclamation-circle"></i>
                                 <span>Teléfono Pendiente</span>
                             </div>
@@ -411,13 +405,13 @@
                     <div class="sidebar-card">
                         <h4><i class="fas fa-question-circle"></i> Ayuda Rápida</h4>
                         <div class="help-links">
-                            <a href="#" class="help-link">
+                            <a href="#" class="help-link" onclick="window.dashboard?.showTerms()">
                                 <i class="fas fa-file-contract"></i> Términos y Condiciones
                             </a>
-                            <a href="#" class="help-link">
+                            <a href="#" class="help-link" onclick="alert('FAQ en desarrollo')">
                                 <i class="fas fa-question"></i> Preguntas Frecuentes
                             </a>
-                            <a href="#" class="help-link">
+                            <a href="https://t.me/cromwell_support" target="_blank" class="help-link">
                                 <i class="fas fa-headset"></i> Soporte 24/7
                             </a>
                             <a href="https://t.me/cromwell_store_bot" target="_blank" class="help-link">
@@ -489,23 +483,8 @@
                     
                     <div class="limits-card">
                         <h4><i class="fas fa-chart-bar"></i> Límites de Depósito</h4>
-                        <div class="limits-list">
-                            <div class="limit-item">
-                                <span class="limit-label">CUP Mínimo:</span>
-                                <span class="limit-value">$1,000.00</span>
-                            </div>
-                            <div class="limit-item">
-                                <span class="limit-label">CUP Máximo:</span>
-                                <span class="limit-value">$50,000.00</span>
-                            </div>
-                            <div class="limit-item">
-                                <span class="limit-label">Saldo Mínimo:</span>
-                                <span class="limit-value">$500.00</span>
-                            </div>
-                            <div class="limit-item">
-                                <span class="limit-label">USDT Mínimo:</span>
-                                <span class="limit-value">$10.00</span>
-                            </div>
+                        <div class="limits-list" id="limitsList">
+                            <!-- Los límites se cargan dinámicamente -->
                         </div>
                     </div>
                     
@@ -521,274 +500,7 @@
                 </div>
                 
                 <div class="deposit-main">
-                    <div class="deposit-step active" id="step-method">
-                        <div class="step-header">
-                            <div class="step-number active">1</div>
-                            <div class="step-title">Seleccionar Método</div>
-                        </div>
-                        
-                        <div class="method-details">
-                            <div class="method-detail active" data-method="cup">
-                                <div class="detail-header">
-                                    <h3><i class="fas fa-credit-card"></i> Depósito por Tarjeta (CUP)</h3>
-                                    <div class="detail-bonus">
-                                        <i class="fas fa-gift"></i> Bono: +10% primer depósito
-                                    </div>
-                                </div>
-                                
-                                <div class="detail-info">
-                                    <div class="info-box">
-                                        <i class="fas fa-info-circle"></i>
-                                        <p>Transfiere desde tu tarjeta a nuestra tarjeta destino</p>
-                                    </div>
-                                    
-                                    <div class="requirements">
-                                        <h4><i class="fas fa-requirements"></i> Requisitos:</h4>
-                                        <ul>
-                                            <li>Teléfono vinculado obligatorio</li>
-                                            <li>Activar "Mostrar número al destinatario"</li>
-                                            <li>Transferir monto EXACTO solicitado</li>
-                                            <li>Usar el mismo teléfono vinculado</li>
-                                        </ul>
-                                    </div>
-                                    
-                                    <div class="instructions">
-                                        <h4><i class="fas fa-list-ol"></i> Instrucciones:</h4>
-                                        <ol>
-                                            <li>Activa "Mostrar número al destinatario" en Transfermóvil</li>
-                                            <li>Transfiere el monto exacto que solicites</li>
-                                            <li>A la tarjeta: <code id="cupTarget">Cargando...</code></li>
-                                            <li>El sistema detectará automáticamente tu pago</li>
-                                        </ol>
-                                    </div>
-                                </div>
-                            </div>
-                            
-                            <div class="method-detail" data-method="saldo">
-                                <!-- Similar estructura para saldo -->
-                            </div>
-                            
-                            <div class="method-detail" data-method="usdt">
-                                <!-- Similar estructura para USDT -->
-                            </div>
-                        </div>
-                        
-                        <div class="step-actions">
-                            <button class="btn-primary" id="nextStep">
-                                <i class="fas fa-arrow-right"></i> Continuar
-                            </button>
-                        </div>
-                    </div>
-                    
-                    <div class="deposit-step" id="step-amount">
-                        <div class="step-header">
-                            <div class="step-number">2</div>
-                            <div class="step-title">Especificar Monto</div>
-                        </div>
-                        
-                        <div class="amount-selector">
-                            <div class="amount-header">
-                                <h3 id="selectedMethodName">CUP (Tarjeta)</h3>
-                                <div class="amount-limits">
-                                    Mínimo: <span id="minAmount">$1,000.00</span> •
-                                    Máximo: <span id="maxAmount">$50,000.00</span>
-                                </div>
-                            </div>
-                            
-                            <div class="amount-input-container">
-                                <div class="currency-symbol">$</div>
-                                <input type="number" 
-                                       id="depositAmount" 
-                                       placeholder="0.00"
-                                       step="0.01"
-                                       min="1000"
-                                       max="50000">
-                                <div class="currency-code" id="currencyCode">CUP</div>
-                            </div>
-                            
-                            <div class="quick-amounts">
-                                <button class="quick-amount" data-amount="1000">$1,000</button>
-                                <button class="quick-amount" data-amount="5000">$5,000</button>
-                                <button class="quick-amount" data-amount="10000">$10,000</button>
-                                <button class="quick-amount" data-amount="20000">$20,000</button>
-                                <button class="quick-amount" data-amount="50000">$50,000</button>
-                            </div>
-                            
-                            <div class="amount-preview">
-                                <div class="preview-item">
-                                    <span>Monto a enviar:</span>
-                                    <span id="previewAmount">$0.00</span>
-                                </div>
-                                <div class="preview-item bonus">
-                                    <span>Bono primer depósito:</span>
-                                    <span id="previewBonus">$0.00</span>
-                                </div>
-                                <div class="preview-item tokens">
-                                    <span>Tokens a ganar:</span>
-                                    <span id="previewTokens">0</span>
-                                </div>
-                                <div class="preview-item total">
-                                    <span>Total a acreditar:</span>
-                                    <span id="previewTotal">$0.00</span>
-                                </div>
-                            </div>
-                            
-                            <!-- Para USDT: campo de wallet -->
-                            <div class="usdt-wallet-input hidden" id="usdtWalletSection">
-                                <label for="usdtWallet">
-                                    <i class="fab fa-usb"></i> Wallet USDT (BEP20)
-                                </label>
-                                <input type="text" 
-                                       id="usdtWallet" 
-                                       placeholder="0x..."
-                                       pattern="^0x[a-fA-F0-9]{40}$">
-                                <div class="input-hint">
-                                    Dirección desde la que enviarás los USDT
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <div class="step-actions">
-                            <button class="btn-secondary" id="prevStep">
-                                <i class="fas fa-arrow-left"></i> Atrás
-                            </button>
-                            <button class="btn-primary" id="confirmAmount">
-                                <i class="fas fa-check"></i> Confirmar Monto
-                            </button>
-                        </div>
-                    </div>
-                    
-                    <div class="deposit-step" id="step-confirm">
-                        <div class="step-header">
-                            <div class="step-number">3</div>
-                            <div class="step-title">Confirmar Depósito</div>
-                        </div>
-                        
-                        <div class="confirmation-card">
-                            <div class="confirmation-header">
-                                <h3><i class="fas fa-clipboard-check"></i> Resumen del Depósito</h3>
-                                <div class="order-id" id="orderId">Orden: #000000</div>
-                            </div>
-                            
-                            <div class="confirmation-details">
-                                <div class="detail-row">
-                                    <span>Método:</span>
-                                    <span id="confirmMethod">CUP (Tarjeta)</span>
-                                </div>
-                                <div class="detail-row">
-                                    <span>Monto a pagar:</span>
-                                    <span id="confirmAmount">$0.00</span>
-                                </div>
-                                <div class="detail-row bonus">
-                                    <span>Bono aplicado:</span>
-                                    <span id="confirmBonus">$0.00</span>
-                                </div>
-                                <div class="detail-row tokens">
-                                    <span>Tokens ganados:</span>
-                                    <span id="confirmTokens">0</span>
-                                </div>
-                                <div class="detail-row total">
-                                    <span>Total a acreditar:</span>
-                                    <span id="confirmTotal">$0.00</span>
-                                </div>
-                                <div class="detail-row target">
-                                    <span>Destino:</span>
-                                    <span id="confirmTarget">Cargando...</span>
-                                </div>
-                            </div>
-                            
-                            <div class="confirmation-instructions" id="confirmationInstructions">
-                                <!-- Instrucciones específicas del método -->
-                            </div>
-                            
-                            <div class="confirmation-warning">
-                                <div class="warning-icon">
-                                    <i class="fas fa-exclamation-triangle"></i>
-                                </div>
-                                <div class="warning-content">
-                                    <p><strong>IMPORTANTE:</strong> Toma captura de pantalla de la transferencia. Si ETECSA no envía el SMS, esta será tu prueba.</p>
-                                    <p>El pago se detectará automáticamente en 1-10 minutos.</p>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <div class="step-actions">
-                            <button class="btn-secondary" id="editDeposit">
-                                <i class="fas fa-edit"></i> Editar
-                            </button>
-                            <button class="btn-primary" id="createDeposit">
-                                <i class="fas fa-check-circle"></i> Crear Solicitud
-                            </button>
-                        </div>
-                    </div>
-                    
-                    <div class="deposit-step" id="step-pending">
-                        <div class="step-header">
-                            <div class="step-number">4</div>
-                            <div class="step-title">Esperando Pago</div>
-                        </div>
-                        
-                        <div class="pending-card">
-                            <div class="pending-icon">
-                                <i class="fas fa-clock"></i>
-                            </div>
-                            <div class="pending-info">
-                                <h3>Orden <span id="pendingOrderId">#000000</span> Pendiente</h3>
-                                <p>Esperando que realices el pago...</p>
-                            </div>
-                            
-                            <div class="payment-details">
-                                <div class="detail-box">
-                                    <div class="detail-label">Monto a pagar</div>
-                                    <div class="detail-value" id="pendingAmount">$0.00</div>
-                                </div>
-                                <div class="detail-box">
-                                    <div class="detail-label">Destino</div>
-                                    <div class="detail-value" id="pendingTarget">Cargando...</div>
-                                </div>
-                                <div class="detail-box">
-                                    <div class="detail-label">Tiempo restante</div>
-                                    <div class="detail-value">
-                                        <div class="timer" id="paymentTimer">30:00</div>
-                                    </div>
-                                </div>
-                            </div>
-                            
-                            <div class="instructions-box" id="pendingInstructions">
-                                <!-- Instrucciones específicas -->
-                            </div>
-                            
-                            <!-- Para USDT: verificación de hash -->
-                            <div class="usdt-verification hidden" id="usdtVerification">
-                                <h4><i class="fas fa-check-circle"></i> Verificar Transacción USDT</h4>
-                                <div class="verification-input">
-                                    <input type="text" 
-                                           id="usdtTxHash" 
-                                           placeholder="Ingresa el hash de la transacción (0x...)">
-                                    <button class="btn-small" id="verifyUsdtTx">
-                                        Verificar
-                                    </button>
-                                </div>
-                                <div class="verification-help">
-                                    <i class="fas fa-question-circle"></i>
-                                    <p>Encuentra el hash en tu wallet (SafePal, Trust Wallet, etc.)</p>
-                                </div>
-                            </div>
-                            
-                            <div class="pending-actions">
-                                <button class="btn-secondary" id="cancelDeposit">
-                                    <i class="fas fa-times"></i> Cancelar
-                                </button>
-                                <button class="btn-primary" id="checkPayment">
-                                    <i class="fas fa-sync-alt"></i> Verificar Pago
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div class="deposit-step" id="step-completed">
-                        <!-- Similar estructura para pago completado -->
-                    </div>
+                    <!-- El contenido de depósito se carga dinámicamente por deposit.js -->
                 </div>
             </div>
         </div>
@@ -856,7 +568,7 @@
                         </tbody>
                     </table>
                     
-                    <div class="empty-history hidden" id="emptyHistory">
+                    <div class="empty-history" id="emptyHistory">
                         <i class="fas fa-history"></i>
                         <p>No hay transacciones registradas</p>
                         <button class="btn-secondary" id="makeFirstDeposit">
@@ -943,7 +655,7 @@
                     </div>
                 </div>
                 
-                <div class="claims-options">
+                <div class="claims-options" id="claimsOptions">
                     <div class="option-card" id="searchByIdOption">
                         <div class="option-icon">
                             <i class="fas fa-search"></i>
@@ -977,14 +689,14 @@
                         <div class="option-content">
                             <h3>Verificación Manual</h3>
                             <p>Si no tienes ID pero tienes capturas</p>
-                            <button class="btn-secondary" data-action="manual-verify">
+                            <button class="btn-secondary" data-action="manual-verify" id="manualVerify">
                                 <i class="fas fa-upload"></i> Subir Comprobante
                             </button>
                         </div>
                     </div>
                 </div>
                 
-                <div class="claims-search hidden" id="claimsSearch">
+                <div class="claims-search" id="claimsSearch">
                     <div class="search-header">
                         <h3><i class="fas fa-search"></i> Buscar por ID de Transacción</h3>
                         <button class="btn-text" id="closeSearch">
@@ -1020,7 +732,7 @@
                     </div>
                 </div>
                 
-                <div class="pending-payments hidden" id="pendingPayments">
+                <div class="pending-payments" id="pendingPayments">
                     <div class="pending-header">
                         <h3><i class="fas fa-clock"></i> Pagos Pendientes por Reclamar</h3>
                         <div class="header-actions">
@@ -1094,7 +806,25 @@
                 <button class="close-modal">&times;</button>
             </div>
             <div class="modal-body">
-                <!-- Términos se cargan aquí -->
+                <div id="termsContent">
+                    <!-- Términos se cargan dinámicamente -->
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- FAQ Modal -->
+    <div class="modal" id="faqModal">
+        <div class="modal-content large">
+            <div class="modal-header">
+                <h2><i class="fas fa-question-circle"></i> Preguntas Frecuentes</h2>
+                <button class="close-modal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="faq-content">
+                    <h3>Preguntas Frecuentes</h3>
+                    <!-- Contenido FAQ -->
+                </div>
             </div>
         </div>
     </div>
@@ -1117,5 +847,102 @@
     <script src="/js/history.js"></script>
     <script src="/js/claims.js"></script>
     <script src="/js/notifications.js"></script>
+    
+    <script>
+    // Código para manejar el menú móvil
+    document.addEventListener('DOMContentLoaded', function() {
+        const mobileMenuBtn = document.getElementById('mobileMenuBtn');
+        const navMenu = document.querySelector('.nav-menu');
+        
+        if (mobileMenuBtn && navMenu) {
+            mobileMenuBtn.addEventListener('click', function() {
+                navMenu.classList.toggle('active');
+            });
+            
+            // Cerrar menú al hacer clic en un botón
+            document.querySelectorAll('.nav-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    navMenu.classList.remove('active');
+                });
+            });
+            
+            // Cerrar menú al hacer clic fuera
+            document.addEventListener('click', (e) => {
+                if (!navMenu.contains(e.target) && !mobileMenuBtn.contains(e.target)) {
+                    navMenu.classList.remove('active');
+                }
+            });
+        }
+        
+        // Logo clickable - redirige a dashboard
+        const logo = document.querySelector('.nav-brand .logo');
+        if (logo) {
+            logo.addEventListener('click', function(e) {
+                e.preventDefault();
+                if (window.dashboard) {
+                    window.dashboard.switchPage('dashboard');
+                }
+            });
+        }
+        
+        // Cerrar modales
+        document.querySelectorAll('.close-modal').forEach(btn => {
+            btn.addEventListener('click', function() {
+                this.closest('.modal').classList.remove('active');
+            });
+        });
+        
+        // Cerrar modal al hacer clic fuera
+        document.querySelectorAll('.modal').forEach(modal => {
+            modal.addEventListener('click', function(e) {
+                if (e.target === this) {
+                    this.classList.remove('active');
+                }
+            });
+        });
+        
+        // Cargar información de pago al inicio
+        async function loadPaymentInfo() {
+            try {
+                const response = await fetch('/api/payment-info', {
+                    credentials: 'include'
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    // Hacer disponible globalmente
+                    window.PAYMENT_INFO = data;
+                    
+                    // Actualizar límites en la UI si está visible
+                    const limitsList = document.getElementById('limitsList');
+                    if (limitsList) {
+                        limitsList.innerHTML = `
+                            <div class="limit-item">
+                                <span class="limit-label">CUP Mínimo:</span>
+                                <span class="limit-value">$${data.minimo_cup.toFixed(2)}</span>
+                            </div>
+                            <div class="limit-item">
+                                <span class="limit-label">CUP Máximo:</span>
+                                <span class="limit-value">$${data.maximo_cup.toFixed(2)}</span>
+                            </div>
+                            <div class="limit-item">
+                                <span class="limit-label">Saldo Mínimo:</span>
+                                <span class="limit-value">$${data.minimo_saldo.toFixed(2)}</span>
+                            </div>
+                            <div class="limit-item">
+                                <span class="limit-label">USDT Mínimo:</span>
+                                <span class="limit-value">$${data.minimo_usdt.toFixed(2)}</span>
+                            </div>
+                        `;
+                    }
+                }
+            } catch (error) {
+                console.error('Error cargando información de pago:', error);
+            }
+        }
+        
+        loadPaymentInfo();
+    });
+    </script>
 </body>
 </html>
