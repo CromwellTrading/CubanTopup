@@ -2338,6 +2338,66 @@ app.get('/:page', (req, res) => {
 });
 
 // ============================================
+// RUTAS ADICIONALES NECESARIAS PARA EL DASHBOARD
+// ============================================
+
+// Ruta para notificaciones (vacía por ahora)
+app.get('/api/notificaciones', requireAuth, async (req, res) => {
+  try {
+    const userId = req.session.userId;
+    
+    // Obtener notificaciones del usuario
+    const { data: notifications } = await supabase
+      .from('transactions')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(10);
+    
+    res.json({
+      success: true,
+      notifications: notifications || []
+    });
+  } catch (error) {
+    console.error('Error obteniendo notificaciones:', error);
+    res.json({ success: true, notifications: [] });
+  }
+});
+
+// Ruta para pagos pendientes
+app.get('/api/pagos-pendientes', requireAuth, async (req, res) => {
+  try {
+    const userId = req.session.userId;
+    const user = await getUser(userId);
+    
+    const { data: pendingPayments } = await supabase
+      .from('pending_sms_payments')
+      .select('*')
+      .eq('claimed', false)
+      .or(`user_id.eq.${userId},phone.eq.${user.phone_number}`);
+    
+    res.json({
+      success: true,
+      pendingPayments: pendingPayments || []
+    });
+  } catch (error) {
+    console.error('Error obteniendo pagos pendientes:', error);
+    res.json({ success: true, pendingPayments: [] });
+  }
+});
+
+// WebSocket endpoint (simulado)
+app.get('/ws', (req, res) => {
+  res.status(404).json({ error: 'WebSocket no implementado' });
+});
+
+// Ruta para el service worker
+app.get('/sw.js', (req, res) => {
+  res.set('Content-Type', 'application/javascript');
+  res.sendFile(__dirname + '/public/sw.js');
+});
+
+// ============================================
 // SCHEDULERS AND SCHEDULED TASKS
 // ============================================
 
