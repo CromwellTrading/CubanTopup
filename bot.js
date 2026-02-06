@@ -1666,61 +1666,349 @@ async function handleUsdtHashInput(chatId, hash, session) {
 }
 
 // ============================================
-// RUTAS DEL PANEL WEB
+// ENDPOINT PARA RECIBIR PAGOS DEL PARSER
 // ============================================
 
-// Webhook para recibir pagos del parser Python
 app.post('/payment-notification', verifyWebhookToken, async (req, res) => {
     try {
-        const { type, user_id, amount, currency, tx_id, tipo_pago, phone, message } = req.body;
+        console.log('\n' + '='.repeat(60));
+        console.log('📥 PAYMENT-NOTIFICATION RECIBIDA EN EL BOT');
+        console.log('🕐 Hora:', new Date().toISOString());
+        console.log('📦 Datos recibidos COMPLETOS:');
+        console.log(JSON.stringify(req.body, null, 2));
+        console.log('📋 Headers recibidos:', req.headers);
+        console.log('='.repeat(60) + '\n');
         
-        console.log(`📥 Notificación recibida: ${type}, Usuario: ${user_id}, Monto: ${amount} ${currency}`);
+        const { 
+            type, 
+            amount, 
+            currency, 
+            tx_id, 
+            tipo_pago, 
+            phone, 
+            tarjeta_destino, 
+            raw_message,
+            auth_token,
+            source
+        } = req.body;
         
-        if (type === 'AUTO_PAYMENT') {
-            const result = await procesarPagoAutomatico(user_id, amount, currency, tx_id, tipo_pago);
-            res.json(result);
-        } 
-        else if (type === 'PENDING_PAYMENT') {
-            // Guardar pago pendiente
-            const { data, error } = await supabase.from('pending_sms_payments').insert({
-                user_id: user_id,
-                phone: phone,
-                amount: amount,
-                currency: currency,
-                tx_id: tx_id,
-                tipo_pago: tipo_pago,
-                raw_message: message,
-                claimed: false
+        // Validar que venga del parser
+        if (source !== 'python_sms_parser') {
+            console.log('⚠️ Fuente desconocida:', source);
+        }
+        
+        // Verificar token (ya hecho por middleware, pero por si acaso)
+        if (auth_token && auth_token !== WEBHOOK_SECRET_KEY) {
+            console.log('❌ Token de autenticación inválido en payload');
+            return res.status(403).json({ 
+                success: false, 
+                message: 'Token de autenticación inválido' 
             });
-            
-            if (error) {
-                res.status(500).json({ success: false, error: error.message });
-            } else {
-                res.json({ success: true, message: 'Pago pendiente registrado' });
-            }
         }
-        else if (type === 'USDT_VERIFIED') {
-            const result = await procesarPagoAutomatico(user_id, amount, 'usdt', tx_id, 'USDT_WEB');
-            res.json(result);
+        
+        // Procesar según tipo
+        switch (type) {
+            case 'SMS_PAYMENT_DETECTED':
+                console.log(`🔍 Procesando SMS_PAYMENT_DETECTED`);
+                console.log(`📞 Teléfono: ${phone}`);
+                console.log(`💰 Monto: ${amount} ${currency}`);
+                console.log(`🆔 TX ID: ${tx_id}`);
+                console.log(`🔧 Tipo Pago: ${tipo_pago}`);
+                console.log(`💳 Tarjeta Destino: ${tarjeta_destino}`);
+                
+                let user = null;
+                let normalizedPhone = null;
+                
+                // Si hay teléfono, buscar usuario
+                if (phone) {
+                    normalizedPhone = phone.replace(/[^\d]/g, '');
+                    console.log(`🔍 Buscando usuario con teléfono normalizado: ${normalizedPhone}`);
+                    
+                    user = await getUserByPhone(normalizedPhone);
+                    
+                    if (user) {
+                        console.log(`✅ Usuario encontrado:`);
+                        console.log(`   ID: ${user.telegram_id}`);
+                        console.log(`   Nombre: ${user.first_name}`);
+                        console.log(`   Teléfono DB: ${user.phone_number}`);
+                        
+                        // Verificar si el teléfono coincide exactamente
+                        if (user.phone_number !== normalizedPhone) {
+                            console.log(`⚠️ Teléfono no coincide exactamente:`);
+                            console.log(`   DB: ${user.phone_number}`);
+                            console.log(`   SMS: ${normalizedPhone}`);
+                            
+                            // Intentar diferentes formatos
+                            if (normalizedPhone.startsWith('53') && normalizedPhone.length === 10) {
+                                // El SMS ya tiene formato 53...
+                                // Verificar si en DB está sin 53
+                                const without53 = normalizedPhone.substring(2);
+                                if (user.phone_number === without53) {
+                                    console.log(`✅ Teléfono coincide (sin 53 en DB)`);
+                                } else {
+                                    console.log(`❌ Teléfono NO coincide`);
+                                    user = null;
+                                }
+                            }
+                        }
+                    } else {
+                        console.log(`❌ Usuario NO encontrado para teléfono: ${normalizedPhone}`);
+                        
+                        // Verificar si hay usuarios con formato diferente
+                        const { data: allUsers } = await supabase
+                            .from('users')
+                            .select('telegram_id, first_name, phone_number');
+                        
+                        if (allUsers) {
+                            console.log(`🔍 Buscando coincidencias parciales...`);
+                            for (const u of allUsers) {
+                                if (u.phone_number) {
+                                    const dbPhone = u.phone_number.replace(/[^\d]/g, '');
+                                    const smsPhone = normalizedPhone.replace(/[^\d]/g, '');
+                                    
+                                    // Comparar últimos 8 dígitos (sin el 53)
+                                    if (dbPhone === smsPhone || 
+                                        (smsPhone.startsWith('53') && dbPhone === smsPhone.substring(2)) ||
+                                        (dbPhone.startsWith('53') && smsPhone === dbPhone.substring(2))) {
+                                        console.log(`✅ Coincidencia encontrada:`);
+                                        console.log(`   ID: ${u.telegram_id}`);
+                                        console.log(`   Nombre: ${u.first_name}`);
+                                        console.log(`   Teléfono DB: ${u.phone_number}`);
+                                        user = u;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                if (user) {
+                    console.log(`🚀 Procesando pago automático para usuario ${user.telegram_id}`);
+                    
+                    // Procesar pago automático
+                    const result = await procesarPagoAutomatico(
+                        user.telegram_id, 
+                        amount, 
+                        currency, 
+                        tx_id, 
+                        tipo_pago
+                    );
+                    
+                    console.log(`✅ Resultado del procesamiento:`, result);
+                    
+                    // Notificar al admin
+                    if (ADMIN_CHAT_ID && result.success) {
+                        const mensajeAdmin = `✅ *PAGO DETECTADO Y PROCESADO*\n\n` +
+                            `👤 Usuario: ${user.first_name} (@${user.username || 'sin usuario'})\n` +
+                            `🆔 ID: ${user.telegram_id}\n` +
+                            `📞 Teléfono: ${normalizedPhone || 'No disponible'}\n` +
+                            `💰 Monto: ${formatCurrency(amount, currency)}\n` +
+                            `🔧 Tipo: ${tipo_pago}\n` +
+                            `💳 Tarjeta: ${tarjeta_destino}\n` +
+                            `🆔 TX ID: \`${tx_id}\`\n\n` +
+                            `🎁 Bono aplicado: ${result.montoConBono - amount}\n` +
+                            `🎫 Tokens: ${result.tokensGanados || 0}`;
+                        
+                        await bot.sendMessage(ADMIN_CHAT_ID, mensajeAdmin, { parse_mode: 'Markdown' });
+                    }
+                    
+                    return res.json(result);
+                } else {
+                    console.log(`📝 Guardando como pago pendiente...`);
+                    
+                    // Guardar como pago pendiente
+                    const { data, error } = await supabase
+                        .from('pending_sms_payments')
+                        .insert({
+                            phone: normalizedPhone,
+                            amount: amount,
+                            currency: currency,
+                            tx_id: tx_id,
+                            tipo_pago: tipo_pago,
+                            tarjeta_destino: tarjeta_destino,
+                            raw_message: raw_message,
+                            claimed: false,
+                            created_at: new Date().toISOString()
+                        });
+                    
+                    if (error) {
+                        console.error('❌ Error guardando pago pendiente:', error);
+                        return res.status(500).json({ 
+                            success: false, 
+                            message: 'Error guardando pago pendiente',
+                            error: error.message 
+                        });
+                    }
+                    
+                    console.log(`✅ Pago pendiente guardado para teléfono: ${normalizedPhone}`);
+                    
+                    // Notificar al admin
+                    if (ADMIN_CHAT_ID) {
+                        const mensajeAdmin = `📱 *PAGO NO IDENTIFICADO*\n\n` +
+                            `📞 Teléfono: ${normalizedPhone || 'No disponible'}\n` +
+                            `💰 Monto: ${formatCurrency(amount, currency)}\n` +
+                            `🔧 Tipo: ${tipo_pago}\n` +
+                            `💳 Tarjeta: ${tarjeta_destino}\n` +
+                            `🆔 ID: \`${tx_id}\`\n\n` +
+                            `ℹ️ Este pago está pendiente de reclamar.\n` +
+                            `Mensaje: ${raw_message.substring(0, 100)}...`;
+                        
+                        await bot.sendMessage(ADMIN_CHAT_ID, mensajeAdmin, { parse_mode: 'Markdown' });
+                    }
+                    
+                    return res.json({ 
+                        success: false, 
+                        message: 'Usuario no encontrado, pago guardado como pendiente',
+                        phone: normalizedPhone,
+                        tx_id: tx_id
+                    });
+                }
+                break;
+                
+            case 'AUTO_PAYMENT':
+                // Para compatibilidad con versiones antiguas
+                console.log(`🔄 Procesando AUTO_PAYMENT (legacy)`);
+                const { user_id } = req.body;
+                
+                if (!user_id) {
+                    return res.status(400).json({ 
+                        success: false, 
+                        message: 'user_id requerido para AUTO_PAYMENT' 
+                    });
+                }
+                
+                const result = await procesarPagoAutomatico(user_id, amount, currency, tx_id, tipo_pago);
+                return res.json(result);
+                
+            case 'PENDING_PAYMENT':
+                // Para compatibilidad
+                console.log(`📝 Guardando PENDING_PAYMENT (legacy)`);
+                const { data, error } = await supabase.from('pending_sms_payments').insert({
+                    phone: phone,
+                    amount: amount,
+                    currency: currency,
+                    tx_id: tx_id,
+                    tipo_pago: tipo_pago,
+                    tarjeta_destino: tarjeta_destino,
+                    raw_message: raw_message,
+                    claimed: false
+                });
+                
+                if (error) {
+                    return res.status(500).json({ success: false, error: error.message });
+                } else {
+                    return res.json({ success: true, message: 'Pago pendiente registrado' });
+                }
+                
+            default:
+                console.log(`❌ Tipo de notificación desconocido: ${type}`);
+                return res.status(400).json({ 
+                    success: false, 
+                    message: 'Tipo de notificación desconocido',
+                    received_type: type 
+                });
         }
-        else if (type === 'CLAIM_PAYMENT') {
-            const user = await getUser(user_id);
-            const result = await procesarPagoAutomatico(user_id, amount, currency, tx_id, tipo_pago);
-            res.json(result);
-        }
-        else if (type === 'WEB_REGISTRATION') {
-            // Solo log
-            console.log(`📝 Registro web completado para usuario: ${user_id}`);
-            res.json({ success: true });
-        }
-        else {
-            res.status(400).json({ success: false, message: 'Tipo de notificación desconocido' });
-        }
+        
     } catch (error) {
         console.error('❌ Error en payment-notification:', error);
-        res.status(500).json({ success: false, message: error.message });
+        console.error('Stack trace:', error.stack);
+        
+        // Enviar error al admin
+        if (ADMIN_CHAT_ID) {
+            const errorMsg = `❌ *ERROR EN PAYMENT-NOTIFICATION*\n\n` +
+                `Error: ${error.message}\n` +
+                `Hora: ${new Date().toLocaleString()}\n` +
+                `Body recibido: ${JSON.stringify(req.body).substring(0, 200)}...`;
+            
+            try {
+                await bot.sendMessage(ADMIN_CHAT_ID, errorMsg, { parse_mode: 'Markdown' });
+            } catch (botError) {
+                console.error('Error enviando mensaje de error:', botError);
+            }
+        }
+        
+        return res.status(500).json({ 
+            success: false, 
+            message: error.message,
+            stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+        });
     }
 });
+
+// ============================================
+// FUNCIÓN PARA BUSCAR USUARIO POR TELÉFONO (MEJORADA)
+// ============================================
+
+async function getUserByPhone(phone) {
+    try {
+        if (!phone) {
+            console.log('❌ No se proporcionó teléfono para buscar');
+            return null;
+        }
+        
+        // Normalizar teléfono
+        const normalizedPhone = phone.replace(/[^\d]/g, '');
+        console.log(`🔍 Buscando usuario con teléfono: ${normalizedPhone}`);
+        
+        // Intentar diferentes formatos de búsqueda
+        const searchPatterns = [
+            normalizedPhone,                      // Exacto
+            normalizedPhone.startsWith('53') ? normalizedPhone.substring(2) : `53${normalizedPhone}`, // Con/sin 53
+            `53${normalizedPhone}`,              // Agregar 53
+            normalizedPhone.substring(2)         // Quitar 53 si existe
+        ];
+        
+        // Eliminar duplicados
+        const uniquePatterns = [...new Set(searchPatterns.filter(p => p.length >= 8))];
+        
+        console.log(`🔍 Patrones de búsqueda:`, uniquePatterns);
+        
+        for (const pattern of uniquePatterns) {
+            const { data, error } = await supabase
+                .from('users')
+                .select('*')
+                .eq('phone_number', pattern)
+                .single();
+            
+            if (error && error.code !== 'PGRST116') { // PGRST116 = no rows returned
+                console.log(`⚠️ Error buscando con patrón ${pattern}:`, error.message);
+            }
+            
+            if (data) {
+                console.log(`✅ Usuario encontrado con patrón ${pattern}:`, data.telegram_id);
+                return data;
+            }
+        }
+        
+        // Si no se encontró con búsqueda exacta, buscar parcialmente (últimos 8 dígitos)
+        if (normalizedPhone.length >= 8) {
+            const last8Digits = normalizedPhone.slice(-8);
+            console.log(`🔍 Buscando por últimos 8 dígitos: ${last8Digits}`);
+            
+            const { data: allUsers } = await supabase
+                .from('users')
+                .select('*')
+                .not('phone_number', 'is', null);
+            
+            if (allUsers) {
+                for (const user of allUsers) {
+                    if (user.phone_number && user.phone_number.replace(/[^\d]/g, '').endsWith(last8Digits)) {
+                        console.log(`✅ Usuario encontrado por coincidencia parcial:`, user.telegram_id);
+                        return user;
+                    }
+                }
+            }
+        }
+        
+        console.log(`❌ Usuario no encontrado para teléfono: ${normalizedPhone}`);
+        return null;
+        
+    } catch (error) {
+        console.error('❌ Error en getUserByPhone:', error);
+        return null;
+    }
+}
 
 // Endpoint keep alive
 app.get('/keepalive', (req, res) => {
