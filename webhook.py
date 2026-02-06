@@ -11,8 +11,6 @@ from datetime import datetime
 app = Flask(__name__)
 
 # CONFIGURACIÓN DESDE .ENV
-# Diccionario de tarjetas y webhooks asociados
-# Formato en .env: TARJETAS_WEBHOOKS='{"9227069995328054": {"webhook": "https://webhook1.com", "secret": "clave1"}, "9227111111111111": {"webhook": "https://webhook2.com", "secret": "clave2"}}'
 TARJETAS_WEBHOOKS_JSON = os.getenv("TARJETAS_WEBHOOKS", "{}")
 
 try:
@@ -21,39 +19,38 @@ except json.JSONDecodeError:
     print("❌ Error al parsear TARJETAS_WEBHOOKS. Usando diccionario vacío.")
     TARJETAS_WEBHOOKS = {}
 
-# Tarjeta por defecto (la primera del diccionario o una específica)
 MI_TARJETA_DEFAULT = os.getenv("MI_TARJETA_DEFAULT")
 if not MI_TARJETA_DEFAULT and TARJETAS_WEBHOOKS:
     MI_TARJETA_DEFAULT = list(TARJETAS_WEBHOOKS.keys())[0]
 
-SUPABASE_URL = os.getenv("DB_URL")
-SUPABASE_KEY = os.getenv("DB_KEY")
-TELEGRAM_ADMIN_ID = os.getenv("ADMIN_GROUP")
-
-# Validar variables críticas
-if not all([SUPABASE_URL, SUPABASE_KEY]):
-    raise ValueError("❌ Faltan variables de entorno críticas. Verifica DB_URL, DB_KEY")
-
-# Headers para Supabase
-supabase_headers = {
-    "apikey": SUPABASE_KEY,
-    "Authorization": f"Bearer {SUPABASE_KEY}",
-    "Content-Type": "application/json"
-}
+print(f"💳 Tarjetas configuradas: {list(TARJETAS_WEBHOOKS.keys())}")
+print(f"🔑 Tarjeta default: {MI_TARJETA_DEFAULT}")
 
 def get_webhook_config_for_card(card_number):
     """Obtiene la configuración de webhook para una tarjeta específica"""
+    # Si la tarjeta está en el diccionario
     if card_number in TARJETAS_WEBHOOKS:
         config = TARJETAS_WEBHOOKS[card_number]
+        print(f"✅ Config encontrada para {card_number}: {config.get('webhook')}")
         return {
             "webhook_url": config.get("webhook"),
             "secret_key": config.get("secret")
         }
     
-    # Si no encuentra la tarjeta, usar configuración por defecto
+    # Si la tarjeta no está, buscar coincidencia parcial (últimos 4 dígitos)
+    for stored_card, config in TARJETAS_WEBHOOKS.items():
+        if card_number.endswith(stored_card[-4:]):
+            print(f"🔄 Usando config de {stored_card} para {card_number} (coincidencia parcial)")
+            return {
+                "webhook_url": config.get("webhook"),
+                "secret_key": config.get("secret")
+            }
+    
+    # Si no encuentra, usar configuración por defecto
     webhook_default = os.getenv("WEBHOOK_DEFAULT")
     secret_default = os.getenv("WEBHOOK_SECRET_DEFAULT")
     
+    print(f"⚠️ Usando config por defecto para {card_number}")
     return {
         "webhook_url": webhook_default,
         "secret_key": secret_default
@@ -63,7 +60,7 @@ def send_to_webhook(payload, card_number):
     """Envía datos al webhook específico de la tarjeta con autenticación"""
     config = get_webhook_config_for_card(card_number)
     
-    if not config["webhook_url"] or not config["secret_key"]:
+    if not config["webhook_url"]:
         print(f"❌ No hay webhook configurado para tarjeta: {card_number}")
         return False
     
@@ -73,29 +70,40 @@ def send_to_webhook(payload, card_number):
             "X-Auth-Token": config["secret_key"]
         }
         
-        # Agregar token al payload también
+        # Siempre incluir el token en el payload también por seguridad
         payload["auth_token"] = config["secret_key"]
         payload["source"] = "python_sms_parser"
         payload["card_destination"] = card_number
+        payload["timestamp"] = datetime.now().isoformat()
+        
+        print(f"📤 Enviando a webhook: {config['webhook_url']}")
+        print(f"🔑 Token usado: {config['secret_key'][:10]}...")
+        print(f"📦 Payload completo:")
+        print(json.dumps(payload, indent=2, ensure_ascii=False))
         
         response = requests.post(
             config["webhook_url"], 
             json=payload, 
             headers=headers, 
-            timeout=10
+            timeout=15
         )
         
-        print(f"✅ Enviado a webhook de {card_number}: {response.status_code}")
+        print(f"✅ Respuesta del webhook {card_number}: {response.status_code}")
+        
+        if response.status_code != 200:
+            print(f"⚠️ Respuesta del webhook: {response.text}")
+        
         return response.status_code == 200
+    except requests.exceptions.Timeout:
+        print(f"❌ Timeout enviando al webhook de {card_number}")
+        return False
     except Exception as e:
         print(f"❌ Error enviando al webhook de {card_number}: {e}")
+        import traceback
+        traceback.print_exc()
         return False
 
-@app.route('/keepalive', methods=['GET'])
-def keep_alive():
-    return "I am alive", 200
-
-def extraer_tipo_pago_y_datos(mensaje, remitente):
+def extraer_tipo_pago_y_datos(mensaje):
     """Analiza el mensaje para determinar el tipo de pago y extraer datos"""
     
     mensaje_upper = mensaje.upper()
@@ -103,18 +111,24 @@ def extraer_tipo_pago_y_datos(mensaje, remitente):
     # Buscar todas las tarjetas configuradas en el mensaje
     tarjetas_encontradas = []
     for tarjeta in TARJETAS_WEBHOOKS.keys():
-        # Buscar la tarjeta completa o los últimos 4 dígitos
-        if tarjeta in mensaje or tarjeta[-4:] in mensaje:
+        # Buscar la tarjeta completa en el mensaje
+        if tarjeta in mensaje:
+            tarjetas_encontradas.append(tarjeta)
+        # Buscar los últimos 4 dígitos en mensajes enmascarados
+        elif len(tarjeta) >= 4 and tarjeta[-4:] in mensaje:
             tarjetas_encontradas.append(tarjeta)
     
-    # Si no hay tarjetas configuradas, usar la por defecto
-    if not TARJETAS_WEBHOOKS and MI_TARJETA_DEFAULT:
-        tarjetas_encontradas = [MI_TARJETA_DEFAULT]
+    print(f"🔍 Tarjetas encontradas en mensaje: {tarjetas_encontradas}")
     
-    # 1. Tarjeta a Tarjeta
+    # Si no hay tarjetas configuradas, usar la por defecto
+    if not tarjetas_encontradas and MI_TARJETA_DEFAULT:
+        tarjetas_encontradas = [MI_TARJETA_DEFAULT]
+        print(f"🔍 Usando tarjeta default: {MI_TARJETA_DEFAULT}")
+    
+    # 1. Tarjeta a Tarjeta (con número visible)
     if "EL TITULAR DEL TELÉFONO" in mensaje_upper and "A LA CUENTA" in mensaje_upper:
         for tarjeta in tarjetas_encontradas:
-            if tarjeta in mensaje:
+            if tarjeta in mensaje or (len(tarjeta) >= 4 and tarjeta[-4:] in mensaje):
                 print(f"🔍 Detectado: TARJETA A TARJETA para {tarjeta}")
                 
                 tel_match = re.search(r'EL TITULAR DEL TELÉFONO (\d+)', mensaje, re.IGNORECASE)
@@ -126,7 +140,9 @@ def extraer_tipo_pago_y_datos(mensaje, remitente):
                 id_match = re.search(r'TRANSACCION\s+(\w+)', mensaje, re.IGNORECASE)
                 if not id_match:
                     id_match = re.search(r'NRO\.?\s*TRANSACCION\s+(\w+)', mensaje, re.IGNORECASE)
-                trans_id = id_match.group(1) if id_match else None
+                if not id_match:
+                    id_match = re.search(r'TRANSACCION:\s*(\w+)', mensaje, re.IGNORECASE)
+                trans_id = id_match.group(1) if id_match else f"UNKNOWN_{int(time.time())}"
                 
                 return {
                     "tipo": "TARJETA_TARJETA",
@@ -144,12 +160,16 @@ def extraer_tipo_pago_y_datos(mensaje, remitente):
         monto_match = re.search(r'RECARGADO CON:\s*(\d+\.?\d*)\s*CUP', mensaje, re.IGNORECASE)
         if not monto_match:
             monto_match = re.search(r'CON:\s*(\d+\.?\d*)\s*CUP', mensaje, re.IGNORECASE)
+        if not monto_match:
+            monto_match = re.search(r'DE (\d+\.?\d*)\s*CUP', mensaje, re.IGNORECASE)
         monto = float(monto_match.group(1)) if monto_match else 0.0
         
         id_match = re.search(r'TRANSACCION:\s*(\w+)', mensaje, re.IGNORECASE)
         if not id_match:
             id_match = re.search(r'ID TRANSACCION:\s*(\w+)', mensaje, re.IGNORECASE)
-        trans_id = id_match.group(1) if id_match else None
+        if not id_match:
+            id_match = re.search(r'NRO\.?\s*TRANSACCION\s+(\w+)', mensaje, re.IGNORECASE)
+        trans_id = id_match.group(1) if id_match else f"UNKNOWN_{int(time.time())}"
         
         # Para tarjeta a monedero, usar la primera tarjeta configurada
         tarjeta_destino = tarjetas_encontradas[0] if tarjetas_encontradas else MI_TARJETA_DEFAULT
@@ -157,7 +177,7 @@ def extraer_tipo_pago_y_datos(mensaje, remitente):
         return {
             "tipo": "TARJETA_MONEDERO",
             "tarjeta_destino": tarjeta_destino,
-            "telefono": None,
+            "telefono": None,  # No hay teléfono en este tipo
             "monto": monto,
             "trans_id": trans_id,
             "currency": "saldo"
@@ -176,7 +196,7 @@ def extraer_tipo_pago_y_datos(mensaje, remitente):
         id_match = re.search(r'TRANSACCION\s+(\w+)', mensaje, re.IGNORECASE)
         if not id_match:
             id_match = re.search(r'NRO\.?\s*TRANSACCION\s+(\w+)', mensaje, re.IGNORECASE)
-        trans_id = id_match.group(1) if id_match else None
+        trans_id = id_match.group(1) if id_match else f"UNKNOWN_{int(time.time())}"
         
         # Para monedero a monedero, usar la primera tarjeta configurada
         tarjeta_destino = tarjetas_encontradas[0] if tarjetas_encontradas else MI_TARJETA_DEFAULT
@@ -192,7 +212,7 @@ def extraer_tipo_pago_y_datos(mensaje, remitente):
     
     # 4. Monedero a Tarjeta (enmascarada)
     elif "EL TITULAR DEL TELÉFONO" in mensaje_upper and "A LA CUENTA" in mensaje_upper:
-        if "XXXX" in mensaje:
+        if "XXXX" in mensaje or "9227XXXXXXXX" in mensaje:
             print("🔍 Detectado: MONEDERO A TARJETA (enmascarada)")
             
             # Intentar extraer los últimos 4 dígitos
@@ -218,7 +238,7 @@ def extraer_tipo_pago_y_datos(mensaje, remitente):
             id_match = re.search(r'TRANSACCION\s+(\w+)', mensaje, re.IGNORECASE)
             if not id_match:
                 id_match = re.search(r'NRO\.?\s*TRANSACCION\s+(\w+)', mensaje, re.IGNORECASE)
-            trans_id = id_match.group(1) if id_match else None
+            trans_id = id_match.group(1) if id_match else f"UNKNOWN_{int(time.time())}"
             
             return {
                 "tipo": "MONEDERO_TARJETA",
@@ -229,106 +249,33 @@ def extraer_tipo_pago_y_datos(mensaje, remitente):
                 "currency": "cup"
             }
     
+    print(f"❌ No se pudo identificar tipo de pago en mensaje")
     return None
-
-def ping_webhook_service(webhook_url):
-    """Hace ping a un servicio webhook para mantenerlo activo"""
-    if not webhook_url:
-        return False
-    
-    try:
-        keepalive_url = webhook_url.replace("/payment-notification", "/keepalive")
-        response = requests.get(keepalive_url, timeout=10)
-        print(f"✅ Ping a {keepalive_url}: {response.status_code}")
-        return True
-    except Exception as e:
-        print(f"⚠️ No se pudo hacer ping a {webhook_url}: {e}")
-        return False
-
-def self_ping():
-    """Hace ping a sí mismo para mantenerse activo"""
-    base_url = os.getenv("PYTHON_WEBHOOK_URL")
-    if not base_url:
-        return False
-    
-    try:
-        response = requests.get(f"{base_url}/keepalive", timeout=10)
-        print(f"✅ Self-ping exitoso: {response.status_code}")
-        return True
-    except Exception as e:
-        print(f"⚠️ Self-ping falló: {e}")
-        return False
-
-def keep_alive_job():
-    """Tarea programada para mantener servicios activos"""
-    print(f"\n🔄 Ejecutando Keep Alive - {datetime.now().strftime('%H:%M:%S')}")
-    
-    # Ping a todos los webhooks configurados
-    webhooks_ok = []
-    for tarjeta, config in TARJETAS_WEBHOOKS.items():
-        webhook_url = config.get("webhook")
-        if webhook_url:
-            ok = ping_webhook_service(webhook_url)
-            webhooks_ok.append(ok)
-            if ok:
-                print(f"✅ Webhook de {tarjeta[:4]}...{tarjeta[-4:]}: ACTIVO")
-            else:
-                print(f"⚠️ Webhook de {tarjeta[:4]}...{tarjeta[-4:]}: INACTIVO")
-    
-    # Ping por defecto si existe
-    webhook_default = os.getenv("WEBHOOK_DEFAULT")
-    if webhook_default:
-        ok = ping_webhook_service(webhook_default)
-        webhooks_ok.append(ok)
-        print(f"✅ Webhook por defecto: {'ACTIVO' if ok else 'INACTIVO'}")
-    
-    # Self-ping
-    self_ok = self_ping()
-    
-    # Resumen
-    todos_ok = all(webhooks_ok) if webhooks_ok else True
-    if todos_ok and self_ok:
-        print("✅ Todos los servicios responden correctamente")
-    else:
-        print("⚠️ Algunos servicios tienen problemas")
-    
-    print("-" * 50)
-
-def start_keep_alive_scheduler():
-    """Inicia el programador de keep alive"""
-    print("🚀 Iniciando Keep Alive Scheduler...")
-    
-    schedule.every(4).minutes.do(keep_alive_job)
-    keep_alive_job()
-    
-    def run_scheduler():
-        while True:
-            schedule.run_pending()
-            time.sleep(60)
-    
-    scheduler_thread = threading.Thread(target=run_scheduler, daemon=True)
-    scheduler_thread.start()
-    print("✅ Keep Alive Scheduler iniciado (cada 4 minutos)")
 
 @app.route('/webhook', methods=['POST'])
 def gateway():
     try:
         data = request.get_json()
         
-        print(f"--- NUEVO MENSAJE RECIBIDO ---")
-        print(f"Hora: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        print(json.dumps(data, indent=2))
+        print(f"\n{'='*60}")
+        print(f"📱 NUEVO SMS RECIBIDO")
+        print(f"🕐 Hora: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"📨 Datos crudos recibidos:")
+        print(json.dumps(data, indent=2, ensure_ascii=False))
+        print(f"{'='*60}")
         
         remitente = data.get("dirección", "")
         mensaje = data.get("text", "")
         
+        # Filtrar solo mensajes de PAGO
         if "PAGO" not in remitente.upper():
-            print(f"❌ Mensaje ignorado de: {remitente}")
+            print(f"❌ Mensaje ignorado (no es de PAGO): {remitente}")
             return "OK", 200
         
         print(f"✅ ¡PAGO DETECTADO! De: {remitente}")
+        print(f"📝 Mensaje: {mensaje}")
         
-        datos_pago = extraer_tipo_pago_y_datos(mensaje, remitente)
+        datos_pago = extraer_tipo_pago_y_datos(mensaje)
         
         if not datos_pago:
             print("❌ Tipo de pago no reconocido")
@@ -338,129 +285,74 @@ def gateway():
             print("❌ Monto inválido")
             return "OK", 200
         
-        if not datos_pago["trans_id"]:
-            print("❌ ID de transacción no encontrado")
-            return "OK", 200
-        
-        print(f"📊 Datos extraídos: {datos_pago}")
-        
-        user_id = None
-        if datos_pago["telefono"]:
-            response = requests.get(
-                f"{SUPABASE_URL}/rest/v1/users?phone_number=eq.{datos_pago['telefono']}",
-                headers=supabase_headers
-            )
-            
-            if response.status_code == 200:
-                users = response.json()
-                if users:
-                    user_id = users[0]['telegram_id']
-                    print(f"✅ Usuario encontrado: {user_id}")
-                else:
-                    print(f"⚠️ Usuario no encontrado con teléfono: {datos_pago['telefono']}")
-            else:
-                print(f"❌ Error buscando usuario: {response.text}")
+        print(f"📊 Datos extraídos del SMS:")
+        print(f"   Tipo: {datos_pago['tipo']}")
+        print(f"   Teléfono: {datos_pago['telefono']}")
+        print(f"   Monto: {datos_pago['monto']} {datos_pago['currency']}")
+        print(f"   ID Transacción: {datos_pago['trans_id']}")
+        print(f"   Tarjeta Destino: {datos_pago['tarjeta_destino']}")
         
         # Determinar tarjeta destino para el webhook
         tarjeta_destino = datos_pago.get("tarjeta_destino", MI_TARJETA_DEFAULT)
         
-        if datos_pago["tipo"] == "TARJETA_MONEDERO":
-            payload = {
-                "tx_id": datos_pago["trans_id"],
-                "amount": datos_pago["monto"],
-                "raw_message": mensaje,
-                "claimed": False,
-                "currency": datos_pago["currency"],
-                "phone": datos_pago["telefono"],
-                "tipo_pago": datos_pago["tipo"],
-                "tarjeta_destino": tarjeta_destino
-            }
-            
-            response = requests.post(
-                f"{SUPABASE_URL}/rest/v1/pending_sms_payments",
-                headers=supabase_headers,
-                json=payload
-            )
-            
-            if response.status_code == 201:
-                print(f"✅ Pago pendiente guardado: {datos_pago['trans_id']}")
-                
-                admin_payload = {
-                    "type": "PENDING_PAYMENT",
-                    "tx_id": datos_pago["trans_id"],
-                    "amount": datos_pago["monto"],
-                    "currency": datos_pago["currency"],
-                    "tipo_pago": datos_pago["tipo"],
-                    "telefono": datos_pago["telefono"],
-                    "tarjeta_destino": tarjeta_destino,
-                    "message": f"📥 Pago pendiente de {datos_pago['monto']} {datos_pago['currency']}\nTipo: {datos_pago['tipo']}\nID: {datos_pago['trans_id']}\nTarjeta: {tarjeta_destino}"
-                }
-                
-                send_to_webhook(admin_payload, tarjeta_destino)
-            else:
-                print(f"❌ Error guardando pago pendiente: {response.text}")
+        # Crear payload para el bot - SOLO DATOS DEL SMS, NO user_id
+        payload = {
+            "type": "SMS_PAYMENT_DETECTED",
+            "amount": datos_pago["monto"],
+            "currency": datos_pago["currency"],
+            "tx_id": datos_pago["trans_id"],
+            "tipo_pago": datos_pago["tipo"],
+            "phone": datos_pago["telefono"],  # Solo el teléfono
+            "tarjeta_destino": tarjeta_destino,
+            "raw_message": mensaje,
+            "timestamp": datetime.now().isoformat()
+        }
         
-        elif user_id:
-            payload = {
-                "type": "AUTO_PAYMENT",
-                "user_id": user_id,
-                "amount": datos_pago["monto"],
-                "currency": datos_pago["currency"],
-                "tx_id": datos_pago["trans_id"],
-                "tipo_pago": datos_pago["tipo"],
-                "phone": datos_pago["telefono"],
-                "tarjeta_destino": tarjeta_destino,
-                "message": mensaje
-            }
+        # Enviar al webhook correspondiente
+        print(f"\n🚀 Enviando datos al bot...")
+        success = send_to_webhook(payload, tarjeta_destino)
+        
+        if success:
+            print(f"✅ Datos enviados exitosamente al bot")
+        else:
+            print(f"❌ Error enviando datos al bot")
             
-            if not send_to_webhook(payload, tarjeta_destino):
-                print("❌ Error enviando al webhook, guardando reintento...")
+            # Guardar en una tabla de fallos para reintento posterior
+            try:
+                import requests as req
+                DB_URL = os.getenv("DB_URL")
+                DB_KEY = os.getenv("DB_KEY")
                 
-                retry_payload = {
-                    "user_id": user_id,
-                    "amount": datos_pago["monto"],
-                    "currency": datos_pago["currency"],
-                    "tx_id": datos_pago["trans_id"],
-                    "tarjeta_destino": tarjeta_destino,
-                    "status": "pending",
-                    "retry_count": 0,
-                    "tipo_pago": datos_pago["tipo"]
-                }
-                
-                try:
-                    requests.post(
-                        f"{SUPABASE_URL}/rest/v1/payment_retries",
-                        headers=supabase_headers,
+                if DB_URL and DB_KEY:
+                    headers = {
+                        "apikey": DB_KEY,
+                        "Authorization": f"Bearer {DB_KEY}",
+                        "Content-Type": "application/json"
+                    }
+                    
+                    retry_payload = {
+                        "phone": datos_pago["telefono"],
+                        "amount": datos_pago["monto"],
+                        "currency": datos_pago["currency"],
+                        "tx_id": datos_pago["trans_id"],
+                        "tipo_pago": datos_pago["tipo"],
+                        "tarjeta_destino": tarjeta_destino,
+                        "raw_message": mensaje,
+                        "status": "failed_to_send",
+                        "retry_count": 0,
+                        "created_at": datetime.now().isoformat()
+                    }
+                    
+                    req.post(
+                        f"{DB_URL}/rest/v1/failed_payments",
+                        headers=headers,
                         json=retry_payload
                     )
-                except Exception as db_error:
-                    print(f"❌ Error guardando reintento: {db_error}")
-        
-        else:
-            print(f"⚠️ Pago sin usuario identificable. Tipo: {datos_pago['tipo']}, Monto: {datos_pago['monto']}")
-            
-            unknown_payload = {
-                "tx_id": datos_pago["trans_id"],
-                "amount": datos_pago["monto"],
-                "currency": datos_pago["currency"],
-                "raw_message": mensaje,
-                "phone": datos_pago["telefono"],
-                "tarjeta_destino": tarjeta_destino,
-                "type": datos_pago["tipo"]
-            }
-            
-            try:
-                response = requests.post(
-                    f"{SUPABASE_URL}/rest/v1/unknown_payments",
-                    headers=supabase_headers,
-                    json=unknown_payload
-                )
-                
-                if response.status_code == 201:
-                    print(f"✅ Pago no identificado guardado: {datos_pago['trans_id']}")
+                    print(f"📝 Pago fallido guardado para reintento")
             except Exception as db_error:
-                print(f"❌ Error guardando pago no identificado: {db_error}")
+                print(f"⚠️ Error guardando pago fallido: {db_error}")
         
+        print(f"{'='*60}\n")
         return "OK", 200
         
     except Exception as e:
@@ -469,47 +361,55 @@ def gateway():
         traceback.print_exc()
         return "ERROR", 500
 
-@app.route('/status', methods=['GET'])
-def status():
+@app.route('/keepalive', methods=['GET'])
+def keep_alive():
     return jsonify({
         "status": "online",
-        "service": "transfermovil-webhook",
+        "service": "transfermovil-parser",
         "time": datetime.now().isoformat(),
-        "tarjetas_configuradas": len(TARJETAS_WEBHOOKS),
-        "tarjeta_default": MI_TARJETA_DEFAULT,
-        "webhook_default": bool(os.getenv("WEBHOOK_DEFAULT"))
+        "tarjetas_configuradas": list(TARJETAS_WEBHOOKS.keys())
     }), 200
 
-@app.route('/test-webhook', methods=['POST'])
-def test_webhook():
-    try:
-        test_data = {
-            "dirección": "PAGOxMOVIL",
-            "text": "El titular del teléfono 5351239793 le ha realizado una transferencia a la cuenta 9227069995328054 de 1500.00 CUP. Nro. Transaccion T2602600000MT. Fecha: 26/1/2026."
+@app.route('/test', methods=['GET'])
+def test():
+    """Endpoint para probar el parser manualmente"""
+    test_messages = [
+        "El titular del telefono 5359190241 le ha realizado una transferencia a la cuenta: 9227069995328054 de 1000.00 CUP. Nro. Transaccion TMW164182151",
+        "MONEDERO MITRANSFER: RECARGADO CON: 1500.00 CUP. TRANSACCION: TMX123456789. FECHA: 06/02/2026.",
+        "El titular del telefono 5351234567 le ha realizado una transferencia al monedero mitransfer de 500.00 CUP. Nro. Transaccion TMW987654321"
+    ]
+    
+    results = []
+    for msg in test_messages:
+        result = extraer_tipo_pago_y_datos(msg)
+        results.append({
+            "message": msg,
+            "result": result
+        })
+    
+    return jsonify({
+        "test": "success",
+        "results": results,
+        "config": {
+            "tarjetas": list(TARJETAS_WEBHOOKS.keys()),
+            "default": MI_TARJETA_DEFAULT
         }
-        
-        print("🔧 Probando webhook con datos de prueba...")
-        result = extraer_tipo_pago_y_datos(test_data["text"], test_data["dirección"])
-        
-        return jsonify({
-            "test": "success",
-            "data": test_data,
-            "result": result,
-            "tarjetas_configuradas": list(TARJETAS_WEBHOOKS.keys())
-        }), 200
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    }), 200
 
 if __name__ == "__main__":
-    start_keep_alive_scheduler()
-    
     port = int(os.getenv("PORT", 5000))
     debug = os.getenv("DEBUG", "False").lower() == "true"
     
-    print(f"🌐 Servicio Python Webhook iniciando en puerto {port}")
-    print(f"🔧 Debug mode: {debug}")
+    print(f"\n{'='*60}")
+    print(f"🌐 PARSER PYTHON - Transfermóvil SMS Parser")
+    print(f"🔧 Puerto: {port}")
+    print(f"🐛 Debug: {debug}")
     print(f"💳 Tarjetas configuradas: {len(TARJETAS_WEBHOOKS)}")
-    for tarjeta, config in TARJETAS_WEBHOOKS.items():
-        print(f"   - {tarjeta[:4]}...{tarjeta[-4:]} -> {config.get('webhook', 'Sin webhook')}")
     
-    app.run(host='0.0.0.0', port=port, debug=debug)
+    for tarjeta, config in TARJETAS_WEBHOOKS.items():
+        webhook = config.get('webhook', 'No configurado')
+        print(f"   - {tarjeta[:4]}...{tarjeta[-4:]} -> {webhook}")
+    
+    print(f"{'='*60}\n")
+    
+    app.run(host='0.0.0.0', port=port, debug=debug, threaded=True)
