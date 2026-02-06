@@ -55,7 +55,7 @@ class WalletManager {
         const user = this.userData.user;
 
         // Actualizar información principal
-        document.getElementById('walletId').textContent = `ID: CROM-${user.id}`;
+        document.getElementById('walletId').textContent = `ID: CROM-${user.telegram_id || user.id}`;
         document.getElementById('walletTotalBalance').textContent = this.formatTotalBalance(user);
         
         // Actualizar balances por moneda
@@ -82,11 +82,31 @@ class WalletManager {
         const user = this.userData?.user;
         if (!user) return;
 
-        document.getElementById('profileTelegramId').textContent = `@${user.username || user.id}`;
-        document.getElementById('profilePhone').textContent = user.phone_number ? `+53 ${user.phone_number}` : 'No vinculado';
-        document.getElementById('profileUsdtWallet').innerHTML = user.usdt_wallet ? 
-            `<small>${this.truncateAddress(user.usdt_wallet)}</small>` : 
-            '<small>No configurada</small>';
+        // Cargar datos desde la base de datos
+        document.getElementById('profileTelegramId').textContent = user.telegram_id ? `ID: ${user.telegram_id}` : `ID: ${user.id}`;
+        
+        // Formatear teléfono correctamente
+        if (user.phone_number) {
+            // Asegurarse de que el teléfono tenga formato correcto
+            let phoneDisplay = user.phone_number;
+            if (phoneDisplay.startsWith('53') && phoneDisplay.length === 10) {
+                phoneDisplay = `+53 ${phoneDisplay.substring(2)}`;
+            }
+            document.getElementById('profilePhone').textContent = phoneDisplay;
+        } else {
+            document.getElementById('profilePhone').textContent = 'No vinculado';
+        }
+        
+        // Formatear wallet USDT
+        if (user.usdt_wallet) {
+            document.getElementById('profileUsdtWallet').innerHTML = 
+                `<code style="font-size: 0.8em; background: rgba(255,255,255,0.1); padding: 2px 5px; border-radius: 3px;">
+                    ${this.truncateAddress(user.usdt_wallet)}
+                </code>`;
+        } else {
+            document.getElementById('profileUsdtWallet').innerHTML = 
+                '<small>No configurada</small>';
+        }
     }
 
     updateSecurityStatus() {
@@ -133,7 +153,7 @@ class WalletManager {
             const data = {
                 fecha: new Date().toISOString(),
                 usuario: {
-                    id: user.id,
+                    id: user.telegram_id || user.id,
                     nombre: user.first_name,
                     usuario: user.username,
                     telefono: user.phone_number,
@@ -162,7 +182,7 @@ class WalletManager {
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `cromwell_wallet_${user.id}_${Date.now()}.json`;
+            a.download = `cromwell_wallet_${user.telegram_id || user.id}_${Date.now()}.json`;
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
@@ -266,13 +286,19 @@ class WalletManager {
             if (response.ok) {
                 this.showNotification('Perfil actualizado exitosamente', 'success');
                 this.closeModal('profileModal');
-                await this.refreshWallet();
+                await this.refreshProfile();
             } else {
                 throw new Error(data.error || 'Error actualizando perfil');
             }
         } catch (error) {
             this.showError('Error guardando perfil', error.message);
         }
+    }
+
+    async refreshProfile() {
+        await this.loadWalletData();
+        this.updateProfileInfo();
+        this.updateSecurityStatus();
     }
 
     handleHelpLink(e) {
@@ -319,14 +345,14 @@ class WalletManager {
         const symbol = symbols[currency] || currency.toUpperCase();
         
         if (currency === 'usdt') {
-            return `${parseFloat(amount).toFixed(2)} ${symbol}`;
+            return `${parseFloat(amount || 0).toFixed(2)} ${symbol}`;
         }
         
-        return `$${parseFloat(amount).toFixed(2)} ${symbol}`;
+        return `$${parseFloat(amount || 0).toFixed(2)} ${symbol}`;
     }
 
     formatNumber(num, decimals = 2) {
-        return parseFloat(num).toFixed(decimals);
+        return parseFloat(num || 0).toFixed(decimals);
     }
 
     formatDate(dateString) {
@@ -368,7 +394,12 @@ class WalletManager {
     }
 
     showTerms() {
-        window.showTermsModal?.();
+        // Llamar a la función global de términos
+        if (window.showTermsModal) {
+            window.showTermsModal();
+        } else {
+            this.showModal('termsModal');
+        }
     }
 
     showFAQ() {
