@@ -28,6 +28,9 @@ class DepositManager {
         // Inicializar event listeners
         this.initEventListeners();
         
+        // Inicializar botones de copiar
+        this.initCopyButtons();
+        
         // Configurar UI inicial
         this.updateMethodInfo();
         this.updateStepUI();
@@ -466,6 +469,38 @@ class DepositManager {
         console.log('✅ Event listeners de depósito configurados');
     }
 
+    initCopyButtons() {
+        // Este método se llamará después de crear las instrucciones
+        document.addEventListener('click', (e) => {
+            if (e.target.closest('.copy-target-btn')) {
+                this.copyToClipboard(e);
+            }
+        });
+    }
+
+    copyToClipboard(e) {
+        const button = e.target.closest('.copy-target-btn');
+        const text = button.getAttribute('data-copy');
+        
+        navigator.clipboard.writeText(text).then(() => {
+            // Mostrar feedback visual
+            const originalHTML = button.innerHTML;
+            button.innerHTML = '<i class="fas fa-check"></i> Copiado!';
+            button.style.background = 'var(--success-color)';
+            
+            this.showNotification('Copiado al portapapeles', 'success');
+            
+            // Restaurar después de 2 segundos
+            setTimeout(() => {
+                button.innerHTML = originalHTML;
+                button.style.background = '';
+            }, 2000);
+        }).catch(err => {
+            console.error('Error al copiar:', err);
+            this.showError('Error al copiar', 'Intenta copiar manualmente');
+        });
+    }
+
     setupStepNavigation() {
         // Next step
         const nextStepBtn = document.getElementById('nextStepBtn');
@@ -539,6 +574,27 @@ class DepositManager {
         
         this.selectedMethod = method;
         this.updateMethodInfo();
+        
+        // Resetear el monto al mínimo del método seleccionado
+        this.resetAmountToMinimum();
+    }
+
+    resetAmountToMinimum() {
+        const methods = {
+            cup: { min: this.paymentInfo?.minimo_cup || 1000 },
+            saldo: { min: this.paymentInfo?.minimo_saldo || 500 },
+            usdt: { min: this.paymentInfo?.minimo_usdt || 10 }
+        };
+
+        const method = methods[this.selectedMethod];
+        if (method) {
+            const amountInput = document.getElementById('depositAmountInput');
+            if (amountInput) {
+                amountInput.value = method.min;
+                this.depositAmount = method.min;
+                this.updateAmountPreview();
+            }
+        }
     }
 
     updateMethodInfo() {
@@ -547,19 +603,22 @@ class DepositManager {
                 min: this.paymentInfo?.minimo_cup || 1000, 
                 max: this.paymentInfo?.maximo_cup || 50000, 
                 code: 'CUP', 
-                label: 'CUP (Tarjeta)' 
+                label: 'CUP (Tarjeta)',
+                target: this.paymentInfo?.cup_target || 'NO CONFIGURADO'
             },
             saldo: { 
                 min: this.paymentInfo?.minimo_saldo || 500, 
                 max: 10000, 
                 code: 'SALDO', 
-                label: 'Saldo Móvil' 
+                label: 'Saldo Móvil',
+                target: this.paymentInfo?.saldo_target || 'NO CONFIGURADO'
             },
             usdt: { 
                 min: this.paymentInfo?.minimo_usdt || 10, 
                 max: 1000, 
                 code: 'USDT', 
-                label: 'USDT BEP20' 
+                label: 'USDT BEP20',
+                target: this.paymentInfo?.usdt_target || 'NO CONFIGURADO'
             }
         };
 
@@ -576,19 +635,20 @@ class DepositManager {
         this.updateElement('maxAmount', this.formatCurrency(method.max, this.selectedMethod));
         this.updateElement('currencyCode', method.code);
         this.updateElement('selectedMethodName', method.label);
+        
+        // Actualizar el destino mostrado en los detalles
+        const targetDisplay = document.getElementById(`${this.selectedMethod}TargetDisplay`);
+        if (targetDisplay) {
+            targetDisplay.textContent = method.target;
+        }
 
         // Actualizar input de monto
         const amountInput = document.getElementById('depositAmountInput');
         if (amountInput) {
             amountInput.min = method.min;
             amountInput.max = method.max;
+            amountInput.value = method.min; // Establecer al mínimo
             amountInput.placeholder = `Mínimo: ${this.formatCurrency(method.min, this.selectedMethod)}`;
-            
-            // Establecer valor mínimo por defecto
-            if (!amountInput.value || parseFloat(amountInput.value) < method.min) {
-                amountInput.value = method.min;
-                this.depositAmount = method.min;
-            }
         }
 
         // Mostrar/ocultar sección de wallet USDT
@@ -819,6 +879,7 @@ class DepositManager {
         const container = document.getElementById('confirmationInstructions');
         if (!container) return;
 
+        const target = this.getPaymentTarget();
         let instructions = '';
         
         switch(this.selectedMethod) {
@@ -829,7 +890,14 @@ class DepositManager {
                         <li>Ve a <strong>Transfermóvil</strong></li>
                         <li>Activa <strong>"Mostrar número al destinatario"</strong></li>
                         <li>Transfiere <strong>EXACTAMENTE ${this.formatCurrency(this.depositAmount, 'cup')}</strong></li>
-                        <li>A la tarjeta: <code>${this.getPaymentTarget()}</code></li>
+                        <li>A la tarjeta: 
+                            <div style="display: flex; align-items: center; gap: 10px; margin: 5px 0;">
+                                <code style="flex: 1;">${target}</code>
+                                <button class="copy-target-btn btn-small" data-copy="${target}">
+                                    <i class="fas fa-copy"></i> Copiar
+                                </button>
+                            </div>
+                        </li>
                         <li>Usa el mismo teléfono vinculado a tu cuenta</li>
                     </ol>
                 `;
@@ -840,7 +908,14 @@ class DepositManager {
                     <h4><i class="fas fa-list-ol"></i> Instrucciones para pagar:</h4>
                     <ol>
                         <li>Ve a <strong>Transfermóvil</strong></li>
-                        <li>Envía saldo a: <code>${this.getPaymentTarget()}</code></li>
+                        <li>Envía saldo a: 
+                            <div style="display: flex; align-items: center; gap: 10px; margin: 5px 0;">
+                                <code style="flex: 1;">${target}</code>
+                                <button class="copy-target-btn btn-small" data-copy="${target}">
+                                    <i class="fas fa-copy"></i> Copiar
+                                </button>
+                            </div>
+                        </li>
                         <li>Monto exacto: <strong>${this.formatCurrency(this.depositAmount, 'saldo')}</strong></li>
                         <li><strong>Toma captura de pantalla</strong> de la transferencia</li>
                         <li>No esperes al SMS de confirmación de ETECSA</li>
@@ -855,7 +930,14 @@ class DepositManager {
                     <ol>
                         <li>Ve a tu wallet <strong>SafePal, Trust Wallet o similar</strong></li>
                         <li>Envía <strong>USDT (BEP20)</strong> a:</li>
-                        <li><code>${this.getPaymentTarget()}</code></li>
+                        <li>
+                            <div style="display: flex; align-items: center; gap: 10px; margin: 5px 0;">
+                                <code style="flex: 1;">${target}</code>
+                                <button class="copy-target-btn btn-small" data-copy="${target}">
+                                    <i class="fas fa-copy"></i> Copiar
+                                </button>
+                            </div>
+                        </li>
                         <li>Monto exacto: <strong>${this.formatCurrency(this.depositAmount, 'usdt')}</strong></li>
                         <li>Desde wallet: <code>${this.truncateAddress(wallet)}</code></li>
                         <li><strong>SOLO red BEP20 (Binance Smart Chain)</strong></li>
@@ -952,13 +1034,14 @@ class DepositManager {
         const container = document.getElementById('pendingInstructions');
         if (!container) return;
 
+        const target = this.getPaymentTarget();
         let instructions = '';
         
         switch(this.selectedMethod) {
             case 'cup':
                 instructions = `
                     <p><strong>Realiza la transferencia ahora:</strong></p>
-                    <p>Tarjeta: <code>${this.getPaymentTarget()}</code></p>
+                    <p>Tarjeta: <code>${target}</code></p>
                     <p>Monto: <strong>${this.formatCurrency(this.depositAmount, 'cup')}</strong></p>
                     <p class="warning"><i class="fas fa-exclamation-triangle"></i> No olvides activar "Mostrar número al destinatario"</p>
                 `;
@@ -967,7 +1050,7 @@ class DepositManager {
             case 'saldo':
                 instructions = `
                     <p><strong>Envía el saldo ahora:</strong></p>
-                    <p>Número: <code>${this.getPaymentTarget()}</code></p>
+                    <p>Número: <code>${target}</code></p>
                     <p>Monto: <strong>${this.formatCurrency(this.depositAmount, 'saldo')}</strong></p>
                     <p class="warning"><i class="fas fa-exclamation-triangle"></i> ¡Toma captura de pantalla!</p>
                 `;
@@ -976,7 +1059,7 @@ class DepositManager {
             case 'usdt':
                 instructions = `
                     <p><strong>Envía los USDT ahora:</strong></p>
-                    <p>Dirección: <code>${this.getPaymentTarget()}</code></p>
+                    <p>Dirección: <code>${target}</code></p>
                     <p>Monto: <strong>${this.formatCurrency(this.depositAmount, 'usdt')}</strong></p>
                     <p>Red: <strong>BEP20 (Binance Smart Chain)</strong></p>
                     <p class="info"><i class="fas fa-info-circle"></i> Usa el hash para verificar manualmente</p>
@@ -1032,12 +1115,28 @@ class DepositManager {
         try {
             this.showLoading('Verificando pago...');
 
-            // Simular verificación (en producción, esto llamaría a una API real)
-            await new Promise(resolve => setTimeout(resolve, 2000));
-            
-            // Por ahora, solo mostramos un mensaje
-            this.showNotification('El sistema aún está verificando tu pago. Intenta nuevamente en unos minutos.', 'info');
-            
+            // Llamar al endpoint real
+            const response = await fetch(`/api/check-payment/${this.orderData.id}`, {
+                credentials: 'include'
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                if (data.status === 'completed') {
+                    this.showSuccess('¡Pago completado!', 'El depósito ha sido acreditado a tu wallet');
+                    // Mostrar pantalla de completado
+                    this.showCompletedOrder(data);
+                    this.currentStep = 5;
+                    this.updateStepUI();
+                } else if (data.status === 'pending') {
+                    this.showInfo('Pago aún pendiente', 'El sistema sigue verificando tu pago. Intenta nuevamente en unos minutos.');
+                } else {
+                    this.showError('Estado desconocido', 'Contacta al soporte para más información');
+                }
+            } else {
+                throw new Error(data.error || 'Error verificando pago');
+            }
         } catch (error) {
             console.error('❌ Error verificando pago:', error);
             this.showError('Error verificando pago', error.message);
@@ -1061,11 +1160,37 @@ class DepositManager {
         try {
             this.showLoading('Verificando transacción USDT...');
 
-            // Simular verificación (en producción, esto llamaría a una API real)
-            await new Promise(resolve => setTimeout(resolve, 3000));
-            
-            this.showSuccess('Transacción recibida', 'Tu transacción está siendo procesada. El depósito se acreditará en breve.');
-            
+            // Llamar al endpoint real
+            const response = await fetch('/api/verify-usdt', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                credentials: 'include',
+                body: JSON.stringify({
+                    txHash: txHash,
+                    orderId: this.orderData.id
+                })
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                if (data.success) {
+                    this.showSuccess('Transacción verificada', 'Tu transacción está siendo procesada. El depósito se acreditará en breve.');
+                    
+                    // Actualizar UI
+                    const verifyBtn = document.getElementById('verifyUsdtTxBtn');
+                    if (verifyBtn) {
+                        verifyBtn.disabled = true;
+                        verifyBtn.innerHTML = '<i class="fas fa-check"></i> Verificado';
+                    }
+                } else {
+                    throw new Error(data.error || 'Error verificando transacción');
+                }
+            } else {
+                throw new Error(data.error || 'Error en la verificación');
+            }
         } catch (error) {
             console.error('❌ Error verificando USDT:', error);
             this.showError('Error verificando USDT', error.message);
@@ -1087,12 +1212,20 @@ class DepositManager {
         try {
             this.showLoading('Cancelando orden...');
 
-            // Simular cancelación (en producción, esto llamaría a una API real)
-            await new Promise(resolve => setTimeout(resolve, 1500));
-            
-            this.showNotification('Orden cancelada exitosamente', 'success');
-            this.resetDeposit();
-            
+            // Llamar al endpoint real
+            const response = await fetch(`/api/cancel-deposit/${this.orderData.id}`, {
+                method: 'POST',
+                credentials: 'include'
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                this.showNotification('Orden cancelada exitosamente', 'success');
+                this.resetDeposit();
+            } else {
+                throw new Error(data.error || 'Error cancelando orden');
+            }
         } catch (error) {
             console.error('❌ Error cancelando orden:', error);
             this.showError('Error cancelando orden', error.message);
