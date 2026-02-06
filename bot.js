@@ -2754,62 +2754,119 @@ app.post('/api/manual-verification', requireAuth, async (req, res) => {
 });
 
 // 22. Ruta para actualizar perfil
+// Reemplazar la ruta actual en bot.js (línea ~1563)
 app.post('/api/update-profile', requireAuth, async (req, res) => {
-  try {
-    const { first_name, phone_number, usdt_wallet, current_password } = req.body;
-    const userId = req.session.userId;
-    
-    const user = await getUser(userId);
-    if (!user) {
-      return res.status(404).json({ error: 'Usuario no encontrado' });
+    try {
+        const { first_name, phone_number, usdt_wallet, current_password } = req.body;
+        const userId = req.session.userId;
+        
+        const user = await getUser(userId);
+        if (!user) {
+            return res.status(404).json({ error: 'Usuario no encontrado' });
+        }
+        
+        // Verificar contraseña actual si se está cambiando información sensible
+        if ((phone_number || usdt_wallet) && !current_password) {
+            return res.status(400).json({ error: 'Se requiere contraseña actual para cambiar información sensible' });
+        }
+        
+        if (current_password) {
+            // Verificar si tiene contraseña configurada
+            if (!user.web_password) {
+                return res.status(400).json({ error: 'No tienes contraseña configurada' });
+            }
+            
+            const validPassword = await bcrypt.compare(current_password, user.web_password);
+            if (!validPassword) {
+                return res.status(401).json({ error: 'Contraseña actual incorrecta' });
+            }
+        }
+        
+        const updates = {};
+        if (first_name) updates.first_name = first_name;
+        
+        if (phone_number) {
+            // Normalizar teléfono
+            const cleanPhone = phone_number.replace(/[^\d]/g, '');
+            
+            // Validar formato
+            if (!cleanPhone.startsWith('53')) {
+                // Si tiene 8 dígitos, agregar 53
+                if (cleanPhone.length === 8) {
+                    updates.phone_number = '53' + cleanPhone;
+                } else if (cleanPhone.length === 9 && cleanPhone.startsWith('5')) {
+                    updates.phone_number = '53' + cleanPhone;
+                } else if (cleanPhone.length === 10 && cleanPhone.startsWith('53')) {
+                    updates.phone_number = cleanPhone;
+                } else {
+                    return res.status(400).json({ error: 'Formato de teléfono inválido' });
+                }
+            } else if (cleanPhone.length === 10) {
+                updates.phone_number = cleanPhone;
+            } else {
+                return res.status(400).json({ error: 'El teléfono debe tener 10 dígitos (53 + 8 dígitos)' });
+            }
+            
+            // Verificar si el teléfono ya está en uso por otro usuario
+            const { data: existingUser } = await supabase
+                .from('users')
+                .select('telegram_id')
+                .eq('phone_number', updates.phone_number)
+                .neq('telegram_id', userId)
+                .single();
+            
+            if (existingUser) {
+                return res.status(400).json({ error: 'Este teléfono ya está vinculado a otra cuenta' });
+            }
+        }
+        
+        if (usdt_wallet) {
+            if (!usdt_wallet.startsWith('0x') || usdt_wallet.length !== 42) {
+                return res.status(400).json({ error: 'Wallet USDT inválida. Debe comenzar con 0x y tener 42 caracteres' });
+            }
+            updates.usdt_wallet = usdt_wallet;
+        }
+        
+        // Solo actualizar si hay cambios
+        if (Object.keys(updates).length > 0) {
+            const { error } = await supabase
+                .from('users')
+                .update(updates)
+                .eq('telegram_id', userId);
+            
+            if (error) {
+                throw error;
+            }
+            
+            // Notificar al bot de Telegram sobre el cambio
+            try {
+                if (ADMIN_CHAT_ID) {
+                    const mensajeAdmin = `📱 *PERFIL ACTUALIZADO*\n\n` +
+                        `👤 Usuario: ${updates.first_name || user.first_name}\n` +
+                        `🆔 ID: ${userId}\n` +
+                        `${phone_number ? `📞 Teléfono: ${updates.phone_number}\n` : ''}` +
+                        `${usdt_wallet ? `👛 Wallet: ${updates.usdt_wallet}\n` : ''}` +
+                        `🕐 Fecha: ${new Date().toLocaleString()}`;
+                    
+                    await bot.sendMessage(ADMIN_CHAT_ID, mensajeAdmin, { parse_mode: 'Markdown' });
+                }
+            } catch (notifError) {
+                console.error('Error notificando cambio:', notifError);
+            }
+            
+            res.json({ 
+                success: true, 
+                message: 'Perfil actualizado exitosamente',
+                updates: updates 
+            });
+        } else {
+            res.json({ success: true, message: 'Sin cambios' });
+        }
+        
+    } catch (error) {
+        console.error('Error actualizando perfil:', error);
+        res.status(500).json({ error: 'Error interno del servidor' });
     }
-    
-    // Verificar contraseña actual si se está cambiando información sensible
-    if ((phone_number || usdt_wallet) && !current_password) {
-      return res.status(400).json({ error: 'Se requiere contraseña actual para cambiar información sensible' });
-    }
-    
-    if (current_password && user.web_password) {
-      const validPassword = await bcrypt.compare(current_password, user.web_password);
-      if (!validPassword) {
-        return res.status(401).json({ error: 'Contraseña actual incorrecta' });
-      }
-    }
-    
-    const updates = {};
-    if (first_name) updates.first_name = first_name;
-    if (phone_number) {
-      // Validar formato de teléfono
-      const cleanPhone = phone_number.replace(/[^\d]/g, '');
-      if (!cleanPhone.startsWith('53') || cleanPhone.length !== 10) {
-        return res.status(400).json({ error: 'Formato de teléfono inválido. Debe ser 535XXXXXXX' });
-      }
-      updates.phone_number = cleanPhone;
-    }
-    if (usdt_wallet) {
-      if (!usdt_wallet.startsWith('0x') || usdt_wallet.length !== 42) {
-        return res.status(400).json({ error: 'Wallet USDT inválida. Debe comenzar con 0x y tener 42 caracteres' });
-      }
-      updates.usdt_wallet = usdt_wallet;
-    }
-    
-    const { error } = await supabase
-      .from('users')
-      .update(updates)
-      .eq('telegram_id', userId);
-    
-    if (error) {
-      throw error;
-    }
-    
-    res.json({ 
-      success: true, 
-      message: 'Perfil actualizado exitosamente' 
-    });
-  } catch (error) {
-    console.error('Error actualizando perfil:', error);
-    res.status(500).json({ error: 'Error interno del servidor' });
-  }
 });
 
 // 23. Ruta para información de pago simplificada
