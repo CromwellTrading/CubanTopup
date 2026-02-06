@@ -93,17 +93,6 @@ app.use(session({
     }
 }));
 
-// Middleware de depuración para sesiones
-app.use((req, res, next) => {
-    console.log('🔍 Información de sesión:', {
-        sessionId: req.sessionID,
-        userId: req.session.userId,
-        authenticated: req.session.authenticated,
-        path: req.path
-    });
-    next();
-});
-
 // Inicializar bot de Telegram
 const bot = new TelegramBot(TELEGRAM_TOKEN, { polling: true });
 
@@ -210,24 +199,74 @@ async function updateUser(telegramId, updates) {
     return !error;
 }
 
-// Obtener usuario por teléfono
+// Obtener usuario por teléfono (MEJORADA)
 async function getUserByPhone(phone) {
-    // Normalizar teléfono: remover todos los caracteres no numéricos
-    const normalizedPhone = phone.replace(/[^\d]/g, '');
-    
-    console.log('🔍 Buscando usuario por teléfono normalizado:', normalizedPhone);
-    
-    const { data, error } = await supabase
-        .from('users')
-        .select('*')
-        .eq('phone_number', normalizedPhone)
-        .single();
-    
-    if (error) {
-        console.log('Error buscando usuario por teléfono:', error);
+    try {
+        if (!phone) {
+            console.log('❌ No se proporcionó teléfono para buscar');
+            return null;
+        }
+        
+        // Normalizar teléfono: remover todos los caracteres no numéricos
+        const normalizedPhone = phone.replace(/[^\d]/g, '');
+        console.log(`🔍 Buscando usuario con teléfono normalizado: ${normalizedPhone}`);
+        
+        // Preparar diferentes formatos para buscar
+        let searchPatterns = [];
+        
+        // Si el teléfono comienza con 53 y tiene 10 dígitos
+        if (normalizedPhone.startsWith('53') && normalizedPhone.length === 10) {
+            searchPatterns.push(normalizedPhone); // 5351234567
+            searchPatterns.push(normalizedPhone.substring(2)); // 51234567 (sin 53)
+        } 
+        // Si el teléfono tiene 8 dígitos (asumimos que es sin 53)
+        else if (normalizedPhone.length === 8) {
+            searchPatterns.push(`53${normalizedPhone}`); // 5351234567
+            searchPatterns.push(normalizedPhone); // 51234567
+        }
+        // Otros formatos
+        else {
+            searchPatterns.push(normalizedPhone);
+        }
+        
+        // Eliminar duplicados
+        searchPatterns = [...new Set(searchPatterns)];
+        
+        console.log(`🔍 Patrones de búsqueda a probar:`, searchPatterns);
+        
+        // Buscar en la base de datos con cada patrón
+        for (const pattern of searchPatterns) {
+            console.log(`🔍 Probando patrón: ${pattern}`);
+            
+            const { data, error } = await supabase
+                .from('users')
+                .select('*')
+                .eq('phone_number', pattern)
+                .single();
+            
+            if (error) {
+                if (error.code !== 'PGRST116') { // PGRST116 = no rows returned (es esperado)
+                    console.log(`⚠️ Error buscando con patrón ${pattern}:`, error.message);
+                }
+            }
+            
+            if (data) {
+                console.log(`✅ Usuario encontrado con patrón ${pattern}:`, {
+                    id: data.telegram_id,
+                    name: data.first_name,
+                    phone_in_db: data.phone_number
+                });
+                return data;
+            }
+        }
+        
+        console.log(`❌ Usuario no encontrado para ningún patrón de teléfono`);
+        return null;
+        
+    } catch (error) {
+        console.error('❌ Error en getUserByPhone:', error);
         return null;
     }
-    return data;
 }
 
 // Verificar transacción BSC
@@ -308,18 +347,31 @@ function calcularTokens(amount, currency) {
     }
 }
 
-// Procesar pago automático
-async function procesarPagoAutomatico(userId, amount, currency, txId, tipoPago) {
+// Verificar si ya existe una transacción con el mismo tx_id
+async function verificarTransaccionDuplicada(tx_id) {
     try {
-        console.log(`💰 Procesando pago automático: ${userId}, ${amount}, ${currency}, ${txId}, ${tipoPago}`);
+        const { data, error } = await supabase
+            .from('transactions')
+            .select('*')
+            .eq('tx_id', tx_id)
+            .eq('status', 'completed')
+            .single();
         
-        const user = await getUser(userId);
-        if (!user) {
-            console.log(`❌ Usuario ${userId} no encontrado`);
-            return { success: false, message: 'Usuario no encontrado' };
+        if (error && error.code !== 'PGRST116') {
+            console.log('Error verificando duplicado:', error);
         }
+        
+        return data !== null;
+    } catch (error) {
+        console.error('Error en verificarTransaccionDuplicada:', error);
+        return false;
+    }
+}
 
-        const { data: pendingTx } = await supabase
+// Verificar si existe solicitud pendiente para el usuario
+async function verificarSolicitudPendiente(userId, currency) {
+    try {
+        const { data, error } = await supabase
             .from('transactions')
             .select('*')
             .eq('user_id', userId)
@@ -328,187 +380,233 @@ async function procesarPagoAutomatico(userId, amount, currency, txId, tipoPago) 
             .eq('type', 'DEPOSIT')
             .order('created_at', { ascending: false })
             .limit(1);
-
-        if (!pendingTx || pendingTx.length === 0) {
-            if (currency === 'cup' && amount < MINIMO_CUP) {
-                const nuevoPendiente = (user.pending_balance_cup || 0) + amount;
-                await updateUser(userId, { pending_balance_cup: nuevoPendiente });
-
-                const mensajeUsuario = `⚠️ *Depósito por debajo del mínimo*\n\n` +
-                    `Recibimos ${formatCurrency(amount, currency)} pero el mínimo es ${formatCurrency(MINIMO_CUP, 'cup')}.\n` +
-                    `Este monto se ha añadido a tu saldo pendiente: *${formatCurrency(nuevoPendiente, 'cup')}*\n\n` +
-                    `Cuando tus depósitos pendientes sumen ${formatCurrency(MINIMO_CUP, 'cup')} o más, se acreditarán automáticamente.\n\n` +
-                    `💰 *Faltante:* ${formatCurrency(MINIMO_CUP - nuevoPendiente, 'cup')}`;
-                
-                await bot.sendMessage(userId, mensajeUsuario, { parse_mode: 'Markdown' });
-                
-                return { success: false, message: 'Monto por debajo del mínimo, acumulado' };
-            } else {
-                return await procesarDepositoDirecto(userId, amount, currency, txId, tipoPago);
-            }
-        } else {
-            return await procesarDepositoConOrden(userId, amount, currency, txId, tipoPago, pendingTx[0]);
+        
+        if (error) {
+            console.log('Error verificando solicitud pendiente:', error);
+            return null;
         }
+        
+        return data && data.length > 0 ? data[0] : null;
+    } catch (error) {
+        console.error('Error en verificarSolicitudPendiente:', error);
+        return null;
+    }
+}
+
+// Notificar al admin sobre nueva solicitud
+async function notificarSolicitudNueva(solicitud) {
+    try {
+        if (!ADMIN_CHAT_ID) return;
+        
+        const user = await getUser(solicitud.user_id);
+        if (!user) return;
+        
+        const mensajeAdmin = `📝 *NUEVA SOLICITUD DE DEPÓSITO*\n\n` +
+            `🆔 *Orden #:* ${solicitud.id}\n` +
+            `👤 *Usuario:* ${user.first_name} (@${user.username || 'sin usuario'})\n` +
+            `🆔 *ID:* ${user.telegram_id}\n` +
+            `📞 *Teléfono:* ${user.phone_number || 'No vinculado'}\n` +
+            `💰 *Monto solicitado:* ${formatCurrency(solicitud.amount_requested, solicitud.currency)}\n` +
+            `💳 *Método:* ${solicitud.currency.toUpperCase()}\n` +
+            `📅 *Fecha:* ${new Date(solicitud.created_at).toLocaleString()}\n\n` +
+            `⚠️ *Esperando pago del usuario*`;
+        
+        await bot.sendMessage(ADMIN_CHAT_ID, mensajeAdmin, { parse_mode: 'Markdown' });
+    } catch (error) {
+        console.error('Error notificando nueva solicitud:', error);
+    }
+}
+
+// Notificar al admin sobre solicitud completada
+async function notificarSolicitudCompletada(solicitud, resultado) {
+    try {
+        if (!ADMIN_CHAT_ID) return;
+        
+        const user = await getUser(solicitud.user_id);
+        if (!user) return;
+        
+        const mensajeAdmin = `✅ *SOLICITUD COMPLETADA*\n\n` +
+            `🆔 *Orden #:* ${solicitud.id}\n` +
+            `👤 *Usuario:* ${user.first_name} (@${user.username || 'sin usuario'})\n` +
+            `💰 *Monto solicitado:* ${formatCurrency(solicitud.amount_requested, solicitud.currency)}\n` +
+            `💰 *Monto recibido:* ${formatCurrency(resultado.montoRecibido || solicitud.amount_requested, solicitud.currency)}\n` +
+            `🎁 *Bono aplicado:* ${formatCurrency(resultado.bono || 0, solicitud.currency)}\n` +
+            `💵 *Total acreditado:* ${formatCurrency(resultado.montoConBono || solicitud.amount_requested, solicitud.currency)}\n` +
+            `🎫 *Tokens ganados:* ${resultado.tokensGanados || 0}\n` +
+            `🆔 *TX ID:* \`${resultado.tx_id || solicitud.tx_id}\`\n` +
+            `📅 *Fecha:* ${new Date().toLocaleString()}`;
+        
+        await bot.sendMessage(ADMIN_CHAT_ID, mensajeAdmin, { parse_mode: 'Markdown' });
+    } catch (error) {
+        console.error('Error notificando solicitud completada:', error);
+    }
+}
+
+// Procesar pago automático (REVISADA)
+async function procesarPagoAutomatico(userId, amount, currency, txId, tipoPago) {
+    try {
+        console.log(`💰 Procesando pago automático: ${userId}, ${amount}, ${currency}, ${txId}, ${tipoPago}`);
+        
+        // 1. Verificar si ya existe una transacción con este tx_id
+        const esDuplicado = await verificarTransaccionDuplicada(txId);
+        if (esDuplicado) {
+            console.log(`❌ Transacción duplicada detectada: ${txId}`);
+            return { 
+                success: false, 
+                message: 'Esta transacción ya fue procesada anteriormente',
+                esDuplicado: true 
+            };
+        }
+        
+        // 2. Verificar si el usuario tiene una solicitud pendiente
+        const solicitudPendiente = await verificarSolicitudPendiente(userId, currency);
+        
+        if (!solicitudPendiente) {
+            console.log(`❌ Usuario ${userId} no tiene solicitud pendiente para ${currency}`);
+            
+            // Guardar como pago no solicitado
+            await supabase.from('unrequested_payments').insert({
+                user_id: userId,
+                amount: amount,
+                currency: currency,
+                tx_id: txId,
+                tipo_pago: tipoPago,
+                status: 'no_request',
+                created_at: new Date().toISOString()
+            });
+            
+            // Notificar al usuario
+            const user = await getUser(userId);
+            if (user) {
+                await bot.sendMessage(userId,
+                    `⚠️ *Pago recibido sin solicitud*\n\n` +
+                    `Recibimos ${formatCurrency(amount, currency)} pero no tienes una solicitud pendiente.\n\n` +
+                    `🆔 ID de Transacción: \`${txId}\`\n\n` +
+                    `Contacta al administrador para aclaración.`,
+                    { parse_mode: 'Markdown' }
+                );
+            }
+            
+            return { 
+                success: false, 
+                message: 'No hay solicitud pendiente para este pago',
+                necesitaSolicitud: true 
+            };
+        }
+        
+        // 3. Verificar que el monto coincida (con margen del 10%)
+        const montoSolicitado = solicitudPendiente.amount_requested;
+        const margen = montoSolicitado * 0.1;
+        
+        if (Math.abs(amount - montoSolicitado) > margen) {
+            console.log(`❌ Monto no coincide: Solicitado ${montoSolicitado}, Recibido ${amount}`);
+            
+            // Notificar al usuario
+            await bot.sendMessage(userId,
+                `⚠️ *Monto no coincide*\n\n` +
+                `📋 Solicitado: ${formatCurrency(montoSolicitado, currency)}\n` +
+                `💰 Recibido: ${formatCurrency(amount, currency)}\n\n` +
+                `Contacta al administrador para aclaración.`,
+                { parse_mode: 'Markdown' }
+            );
+            
+            return { 
+                success: false, 
+                message: 'Monto no coincide con la solicitud',
+                montoSolicitado: montoSolicitado,
+                montoRecibido: amount 
+            };
+        }
+        
+        // 4. Procesar el pago
+        const user = await getUser(userId);
+        if (!user) {
+            console.log(`❌ Usuario ${userId} no encontrado`);
+            return { success: false, message: 'Usuario no encontrado' };
+        }
+        
+        const montoConBono = await aplicarBonoPrimerDeposito(userId, currency, amount);
+        const tokensGanados = calcularTokens(amount, currency);
+        
+        // Actualizar saldo del usuario
+        const updates = {
+            [`balance_${currency}`]: (user[`balance_${currency}`] || 0) + montoConBono
+        };
+        
+        if (currency === 'saldo') {
+            updates.tokens_cws = (user.tokens_cws || 0) + tokensGanados;
+        } else if (currency === 'usdt') {
+            updates.tokens_cwt = (user.tokens_cwt || 0) + tokensGanados;
+        }
+        
+        await updateUser(userId, updates);
+        
+        // Actualizar la transacción como completada
+        await supabase
+            .from('transactions')
+            .update({ 
+                status: 'completed',
+                amount: montoConBono,
+                tokens_generated: tokensGanados,
+                tx_id: txId,
+                tipo_pago: tipoPago,
+                completed_at: new Date().toISOString()
+            })
+            .eq('id', solicitudPendiente.id);
+        
+        const bonoMensaje = montoConBono > amount ? 
+            `\n🎉 *¡Bono aplicado!* +${formatCurrency(montoConBono - amount, currency)}` : '';
+        
+        const tokensMensaje = tokensGanados > 0 ? 
+            `\n🎫 *Tokens ganados:* +${tokensGanados} ${currency === 'saldo' ? 'CWS' : 'CWT'}` : '';
+        
+        // Notificar al usuario
+        const mensajeUsuario = `✨ *¡Depósito Completado!*\n\n` +
+            `📋 Orden #${solicitudPendiente.id}\n` +
+            `💰 Monto recibido: ${formatCurrency(amount, currency)}\n` +
+            `${bonoMensaje}${tokensMensaje}\n` +
+            `💵 Total acreditado: *${formatCurrency(montoConBono, currency)}*\n\n` +
+            `📊 Nuevo saldo ${currency.toUpperCase()}: *${formatCurrency(updates[`balance_${currency}`], currency)}*\n` +
+            `🆔 ID de Transacción: \`${txId}\``;
+        
+        await bot.sendMessage(userId, mensajeUsuario, { parse_mode: 'Markdown' });
+        
+        // Notificar al admin
+        if (ADMIN_CHAT_ID) {
+            const mensajeAdmin = `✅ *DEPÓSITO COMPLETADO*\n\n` +
+                `👤 Usuario: ${user.first_name} (@${user.username || 'sin usuario'})\n` +
+                `📋 Orden #: ${solicitudPendiente.id}\n` +
+                `💰 Monto: ${formatCurrency(amount, currency)}\n` +
+                `🎁 Total con bono: ${formatCurrency(montoConBono, currency)}\n` +
+                `🎫 Tokens: ${tokensGanados} ${currency === 'saldo' ? 'CWS' : 'CWT'}\n` +
+                `🔧 Tipo: ${tipoPago}\n` +
+                `🆔 TX ID: \`${txId}\``;
+            
+            await bot.sendMessage(ADMIN_CHAT_ID, mensajeAdmin, { parse_mode: 'Markdown' });
+        }
+        
+        return { 
+            success: true, 
+            montoConBono, 
+            tokensGanados,
+            ordenId: solicitudPendiente.id,
+            tx_id: txId,
+            montoRecibido: amount,
+            bono: montoConBono - amount
+        };
+        
     } catch (error) {
         console.error('❌ Error procesando pago automático:', error);
         return { success: false, message: error.message };
     }
 }
 
-// Procesar depósito directo
-async function procesarDepositoDirecto(userId, amount, currency, txId, tipoPago) {
-    const user = await getUser(userId);
-    if (!user) return { success: false, message: 'Usuario no encontrado' };
-
-    const minimos = { cup: MINIMO_CUP, saldo: MINIMO_SALDO, usdt: MINIMO_USDT };
-    if (amount < minimos[currency]) {
-        const mensajeUsuario = `⚠️ *Depósito por debajo del mínimo*\n\n` +
-            `Recibimos ${formatCurrency(amount, currency)} pero el mínimo es ${formatCurrency(minimos[currency], currency)}.\n` +
-            `Este monto no se acreditará hasta que hagas un depósito de ${formatCurrency(minimos[currency], currency)} o más.`;
-        
-        await bot.sendMessage(userId, mensajeUsuario, { parse_mode: 'Markdown' });
-        return { success: false, message: 'Monto por debajo del mínimo' };
-    }
-
-    const montoConBono = await aplicarBonoPrimerDeposito(userId, currency, amount);
-    const tokensGanados = calcularTokens(amount, currency);
-    
-    const updates = {
-        [`balance_${currency}`]: (user[`balance_${currency}`] || 0) + montoConBono
-    };
-
-    if (currency === 'saldo') {
-        updates.tokens_cws = (user.tokens_cws || 0) + tokensGanados;
-    } else if (currency === 'usdt') {
-        updates.tokens_cwt = (user.tokens_cwt || 0) + tokensGanados;
-    }
-
-    await updateUser(userId, updates);
-
-    await supabase.from('transactions').insert({
-        user_id: userId,
-        type: 'AUTO_DEPOSIT',
-        currency: currency,
-        amount: montoConBono,
-        amount_requested: amount,
-        tokens_generated: tokensGanados,
-        status: 'completed',
-        tx_id: txId,
-        tipo_pago: tipoPago
-    });
-
-    const bonoMensaje = montoConBono > amount ? 
-        `\n🎉 *¡Bono aplicado!* +${formatCurrency(montoConBono - amount, currency)}` : '';
-    
-    const tokensMensaje = tokensGanados > 0 ? 
-        `\n🎫 *Tokens ganados:* +${tokensGanados} ${currency === 'saldo' ? 'CWS' : 'CWT'}` : '';
-
-    const mensajeUsuario = `✅ *¡Depósito Acreditado Automáticamente!*\n\n` +
-        `💰 Monto recibido: ${formatCurrency(amount, currency)}\n` +
-        `${bonoMensaje}${tokensMensaje}\n` +
-        `💵 Total acreditado: *${formatCurrency(montoConBono, currency)}*\n\n` +
-        `📊 Nuevo saldo ${currency.toUpperCase()}: *${formatCurrency(updates[`balance_${currency}`], currency)}*\n` +
-        `🆔 ID de Transacción: \`${txId}\``;
-    
-    await bot.sendMessage(userId, mensajeUsuario, { parse_mode: 'Markdown' });
-
-    if (ADMIN_CHAT_ID) {
-        const mensajeAdmin = `✅ *DEPÓSITO AUTOMÁTICO*\n\n` +
-            `👤 Usuario: ${user.first_name} (@${user.username || 'sin usuario'})\n` +
-            `📞 Teléfono: ${user.phone_number || 'No vinculado'}\n` +
-            `💰 Monto: ${formatCurrency(amount, currency)}\n` +
-            `🎁 Total con bono: ${formatCurrency(montoConBono, currency)}\n` +
-            `🎫 Tokens: ${tokensGanados} ${currency === 'saldo' ? 'CWS' : 'CWT'}\n` +
-            `🔧 Tipo: ${tipoPago}\n` +
-            `🆔 ID: \`${txId}\``;
-        
-        await bot.sendMessage(ADMIN_CHAT_ID, mensajeAdmin, { parse_mode: 'Markdown' });
-    }
-
-    return { success: true, montoConBono, tokensGanados };
-}
-
-// Procesar depósito con orden
-async function procesarDepositoConOrden(userId, amount, currency, txId, tipoPago, orden) {
-    const user = await getUser(userId);
-    if (!user) return { success: false, message: 'Usuario no encontrado' };
-
-    const montoSolicitado = orden.amount_requested;
-    const margen = montoSolicitado * 0.1;
-    if (Math.abs(amount - montoSolicitado) > margen) {
-        const mensajeUsuario = `⚠️ *Monto no coincide*\n\n` +
-            `📋 Solicitado: ${formatCurrency(montoSolicitado, currency)}\n` +
-            `💰 Recibido: ${formatCurrency(amount, currency)}\n\n` +
-            `Contacta al administrador para aclaración.`;
-        
-        await bot.sendMessage(userId, mensajeUsuario, { parse_mode: 'Markdown' });
-        return { success: false, message: 'Monto no coincide' };
-    }
-
-    const montoConBono = await aplicarBonoPrimerDeposito(userId, currency, amount);
-    const tokensGanados = calcularTokens(amount, currency);
-    
-    const updates = {
-        [`balance_${currency}`]: (user[`balance_${currency}`] || 0) + montoConBono
-    };
-
-    if (currency === 'saldo') {
-        updates.tokens_cws = (user.tokens_cws || 0) + tokensGanados;
-    } else if (currency === 'usdt') {
-        updates.tokens_cwt = (user.tokens_cwt || 0) + tokensGanados;
-    }
-
-    await updateUser(userId, updates);
-
-    await supabase
-        .from('transactions')
-        .update({ 
-            status: 'completed',
-            amount: montoConBono,
-            tokens_generated: tokensGanados,
-            tx_id: txId,
-            tipo_pago: tipoPago
-        })
-        .eq('id', orden.id);
-
-    const bonoMensaje = montoConBono > amount ? 
-        `\n🎉 *¡Bono aplicado!* +${formatCurrency(montoConBono - amount, currency)}` : '';
-    
-    const tokensMensaje = tokensGanados > 0 ? 
-        `\n🎫 *Tokens ganados:* +${tokensGanados} ${currency === 'saldo' ? 'CWS' : 'CWT'}` : '';
-
-    const mensajeUsuario = `✨ *¡Depósito Completado!*\n\n` +
-        `📋 Monto solicitado: ${formatCurrency(montoSolicitado, currency)}\n` +
-        `💰 Monto recibido: ${formatCurrency(amount, currency)}\n` +
-        `${bonoMensaje}${tokensMensaje}\n` +
-        `💵 Total acreditado: *${formatCurrency(montoConBono, currency)}*\n\n` +
-        `📊 Nuevo saldo ${currency.toUpperCase()}: *${formatCurrency(updates[`balance_${currency}`], currency)}*\n` +
-        `🆔 ID de Transacción: \`${txId}\``;
-    
-    await bot.sendMessage(userId, mensajeUsuario, { parse_mode: 'Markdown' });
-
-    if (ADMIN_CHAT_ID) {
-        const mensajeAdmin = `✅ *DEPÓSITO COMPLETADO*\n\n` +
-            `👤 Usuario: ${user.first_name} (@${user.username || 'sin usuario'})\n` +
-            `📋 Orden #: ${orden.id}\n` +
-            `💰 Monto: ${formatCurrency(amount, currency)}\n` +
-            `🎁 Total con bono: ${formatCurrency(montoConBono, currency)}\n` +
-            `🎫 Tokens: ${tokensGanados} ${currency === 'saldo' ? 'CWS' : 'CWT'}\n` +
-            `🔧 Tipo: ${tipoPago}\n` +
-            `🆔 ID: \`${txId}\``;
-        
-        await bot.sendMessage(ADMIN_CHAT_ID, mensajeAdmin, { parse_mode: 'Markdown' });
-    }
-
-    return { success: true, montoConBono, tokensGanados };
-}
-
 // ============================================
-// TELEGRAM BOT - FLUJO ACTUALIZADO
+// TELEGRAM BOT - TECLADOS ACTUALIZADOS (SIEMPRE CON BOTÓN ATRÁS)
 // ============================================
 
-// Teclados actualizados
-const mainKeyboard = {
+// Teclado principal
+const createMainKeyboard = () => ({
     inline_keyboard: [
         [{ text: '👛 Mi Billetera', callback_data: 'wallet' }],
         [{ text: '💰 Recargar Billetera', callback_data: 'recharge_menu' }],
@@ -517,48 +615,64 @@ const mainKeyboard = {
         [{ text: '📜 Ver Términos Web', callback_data: 'view_terms_web' }],
         [{ text: '🔄 Actualizar', callback_data: 'refresh_wallet' }]
     ]
-};
+});
 
-const walletKeyboard = {
+// Teclado de billetera
+const createWalletKeyboard = () => ({
     inline_keyboard: [
         [{ text: '💰 Recargar Billetera', callback_data: 'recharge_menu' }],
         [{ text: '📜 Historial', callback_data: 'history' }],
         [{ text: '📱 Cambiar Teléfono', callback_data: 'link_phone' }],
         [{ text: '📊 Saldo Pendiente', callback_data: 'view_pending' }],
-        [{ text: '🔙 Volver', callback_data: 'start_back' }]
+        [{ text: '🔙 Volver al Inicio', callback_data: 'start_back' }]
     ]
-};
-
-const backKeyboard = (callback_data) => ({
-    inline_keyboard: [[{ text: '🔙 Volver', callback_data }]]
 });
 
-const rechargeMethodsKeyboard = {
+// Teclado de métodos de recarga
+const createRechargeMethodsKeyboard = () => ({
     inline_keyboard: [
         [{ text: '💳 CUP (Tarjeta)', callback_data: 'dep_init:cup' }],
         [{ text: '📲 Saldo Móvil', callback_data: 'dep_init:saldo' }],
         [{ text: '🪙 USDT BEP20', callback_data: 'dep_init:usdt' }],
-        [{ text: '🔙 Volver', callback_data: 'wallet' }]
+        [{ text: '🔙 Volver a Billetera', callback_data: 'wallet' }]
     ]
-};
+});
 
-const termsKeyboard = {
-    inline_keyboard: [[{ text: '✅ Aceptar Términos', callback_data: 'accept_terms' }]]
-};
+// Teclado de términos
+const createTermsKeyboard = () => ({
+    inline_keyboard: [
+        [{ text: '✅ Aceptar Términos', callback_data: 'accept_terms' }],
+        [{ text: '🔙 Volver', callback_data: 'start_back' }]
+    ]
+});
 
-const claimPaymentKeyboard = {
+// Teclado para reclamar pagos
+const createClaimPaymentKeyboard = () => ({
     inline_keyboard: [
         [{ text: '🔍 Buscar por ID', callback_data: 'search_payment_id' }],
         [{ text: '📋 Ver Pendientes', callback_data: 'view_pending_payments' }],
-        [{ text: '🔙 Volver', callback_data: 'start_back' }]
+        [{ text: '🔙 Volver al Inicio', callback_data: 'start_back' }]
     ]
-};
+});
+
+// Teclado genérico de volver
+const createBackKeyboard = (callback_data) => ({
+    inline_keyboard: [[{ text: '🔙 Volver', callback_data }]]
+});
+
+// Teclado de confirmación de depósito
+const createDepositConfirmKeyboard = (currency, amount) => ({
+    inline_keyboard: [
+        [{ text: '✅ Confirmar Depósito', callback_data: `confirm_deposit:${currency}:${amount}` }],
+        [{ text: '❌ Cancelar', callback_data: 'recharge_menu' }]
+    ]
+});
 
 // ============================================
 // MANEJO DE COMANDOS TELEGRAM
 // ============================================
 
-// Comando /start - FLUJO ACTUALIZADO
+// Comando /start
 bot.onText(/\/start/, async (msg) => {
     const chatId = msg.chat.id;
     const { id, first_name, username } = msg.from;
@@ -626,7 +740,7 @@ bot.onText(/\/start/, async (msg) => {
     
     await bot.sendMessage(chatId, welcomeMessage, { 
         parse_mode: 'Markdown', 
-        reply_markup: mainKeyboard 
+        reply_markup: createMainKeyboard()
     });
 });
 
@@ -704,7 +818,7 @@ bot.on('callback_query', async (query) => {
 });
 
 // ============================================
-// FUNCIONES DE MANEJO DE CALLBACKS (ACTUALIZADAS)
+// FUNCIONES DE MANEJO DE CALLBACKS
 // ============================================
 
 async function handleStartBack(chatId, messageId) {
@@ -719,7 +833,7 @@ async function handleStartBack(chatId, messageId) {
         chat_id: chatId,
         message_id: messageId,
         parse_mode: 'Markdown',
-        reply_markup: mainKeyboard
+        reply_markup: createMainKeyboard()
     });
 }
 
@@ -729,7 +843,8 @@ async function handleWallet(chatId, messageId) {
     if (!user) {
         await bot.editMessageText('❌ No se pudo obtener tu información.', {
             chat_id: chatId,
-            message_id: messageId
+            message_id: messageId,
+            reply_markup: createBackKeyboard('start_back')
         });
         return;
     }
@@ -762,7 +877,7 @@ async function handleWallet(chatId, messageId) {
         chat_id: chatId,
         message_id: messageId,
         parse_mode: 'Markdown',
-        reply_markup: walletKeyboard
+        reply_markup: createWalletKeyboard()
     });
 }
 
@@ -779,7 +894,7 @@ async function handleRechargeMenu(chatId, messageId) {
             chat_id: chatId,
             message_id: messageId,
             parse_mode: 'Markdown',
-            reply_markup: backKeyboard('start_back')
+            reply_markup: createBackKeyboard('start_back')
         });
         return;
     }
@@ -793,7 +908,7 @@ async function handleRechargeMenu(chatId, messageId) {
         chat_id: chatId,
         message_id: messageId,
         parse_mode: 'Markdown',
-        reply_markup: rechargeMethodsKeyboard
+        reply_markup: createRechargeMethodsKeyboard()
     });
 }
 
@@ -805,7 +920,7 @@ async function handleDepositInit(chatId, messageId, currency) {
             chat_id: chatId,
             message_id: messageId,
             parse_mode: 'Markdown',
-            reply_markup: backKeyboard('recharge_menu')
+            reply_markup: createBackKeyboard('recharge_menu')
         });
         return;
     }
@@ -873,7 +988,7 @@ async function handleDepositInit(chatId, messageId, currency) {
         chat_id: chatId,
         message_id: messageId,
         parse_mode: 'Markdown',
-        reply_markup: backKeyboard('recharge_menu')
+        reply_markup: createBackKeyboard('recharge_menu')
     });
 }
 
@@ -885,10 +1000,13 @@ async function handleConfirmDeposit(chatId, messageId, currency, amount) {
         if (messageId) {
             await bot.editMessageText('❌ No se pudo obtener tu información.', {
                 chat_id: chatId,
-                message_id: messageId
+                message_id: messageId,
+                reply_markup: createBackKeyboard('recharge_menu')
             });
         } else {
-            await bot.sendMessage(chatId, '❌ No se pudo obtener tu información.');
+            await bot.sendMessage(chatId, '❌ No se pudo obtener tu información.', {
+                reply_markup: createBackKeyboard('recharge_menu')
+            });
         }
         return;
     }
@@ -902,10 +1020,13 @@ async function handleConfirmDeposit(chatId, messageId, currency, amount) {
         if (messageId) {
             await bot.editMessageText('❌ No se encontró el monto. Por favor, inicia el depósito nuevamente.', {
                 chat_id: chatId,
-                message_id: messageId
+                message_id: messageId,
+                reply_markup: createBackKeyboard('recharge_menu')
             });
         } else {
-            await bot.sendMessage(chatId, '❌ No se encontró el monto. Por favor, inicia el depósito nuevamente.');
+            await bot.sendMessage(chatId, '❌ No se encontró el monto. Por favor, inicia el depósito nuevamente.', {
+                reply_markup: createBackKeyboard('recharge_menu')
+            });
         }
         delete activeSessions[chatId];
         return;
@@ -927,14 +1048,50 @@ async function handleConfirmDeposit(chatId, messageId, currency, amount) {
             await bot.editMessageText(mensaje, {
                 chat_id: chatId,
                 message_id: messageId,
-                parse_mode: 'Markdown'
+                parse_mode: 'Markdown',
+                reply_markup: createBackKeyboard('recharge_menu')
             });
         } else {
-            await bot.sendMessage(chatId, mensaje, { parse_mode: 'Markdown' });
+            await bot.sendMessage(chatId, mensaje, { 
+                parse_mode: 'Markdown',
+                reply_markup: createBackKeyboard('recharge_menu')
+            });
         }
         delete activeSessions[chatId];
         return;
     }
+    
+    // Verificar si ya tiene una solicitud pendiente para esta moneda
+    const solicitudExistente = await verificarSolicitudPendiente(chatId, currency);
+    if (solicitudExistente) {
+        const mensaje = `❌ *Ya tienes una solicitud pendiente*\n\n` +
+            `🆔 Orden #${solicitudExistente.id}\n` +
+            `💰 Monto: ${formatCurrency(solicitudExistente.amount_requested, currency)}\n` +
+            `⏳ Estado: Pendiente\n\n` +
+            `Completa o cancela la solicitud actual antes de crear una nueva.`;
+        
+        if (messageId) {
+            await bot.editMessageText(mensaje, {
+                chat_id: chatId,
+                message_id: messageId,
+                parse_mode: 'Markdown',
+                reply_markup: createBackKeyboard('recharge_menu')
+            });
+        } else {
+            await bot.sendMessage(chatId, mensaje, {
+                parse_mode: 'Markdown',
+                reply_markup: createBackKeyboard('recharge_menu')
+            });
+        }
+        delete activeSessions[chatId];
+        return;
+    }
+    
+    // Calcular bono y tokens
+    const bonoPorcentaje = currency === 'usdt' ? 0.05 : 0.10;
+    const bono = user[`first_dep_${currency}`] ? amount * bonoPorcentaje : 0;
+    const totalConBono = amount + bono;
+    const tokens = calcularTokens(amount, currency);
     
     // Crear orden de depósito
     const { data: transaction, error } = await supabase
@@ -944,6 +1101,8 @@ async function handleConfirmDeposit(chatId, messageId, currency, amount) {
             type: 'DEPOSIT',
             currency: currency,
             amount_requested: amount,
+            estimated_bonus: bono,
+            estimated_tokens: tokens,
             status: 'pending',
             user_name: user.first_name,
             user_username: user.username,
@@ -960,10 +1119,13 @@ async function handleConfirmDeposit(chatId, messageId, currency, amount) {
         if (messageId) {
             await bot.editMessageText(mensajeError, {
                 chat_id: chatId,
-                message_id: messageId
+                message_id: messageId,
+                reply_markup: createBackKeyboard('recharge_menu')
             });
         } else {
-            await bot.sendMessage(chatId, mensajeError);
+            await bot.sendMessage(chatId, mensajeError, {
+                reply_markup: createBackKeyboard('recharge_menu')
+            });
         }
         return;
     }
@@ -971,7 +1133,6 @@ async function handleConfirmDeposit(chatId, messageId, currency, amount) {
     // Preparar instrucciones según el método
     let instrucciones = '';
     let metodoPago = '';
-    let bonoPorcentaje = currency === 'usdt' ? '5%' : '10%';
     
     if (currency === 'cup') {
         metodoPago = 'Tarjeta';
@@ -996,15 +1157,10 @@ async function handleConfirmDeposit(chatId, messageId, currency, amount) {
         }
     }
     
-    // Calcular bono y tokens
-    const bono = user[`first_dep_${currency}`] ? amount * (currency === 'usdt' ? 0.05 : 0.10) : 0;
-    const totalConBono = amount + bono;
-    const tokens = calcularTokens(amount, currency);
-    
-    const mensaje = `✅ *Orden de depósito creada*\n\n` +
-        `🆔 *Número de orden:* ${transaction.id}\n` +
+    const mensaje = `✅ *Solicitud de depósito creada*\n\n` +
+        `🆔 *Número de orden:* #${transaction.id}\n` +
         `💰 *Monto solicitado:* ${formatCurrency(amount, currency)}\n` +
-        `🎁 *Bono por primer depósito:* ${formatCurrency(bono, currency)} (${bonoPorcentaje})\n` +
+        `🎁 *Bono por primer depósito:* ${formatCurrency(bono, currency)} (${bonoPorcentaje * 100}%)\n` +
         `💵 *Total a acreditar:* ${formatCurrency(totalConBono, currency)}\n` +
         `🎫 *Tokens a ganar:* ${tokens} ${currency === 'saldo' ? 'CWS' : 'CWT'}\n\n` +
         `*Instrucciones de pago:*\n` +
@@ -1021,14 +1177,17 @@ async function handleConfirmDeposit(chatId, messageId, currency, amount) {
             chat_id: chatId,
             message_id: messageId,
             parse_mode: 'Markdown',
-            reply_markup: backKeyboard('start_back')
+            reply_markup: createBackKeyboard('start_back')
         });
     } else {
         await bot.sendMessage(chatId, mensaje, {
             parse_mode: 'Markdown',
-            reply_markup: backKeyboard('start_back')
+            reply_markup: createBackKeyboard('start_back')
         });
     }
+    
+    // Notificar al admin sobre la nueva solicitud
+    await notificarSolicitudNueva(transaction);
     
     // Limpiar sesión
     delete activeSessions[chatId];
@@ -1062,23 +1221,17 @@ async function handleTerms(chatId, messageId) {
         `_Última actualización: ${new Date().toLocaleDateString()}_\n\n` +
         `⚠️ *Para ver estos términos y condiciones nuevamente, visita nuestra web.*`;
     
-    const keyboard = {
-        inline_keyboard: [
-            [{ text: '✅ Aceptar Términos', callback_data: 'accept_terms' }]
-        ]
-    };
-    
     if (messageId) {
         await bot.editMessageText(terms, {
             chat_id: chatId,
             message_id: messageId,
             parse_mode: 'Markdown',
-            reply_markup: keyboard
+            reply_markup: createTermsKeyboard()
         });
     } else {
         await bot.sendMessage(chatId, terms, {
             parse_mode: 'Markdown',
-            reply_markup: keyboard
+            reply_markup: createTermsKeyboard()
         });
     }
 }
@@ -1097,7 +1250,7 @@ async function handleAcceptTerms(chatId, messageId) {
         chat_id: chatId,
         message_id: messageId,
         parse_mode: 'Markdown',
-        reply_markup: mainKeyboard
+        reply_markup: createMainKeyboard()
     });
 }
 
@@ -1125,20 +1278,8 @@ async function handleLinkPhone(chatId, messageId) {
     await bot.editMessageText(message, {
         chat_id: chatId,
         message_id: messageId,
-        parse_mode: 'Markdown'
-    });
-}
-
-async function handleEnterPhone(chatId, messageId) {
-    const message = `📱 *Ingresa tu número*\n\n` +
-        `Formato: 535XXXXXXX\n` +
-        `Ejemplo: 5351234567\n\n` +
-        `⚠️ Debe ser el mismo de Transfermóvil desde el que pagarás.`;
-    
-    await bot.editMessageText(message, {
-        chat_id: chatId,
-        message_id: messageId,
-        parse_mode: 'Markdown'
+        parse_mode: 'Markdown',
+        reply_markup: createBackKeyboard('start_back')
     });
 }
 
@@ -1154,7 +1295,7 @@ async function handleClaimPayment(chatId, messageId) {
         chat_id: chatId,
         message_id: messageId,
         parse_mode: 'Markdown',
-        reply_markup: claimPaymentKeyboard
+        reply_markup: createClaimPaymentKeyboard()
     });
 }
 
@@ -1169,7 +1310,8 @@ async function handleSearchPaymentId(chatId, messageId) {
     await bot.editMessageText(message, {
         chat_id: chatId,
         message_id: messageId,
-        parse_mode: 'Markdown'
+        parse_mode: 'Markdown',
+        reply_markup: createBackKeyboard('claim_payment')
     });
 }
 
@@ -1203,7 +1345,7 @@ async function handleViewPendingPayments(chatId, messageId) {
         chat_id: chatId,
         message_id: messageId,
         parse_mode: 'Markdown',
-        reply_markup: backKeyboard('claim_payment')
+        reply_markup: createBackKeyboard('claim_payment')
     });
 }
 
@@ -1248,7 +1390,7 @@ async function handleHistory(chatId, messageId) {
         chat_id: chatId,
         message_id: messageId,
         parse_mode: 'Markdown',
-        reply_markup: backKeyboard('wallet')
+        reply_markup: createBackKeyboard('wallet')
     });
 }
 
@@ -1288,7 +1430,7 @@ async function handleViewPending(chatId, messageId) {
         chat_id: chatId,
         message_id: messageId,
         parse_mode: 'Markdown',
-        reply_markup: backKeyboard('wallet')
+        reply_markup: createBackKeyboard('wallet')
     });
 }
 
@@ -1304,7 +1446,8 @@ async function handleEnterUsdtWallet(chatId, messageId) {
     await bot.editMessageText(message, {
         chat_id: chatId,
         message_id: messageId,
-        parse_mode: 'Markdown'
+        parse_mode: 'Markdown',
+        reply_markup: createBackKeyboard('recharge_menu')
     });
 }
 
@@ -1318,7 +1461,7 @@ async function handleViewTermsWeb(chatId, messageId) {
         chat_id: chatId,
         message_id: messageId,
         parse_mode: 'Markdown',
-        reply_markup: backKeyboard('start_back')
+        reply_markup: createBackKeyboard('start_back')
     });
 }
 
@@ -1364,11 +1507,13 @@ bot.on('message', async (msg) => {
         }
     } catch (error) {
         console.error('Error procesando mensaje:', error);
-        await bot.sendMessage(chatId, '❌ Ocurrió un error. Por favor, intenta de nuevo.');
+        await bot.sendMessage(chatId, '❌ Ocurrió un error. Por favor, intenta de nuevo.', {
+            reply_markup: createMainKeyboard()
+        });
     }
 });
 
-// Función para manejar entrada de teléfono (ACTUALIZADA)
+// Función para manejar entrada de teléfono
 async function handlePhoneInput(chatId, phone, session) {
     // Limpiar número: remover espacios, guiones, paréntesis, etc.
     let cleanPhone = phone.replace(/[^\d]/g, '');
@@ -1482,7 +1627,7 @@ async function handlePhoneInput(chatId, phone, session) {
     } else {
         await bot.sendMessage(chatId, message, {
             parse_mode: 'Markdown',
-            reply_markup: mainKeyboard
+            reply_markup: createMainKeyboard()
         });
     }
     
@@ -1519,14 +1664,14 @@ async function handleSearchPaymentIdInput(chatId, txId) {
                 await bot.sendMessage(chatId,
                     `✅ *¡Pago reclamado exitosamente!*\n\n` +
                     `${formatCurrency(pendingPayment.amount, pendingPayment.currency)} ha sido acreditado a tu billetera.`,
-                    { parse_mode: 'Markdown', reply_markup: mainKeyboard }
+                    { parse_mode: 'Markdown', reply_markup: createMainKeyboard() }
                 );
             }
         } else {
             await bot.sendMessage(chatId,
                 `❌ *Este pago no te pertenece*\n\n` +
                 `El pago con ID \`${txIdClean}\` está registrado para otro usuario.`,
-                { parse_mode: 'Markdown', reply_markup: mainKeyboard }
+                { parse_mode: 'Markdown', reply_markup: createClaimPaymentKeyboard() }
             );
         }
     } else {
@@ -1548,7 +1693,7 @@ async function handleSearchPaymentIdInput(chatId, txId) {
                 `💳 Método: ${orden.currency.toUpperCase()}\n\n` +
                 `Si ya hiciste el pago, espera a que se detecte automáticamente.\n` +
                 `Si no se detecta en 10 minutos, contacta al administrador.`,
-                { parse_mode: 'Markdown', reply_markup: mainKeyboard }
+                { parse_mode: 'Markdown', reply_markup: createMainKeyboard() }
             );
         } else {
             await bot.sendMessage(chatId,
@@ -1558,7 +1703,7 @@ async function handleSearchPaymentIdInput(chatId, txId) {
                 `1. Que el ID sea correcto\n` +
                 `2. Que el pago sea *Tarjeta→Billetera*\n` +
                 `3. Que no haya sido reclamado antes`,
-                { parse_mode: 'Markdown', reply_markup: claimPaymentKeyboard }
+                { parse_mode: 'Markdown', reply_markup: createClaimPaymentKeyboard() }
             );
         }
     }
@@ -1597,11 +1742,28 @@ async function handleDepositAmountInput(chatId, amountText, session) {
             `Ahora escribe la dirección USDT (BEP20) desde la que enviarás:\n\n` +
             `Formato: 0x... (42 caracteres)\n` +
             `Esta wallet se vinculará a tu cuenta.`,
-            { parse_mode: 'Markdown' }
+            { parse_mode: 'Markdown', reply_markup: createBackKeyboard('recharge_menu') }
         );
     } else {
         session.amount = amount;
-        await handleConfirmDeposit(chatId, null, currency, amount);
+        
+        // Mostrar confirmación con botones
+        const bonoPorcentaje = currency === 'usdt' ? '5%' : '10%';
+        const bono = user[`first_dep_${currency}`] ? amount * (currency === 'usdt' ? 0.05 : 0.10) : 0;
+        const totalConBono = amount + bono;
+        const tokens = calcularTokens(amount, currency);
+        
+        const confirmMessage = `📋 *Confirmar Depósito*\n\n` +
+            `💰 *Monto:* ${formatCurrency(amount, currency)}\n` +
+            `🎁 *Bono:* ${formatCurrency(bono, currency)} (${bonoPorcentaje})\n` +
+            `💵 *Total a acreditar:* ${formatCurrency(totalConBono, currency)}\n` +
+            `🎫 *Tokens a ganar:* ${tokens} ${currency === 'saldo' ? 'CWS' : 'CWT'}\n\n` +
+            `¿Confirmas la solicitud de depósito?`;
+        
+        await bot.sendMessage(chatId, confirmMessage, {
+            parse_mode: 'Markdown',
+            reply_markup: createDepositConfirmKeyboard(currency, amount)
+        });
     }
 }
 
@@ -1612,7 +1774,7 @@ async function handleUsdtWalletInput(chatId, wallet, session) {
             `Debe comenzar con "0x" y tener 42 caracteres.\n\n` +
             `Ejemplo válido:\n\`0x742d35Cc6634C0532925a3b844Bc9e8e64dA7F2E\`\n\n` +
             `Inténtalo de nuevo:`,
-            { parse_mode: 'Markdown' }
+            { parse_mode: 'Markdown', reply_markup: createBackKeyboard('recharge_menu') }
         );
         return;
     }
@@ -1620,53 +1782,28 @@ async function handleUsdtWalletInput(chatId, wallet, session) {
     session.usdtWallet = wallet;
     await updateUser(chatId, { usdt_wallet: wallet });
     
-    await handleConfirmDeposit(chatId, null, 'usdt', session.amount);
-}
-
-async function handleUsdtHashInput(chatId, hash, session) {
-    if (!PAGO_USDT_ADDRESS) {
-        await bot.sendMessage(chatId,
-            `❌ *Dirección USDT no configurada*\n\n` +
-            `Contacta al administrador.`,
-            { parse_mode: 'Markdown', reply_markup: mainKeyboard }
-        );
-        delete activeSessions[chatId];
-        return;
-    }
+    // Mostrar confirmación para USDT
+    const user = await getUser(chatId);
+    const bono = user.first_dep_usdt ? session.amount * 0.05 : 0;
+    const totalConBono = session.amount + bono;
+    const tokens = calcularTokens(session.amount, 'usdt');
     
-    const result = await checkBSCTransaction(hash, session.amount, PAGO_USDT_ADDRESS);
+    const confirmMessage = `📋 *Confirmar Depósito USDT*\n\n` +
+        `💰 *Monto:* ${formatCurrency(session.amount, 'usdt')}\n` +
+        `👛 *Wallet:* \`${wallet.substring(0, 20)}...\`\n` +
+        `🎁 *Bono:* ${formatCurrency(bono, 'usdt')} (5%)\n` +
+        `💵 *Total a acreditar:* ${formatCurrency(totalConBono, 'usdt')}\n` +
+        `🎫 *Tokens a ganar:* ${tokens} CWT\n\n` +
+        `¿Confirmas la solicitud de depósito?`;
     
-    if (result.success) {
-        const user = await getUser(chatId);
-        const resultPago = await procesarPagoAutomatico(chatId, result.amount, 'usdt', hash, 'USDT_BEP20');
-        
-        if (resultPago.success) {
-            await bot.sendMessage(chatId,
-                `✅ *¡Transacción USDT verificada!*\n\n` +
-                `Hash: \`${hash.substring(0, 20)}...\`\n` +
-                `Monto: ${formatCurrency(result.amount, 'usdt')}\n\n` +
-                `El pago ha sido acreditado a tu billetera.`,
-                { parse_mode: 'Markdown', reply_markup: mainKeyboard }
-            );
-        }
-    } else {
-        await bot.sendMessage(chatId,
-            `❌ *Transacción no verificada*\n\n` +
-            `No pudimos verificar la transacción con hash:\n\`${hash}\`\n\n` +
-            `Verifica:\n` +
-            `1. Que el hash sea correcto\n` +
-            `2. Que la transacción esté confirmada\n` +
-            `3. Que se envió a la dirección correcta\n\n` +
-            `Intenta de nuevo o contacta al administrador.`,
-            { parse_mode: 'Markdown', reply_markup: mainKeyboard }
-        );
-    }
-    
-    delete activeSessions[chatId];
+    await bot.sendMessage(chatId, confirmMessage, {
+        parse_mode: 'Markdown',
+        reply_markup: createDepositConfirmKeyboard('usdt', session.amount)
+    });
 }
 
 // ============================================
-// ENDPOINT PARA RECIBIR PAGOS DEL PARSER
+// ENDPOINT PARA RECIBIR PAGOS DEL PARSER (ACTUALIZADO)
 // ============================================
 
 app.post('/payment-notification', verifyWebhookToken, async (req, res) => {
@@ -1674,12 +1811,8 @@ app.post('/payment-notification', verifyWebhookToken, async (req, res) => {
         console.log('\n' + '='.repeat(80));
         console.log('📥 PAYMENT-NOTIFICATION RECIBIDA EN EL BOT');
         console.log('🕐 Hora:', new Date().toISOString());
-        console.log('📦 Datos recibidos COMPLETOS:');
+        console.log('📦 Datos recibidos:');
         console.log(JSON.stringify(req.body, null, 2));
-        console.log('📋 Headers recibidos:', {
-            'x-auth-token': req.headers['x-auth-token'],
-            'content-type': req.headers['content-type']
-        });
         console.log('='.repeat(80) + '\n');
         
         const { 
@@ -1701,17 +1834,6 @@ app.post('/payment-notification', verifyWebhookToken, async (req, res) => {
             return res.status(400).json({ 
                 success: false, 
                 message: 'Campos requeridos faltantes: type, amount, currency, tx_id' 
-            });
-        }
-        
-        // Verificar token (ya hecho por middleware, pero por si acaso)
-        if (auth_token && auth_token !== WEBHOOK_SECRET_KEY) {
-            console.log('❌ Token de autenticación inválido en payload');
-            console.log(`🔑 Token recibido: ${auth_token ? auth_token.substring(0, 10) + '...' : 'No proporcionado'}`);
-            console.log(`🔑 Token esperado: ${WEBHOOK_SECRET_KEY ? WEBHOOK_SECRET_KEY.substring(0, 10) + '...' : 'No configurado'}`);
-            return res.status(403).json({ 
-                success: false, 
-                message: 'Token de autenticación inválido' 
             });
         }
         
@@ -1739,8 +1861,6 @@ app.post('/payment-notification', verifyWebhookToken, async (req, res) => {
                         console.log(`✅ Usuario encontrado:`);
                         console.log(`   ID: ${user.telegram_id}`);
                         console.log(`   Nombre: ${user.first_name}`);
-                        console.log(`   Teléfono en DB: ${user.phone_number}`);
-                        console.log(`   Username: ${user.username || 'No tiene'}`);
                         
                         // Procesar pago automático
                         console.log(`🚀 Procesando pago automático para usuario ${user.telegram_id}`);
@@ -1755,20 +1875,18 @@ app.post('/payment-notification', verifyWebhookToken, async (req, res) => {
                         
                         console.log(`✅ Resultado del procesamiento:`, result);
                         
-                        // Notificar al admin
-                        if (ADMIN_CHAT_ID && result.success) {
-                            const mensajeAdmin = `✅ *PAGO DETECTADO Y PROCESADO*\n\n` +
-                                `👤 Usuario: ${user.first_name} (@${user.username || 'sin usuario'})\n` +
-                                `🆔 ID: ${user.telegram_id}\n` +
-                                `📞 Teléfono: ${normalizedPhone}\n` +
-                                `💰 Monto: ${formatCurrency(amount, currency)}\n` +
-                                `🔧 Tipo: ${tipo_pago}\n` +
-                                `💳 Tarjeta: ${tarjeta_destino}\n` +
-                                `🆔 TX ID: \`${tx_id}\`\n\n` +
-                                `🎁 Bono aplicado: ${result.montoConBono ? formatCurrency(result.montoConBono - amount, currency) : '0'}\n` +
-                                `🎫 Tokens: ${result.tokensGanados || 0}`;
+                        // Si se completó exitosamente, notificar al admin
+                        if (result.success && result.ordenId) {
+                            // Buscar la solicitud completada
+                            const { data: solicitud } = await supabase
+                                .from('transactions')
+                                .select('*')
+                                .eq('id', result.ordenId)
+                                .single();
                             
-                            await bot.sendMessage(ADMIN_CHAT_ID, mensajeAdmin, { parse_mode: 'Markdown' });
+                            if (solicitud) {
+                                await notificarSolicitudCompletada(solicitud, result);
+                            }
                         }
                         
                         return res.json(result);
@@ -1811,8 +1929,7 @@ app.post('/payment-notification', verifyWebhookToken, async (req, res) => {
                                 `🔧 Tipo: ${tipo_pago}\n` +
                                 `💳 Tarjeta: ${tarjeta_destino}\n` +
                                 `🆔 ID: \`${tx_id}\`\n\n` +
-                                `ℹ️ Este pago está pendiente de reclamar.\n` +
-                                `Mensaje: ${raw_message.substring(0, 100)}...`;
+                                `ℹ️ Este pago está pendiente de reclamar.`;
                             
                             await bot.sendMessage(ADMIN_CHAT_ID, mensajeAdmin, { parse_mode: 'Markdown' });
                         }
@@ -1875,41 +1992,6 @@ app.post('/payment-notification', verifyWebhookToken, async (req, res) => {
                 }
                 break;
                 
-            case 'AUTO_PAYMENT':
-                // Para compatibilidad con versiones antiguas
-                console.log(`🔄 Procesando AUTO_PAYMENT (legacy)`);
-                const { user_id } = req.body;
-                
-                if (!user_id) {
-                    return res.status(400).json({ 
-                        success: false, 
-                        message: 'user_id requerido para AUTO_PAYMENT' 
-                    });
-                }
-                
-                const result = await procesarPagoAutomatico(user_id, amount, currency, tx_id, tipo_pago);
-                return res.json(result);
-                
-            case 'PENDING_PAYMENT':
-                // Para compatibilidad
-                console.log(`📝 Guardando PENDING_PAYMENT (legacy)`);
-                const { data, error } = await supabase.from('pending_sms_payments').insert({
-                    phone: phone,
-                    amount: amount,
-                    currency: currency,
-                    tx_id: tx_id,
-                    tipo_pago: tipo_pago,
-                    tarjeta_destino: tarjeta_destino,
-                    raw_message: raw_message,
-                    claimed: false
-                });
-                
-                if (error) {
-                    return res.status(500).json({ success: false, error: error.message });
-                } else {
-                    return res.json({ success: true, message: 'Pago pendiente registrado' });
-                }
-                
             default:
                 console.log(`❌ Tipo de notificación desconocido: ${type}`);
                 return res.status(400).json({ 
@@ -1939,185 +2021,40 @@ app.post('/payment-notification', verifyWebhookToken, async (req, res) => {
         
         return res.status(500).json({ 
             success: false, 
-            message: error.message,
-            stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+            message: error.message
         });
     }
 });
 
 // ============================================
-// FUNCIÓN PARA BUSCAR USUARIO POR TELÉFONO (MEJORADA CON LOGS)
+// RUTAS DEL PANEL WEB (SIMPLIFICADAS PARA AHORRAR ESPACIO)
 // ============================================
 
-async function getUserByPhone(phone) {
-    try {
-        if (!phone) {
-            console.log('❌ No se proporcionó teléfono para buscar');
-            return null;
-        }
-        
-        // Normalizar teléfono: remover todos los caracteres no numéricos
-        const normalizedPhone = phone.replace(/[^\d]/g, '');
-        console.log(`🔍 Buscando usuario con teléfono normalizado: ${normalizedPhone}`);
-        
-        // Si el teléfono tiene menos de 8 dígitos, no es válido
-        if (normalizedPhone.length < 8) {
-            console.log(`❌ Teléfono demasiado corto: ${normalizedPhone}`);
-            return null;
-        }
-        
-        // Preparar diferentes formatos para buscar
-        let searchPatterns = [];
-        
-        // Si el teléfono comienza con 53 y tiene 10 dígitos
-        if (normalizedPhone.startsWith('53') && normalizedPhone.length === 10) {
-            searchPatterns.push(normalizedPhone); // 5351234567
-            searchPatterns.push(normalizedPhone.substring(2)); // 51234567 (sin 53)
-        } 
-        // Si el teléfono tiene 8 dígitos (asumimos que es sin 53)
-        else if (normalizedPhone.length === 8) {
-            searchPatterns.push(`53${normalizedPhone}`); // 5351234567
-            searchPatterns.push(normalizedPhone); // 51234567
-        }
-        // Otros formatos
-        else {
-            searchPatterns.push(normalizedPhone);
-            // Si tiene 9 dígitos y comienza con 5
-            if (normalizedPhone.length === 9 && normalizedPhone.startsWith('5')) {
-                searchPatterns.push(`53${normalizedPhone}`); // 53512345678
-                searchPatterns.push(normalizedPhone.substring(1)); // 12345678 (sin el 5 inicial)
-            }
-        }
-        
-        // Eliminar duplicados
-        searchPatterns = [...new Set(searchPatterns)];
-        
-        console.log(`🔍 Patrones de búsqueda a probar:`, searchPatterns);
-        
-        // Buscar en la base de datos con cada patrón
-        for (const pattern of searchPatterns) {
-            console.log(`🔍 Probando patrón: ${pattern}`);
-            
-            const { data, error } = await supabase
-                .from('users')
-                .select('*')
-                .eq('phone_number', pattern)
-                .single();
-            
-            if (error) {
-                if (error.code !== 'PGRST116') { // PGRST116 = no rows returned (es esperado)
-                    console.log(`⚠️ Error buscando con patrón ${pattern}:`, error.message);
-                }
-            }
-            
-            if (data) {
-                console.log(`✅ Usuario encontrado con patrón ${pattern}:`, {
-                    id: data.telegram_id,
-                    name: data.first_name,
-                    phone_in_db: data.phone_number
-                });
-                return data;
-            }
-        }
-        
-        // Si no se encontró con búsqueda exacta, buscar por coincidencia parcial (últimos 8 dígitos)
-        console.log(`🔍 Buscando por coincidencia parcial (últimos 8 dígitos)...`);
-        const last8Digits = normalizedPhone.slice(-8);
-        
-        const { data: allUsers, error: allUsersError } = await supabase
-            .from('users')
-            .select('*')
-            .not('phone_number', 'is', null);
-        
-        if (allUsersError) {
-            console.log(`⚠️ Error obteniendo todos los usuarios:`, allUsersError.message);
-            return null;
-        }
-        
-        if (allUsers && allUsers.length > 0) {
-            for (const user of allUsers) {
-                if (user.phone_number) {
-                    const dbPhone = user.phone_number.replace(/[^\d]/g, '');
-                    
-                    // Comparar últimos 8 dígitos
-                    if (dbPhone.endsWith(last8Digits)) {
-                        console.log(`✅ Usuario encontrado por coincidencia parcial:`, {
-                            id: user.telegram_id,
-                            name: user.first_name,
-                            phone_in_db: user.phone_number,
-                            last_8_digits: dbPhone.slice(-8)
-                        });
-                        return user;
-                    }
-                    
-                    // También comparar si el teléfono de la DB termina con los últimos 8 dígitos del teléfono buscado
-                    // o viceversa
-                    if (last8Digits.endsWith(dbPhone.slice(-8)) || dbPhone.endsWith(last8Digits.slice(-8))) {
-                        console.log(`✅ Coincidencia flexible encontrada:`, {
-                            id: user.telegram_id,
-                            name: user.first_name,
-                            phone_in_db: user.phone_number
-                        });
-                        return user;
-                    }
-                }
-            }
-        }
-        
-        console.log(`❌ Usuario no encontrado para ningún patrón de teléfono`);
-        return null;
-        
-    } catch (error) {
-        console.error('❌ Error en getUserByPhone:', error);
-        console.error('Stack:', error.stack);
-        return null;
-    }
-}
-// Endpoint keep alive
-app.get('/keepalive', (req, res) => {
-    res.json({ 
-        status: 'alive', 
-        timestamp: new Date().toISOString(),
-        service: 'cromwell-bot-server',
-        uptime: process.uptime(),
-        security_enabled: !!WEBHOOK_SECRET_KEY
-    });
-});
-
-// 1. Login web - SOLO CON ID DE TELEGRAM
 app.post('/api/login', async (req, res) => {
     try {
-        console.log('🔑 Intento de login:', req.body);
         const { identifier, password } = req.body;
         
         if (!identifier || !password) {
             return res.status(400).json({ error: 'Credenciales faltantes' });
         }
         
-        // SOLO aceptar ID de Telegram (debe ser un número)
         const telegramId = parseInt(identifier);
         if (isNaN(telegramId)) {
             return res.status(400).json({ error: 'Solo ID de Telegram (número) está permitido' });
         }
         
-        // Buscar usuario por ID de Telegram
         const user = await getUser(telegramId);
         
         if (!user) {
-            console.log('❌ Usuario no encontrado:', telegramId);
             return res.status(404).json({ error: 'Usuario no encontrado' });
         }
         
-        // Verificar contraseña web (si tienen una)
         if (user.web_password) {
             const validPassword = await bcrypt.compare(password, user.web_password);
             if (!validPassword) {
-                console.log('❌ Contraseña incorrecta para usuario:', telegramId);
                 return res.status(401).json({ error: 'Contraseña incorrecta' });
             }
         } else {
-            // Usuario no tiene contraseña web registrada
-            console.log('ℹ️ Usuario sin contraseña web:', telegramId);
             return res.status(403).json({ 
                 error: 'Debes registrar una contraseña primero',
                 needsRegistration: true,
@@ -2125,7 +2062,6 @@ app.post('/api/login', async (req, res) => {
             });
         }
         
-        // Crear sesión
         req.session.userId = user.telegram_id;
         req.session.authenticated = true;
         req.session.userData = {
@@ -2135,15 +2071,10 @@ app.post('/api/login', async (req, res) => {
             phone: user.phone_number
         };
 
-        // Guardar sesión explícitamente
         req.session.save((err) => {
             if (err) {
-                console.error('Error guardando sesión:', err);
                 return res.status(500).json({ error: 'Error interno del servidor' });
             }
-            
-            console.log('✅ Sesión creada para:', user.telegram_id);
-            console.log('✅ SessionID:', req.sessionID);
             
             res.json({ 
                 success: true, 
@@ -2167,89 +2098,16 @@ app.post('/api/login', async (req, res) => {
     }
 });
 
-// 2. Registro de contraseña web - SOLO CON ID DE TELEGRAM
-app.post('/api/register-password', async (req, res) => {
-    try {
-        const { identifier, password, confirmPassword } = req.body;
-        
-        if (!identifier || !password || !confirmPassword) {
-            return res.status(400).json({ error: 'Datos faltantes' });
-        }
-        
-        if (password !== confirmPassword) {
-            return res.status(400).json({ error: 'Las contraseñas no coinciden' });
-        }
-        
-        if (password.length < 8) {
-            return res.status(400).json({ error: 'La contraseña debe tener al menos 8 caracteres' });
-        }
-        
-        // SOLO aceptar ID de Telegram
-        const telegramId = parseInt(identifier);
-        if (isNaN(telegramId)) {
-            return res.status(400).json({ error: 'Solo ID de Telegram (número) está permitido' });
-        }
-        
-        const user = await getUser(telegramId);
-        
-        if (!user) {
-            return res.status(404).json({ error: 'Usuario no encontrado' });
-        }
-        
-        // Verificar si ya tiene contraseña
-        if (user.web_password) {
-            return res.status(400).json({ error: 'Ya tienes una contraseña registrada' });
-        }
-        
-        // Hashear contraseña
-        const salt = await bcrypt.genSalt(10);
-        const hashedPassword = await bcrypt.hash(password, salt);
-        
-        // Actualizar usuario
-        const { error } = await supabase
-            .from('users')
-            .update({ web_password: hashedPassword })
-            .eq('telegram_id', user.telegram_id);
-        
-        if (error) {
-            throw error;
-        }
-        
-        // Enviar notificación al bot
-        try {
-            await axios.post(`http://localhost:${PORT}/payment-notification`, {
-                auth_token: WEBHOOK_SECRET_KEY,
-                type: 'WEB_REGISTRATION',
-                user_id: user.telegram_id,
-                user_name: user.first_name,
-                timestamp: new Date().toISOString()
-            });
-        } catch (notifError) {
-            console.error('Error enviando notificación:', notifError);
-        }
-        
-        res.json({ success: true, message: 'Contraseña registrada exitosamente' });
-        
-    } catch (error) {
-        console.error('Error en registro web:', error);
-        res.status(500).json({ error: 'Error interno del servidor' });
-    }
-});
-
-// 3. Obtener datos de usuario (protegido)
+// Otras rutas web (simplificadas por espacio)
 app.get('/api/user-data', requireAuth, async (req, res) => {
     try {
-        console.log('📊 Obteniendo datos para usuario:', req.session.userId);
-        
         const user = await getUser(req.session.userId);
         
         if (!user) {
-            console.log('❌ Usuario no encontrado en sesión:', req.session.userId);
             req.session.destroy();
             return res.status(404).json({ error: 'Usuario no encontrado' });
         }
         
-        // Obtener transacciones recientes
         const { data: transactions } = await supabase
             .from('transactions')
             .select('*')
@@ -2257,7 +2115,6 @@ app.get('/api/user-data', requireAuth, async (req, res) => {
             .order('created_at', { ascending: false })
             .limit(10);
         
-        // Obtener pagos pendientes
         const { data: pendingPayments } = await supabase
             .from('pending_sms_payments')
             .select('*')
@@ -2278,21 +2135,11 @@ app.get('/api/user-data', requireAuth, async (req, res) => {
                 tokens_cws: user.tokens_cws || 0,
                 tokens_cwt: user.tokens_cwt || 0,
                 pending_balance_cup: user.pending_balance_cup || 0,
-                accepted_terms: user.accepted_terms || false,
-                first_dep_cup: user.first_dep_cup || true,
-                first_dep_saldo: user.first_dep_saldo || true,
-                first_dep_usdt: user.first_dep_usdt || true
+                accepted_terms: user.accepted_terms || false
             },
             transactions: transactions || [],
-            pendingPayments: pendingPayments || [],
-            stats: {
-                total_deposits: transactions ? transactions.filter(t => t.type === 'DEPOSIT' && t.status === 'completed').length : 0,
-                total_amount: transactions ? transactions.filter(t => t.status === 'completed').reduce((sum, t) => sum + (t.amount || 0), 0) : 0,
-                pending_count: pendingPayments ? pendingPayments.length : 0
-            }
+            pendingPayments: pendingPayments || []
         });
-        
-        console.log('✅ Datos enviados para usuario:', user.telegram_id);
         
     } catch (error) {
         console.error('❌ Error obteniendo datos:', error);
@@ -2300,512 +2147,6 @@ app.get('/api/user-data', requireAuth, async (req, res) => {
     }
 });
 
-// 4. Crear solicitud de depósito web
-app.post('/api/create-deposit', requireAuth, async (req, res) => {
-    try {
-        const { currency, amount, usdtWallet } = req.body;
-        const userId = req.session.userId;
-        
-        if (!currency || !amount) {
-            return res.status(400).json({ error: 'Datos requeridos faltantes' });
-        }
-        
-        // Validar monto mínimo
-        const minimos = { cup: MINIMO_CUP, saldo: MINIMO_SALDO, usdt: MINIMO_USDT };
-        if (amount < minimos[currency]) {
-            return res.status(400).json({ 
-                error: `Monto mínimo: ${minimos[currency]} ${currency.toUpperCase()}` 
-            });
-        }
-        
-        const user = await getUser(userId);
-        if (!user) {
-            return res.status(404).json({ error: 'Usuario no encontrado' });
-        }
-        
-        // Para USDT, validar wallet
-        if (currency === 'usdt') {
-            if (!usdtWallet) {
-                return res.status(400).json({ error: 'Wallet requerida para USDT' });
-            }
-            if (!usdtWallet.startsWith('0x') || usdtWallet.length !== 42) {
-                return res.status(400).json({ error: 'Wallet USDT inválida' });
-            }
-        }
-        
-        // Verificar si ya tiene una solicitud pendiente
-        const { data: pendingTx } = await supabase
-            .from('transactions')
-            .select('*')
-            .eq('user_id', userId)
-            .eq('status', 'pending')
-            .eq('currency', currency)
-            .eq('type', 'DEPOSIT')
-            .limit(1);
-        
-        if (pendingTx && pendingTx.length > 0) {
-            return res.status(400).json({ 
-                error: 'Ya tienes una solicitud pendiente para este método',
-                existingOrder: pendingTx[0]
-            });
-        }
-        
-        // Calcular bono y tokens
-        const bonoPorcentaje = currency === 'usdt' ? 0.05 : 0.10;
-        const bono = user[`first_dep_${currency}`] ? amount * bonoPorcentaje : 0;
-        const totalConBono = amount + bono;
-        const tokens = calcularTokens(amount, currency);
-        
-        // Crear transacción
-        const { data: transaction, error } = await supabase
-            .from('transactions')
-            .insert([{
-                user_id: userId,
-                type: 'DEPOSIT',
-                currency: currency,
-                amount_requested: amount,
-                estimated_bonus: bono,
-                estimated_tokens: tokens,
-                status: 'pending',
-                user_name: user.first_name,
-                user_username: user.username,
-                user_phone: user.phone_number,
-                usdt_wallet: currency === 'usdt' ? usdtWallet : null
-            }])
-            .select()
-            .single();
-        
-        if (error) {
-            throw error;
-        }
-        
-        // Preparar datos de pago
-        let paymentInfo = {};
-        
-        switch (currency) {
-            case 'cup':
-                paymentInfo = {
-                    method: 'Tarjeta',
-                    target: PAGO_CUP_TARJETA || '[NO CONFIGURADO]',
-                    instructions: [
-                        'Activa "Mostrar número al destinatario" en Transfermóvil',
-                        `Transfiere EXACTAMENTE ${amount} CUP`,
-                        `A la tarjeta: ${PAGO_CUP_TARJETA || '[NO CONFIGURADO]'}`,
-                        'Usa el mismo teléfono vinculado'
-                    ]
-                };
-                break;
-            case 'saldo':
-                paymentInfo = {
-                    method: 'Saldo Móvil',
-                    target: PAGO_SALDO_MOVIL || '[NO CONFIGURADO]',
-                    instructions: [
-                        `Envía saldo a: ${PAGO_SALDO_MOVIL || '[NO CONFIGURADO]'}`,
-                        `Monto exacto: ${amount}`,
-                        'Toma captura de pantalla de la transferencia',
-                        'No esperes confirmación por SMS'
-                    ]
-                };
-                break;
-            case 'usdt':
-                paymentInfo = {
-                    method: 'USDT BEP20',
-                    target: PAGO_USDT_ADDRESS || '[NO CONFIGURADO]',
-                    instructions: [
-                        `Envía USDT (BEP20) a: ${PAGO_USDT_ADDRESS || '[NO CONFIGURADO]'}`,
-                        `Monto exacto: ${amount} USDT`,
-                        `Desde wallet: ${usdtWallet}`,
-                        'SOLO red BEP20 (Binance Smart Chain)',
-                        'Guarda el hash de la transacción'
-                    ]
-                };
-                break;
-        }
-        
-        res.json({
-            success: true,
-            order: {
-                id: transaction.id,
-                amount: amount,
-                currency: currency,
-                bonus: bono,
-                tokens: tokens,
-                total: totalConBono,
-                status: 'pending'
-            },
-            paymentInfo: paymentInfo
-        });
-        
-    } catch (error) {
-        console.error('Error creando depósito:', error);
-        res.status(500).json({ error: 'Error interno del servidor' });
-    }
-});
-
-// 5. Verificar transacción USDT web
-app.post('/api/verify-usdt', requireAuth, async (req, res) => {
-    try {
-        const { txHash, orderId } = req.body;
-        const userId = req.session.userId;
-        
-        if (!txHash || !orderId) {
-            return res.status(400).json({ error: 'Datos requeridos faltantes' });
-        }
-        
-        // Obtener orden
-        const { data: order, error: orderError } = await supabase
-            .from('transactions')
-            .select('*')
-            .eq('id', orderId)
-            .eq('user_id', userId)
-            .single();
-        
-        if (orderError || !order) {
-            return res.status(404).json({ error: 'Orden no encontrada' });
-        }
-        
-        if (order.currency !== 'usdt') {
-            return res.status(400).json({ error: 'Esta orden no es USDT' });
-        }
-        
-        if (order.status !== 'pending') {
-            return res.status(400).json({ error: 'Esta orden ya fue procesada' });
-        }
-        
-        // Verificar transacción en BSC
-        const verification = await checkBSCTransaction(txHash, order.amount_requested, PAGO_USDT_ADDRESS);
-        
-        if (!verification.success) {
-            return res.status(400).json({ 
-                error: 'No se pudo verificar la transacción',
-                details: verification.error || 'Transacción no encontrada o inválida'
-            });
-        }
-        
-        // Verificar que la transacción venga de la wallet correcta
-        if (verification.from.toLowerCase() !== order.usdt_wallet.toLowerCase()) {
-            return res.status(400).json({ 
-                error: 'La transacción no viene de la wallet registrada',
-                expected: order.usdt_wallet,
-                received: verification.from
-            });
-        }
-        
-        // Actualizar orden con hash
-        const { error: updateError } = await supabase
-            .from('transactions')
-            .update({ 
-                tx_id: txHash,
-                status: 'verifying'
-            })
-            .eq('id', orderId);
-        
-        if (updateError) {
-            throw updateError;
-        }
-        
-        // Notificar endpoint interno para procesamiento
-        try {
-            await axios.post(`http://localhost:${PORT}/payment-notification`, {
-                auth_token: WEBHOOK_SECRET_KEY,
-                type: 'USDT_VERIFIED',
-                user_id: userId,
-                amount: verification.amount,
-                currency: 'usdt',
-                tx_id: txHash,
-                tipo_pago: 'USDT_WEB'
-            });
-        } catch (notifError) {
-            console.error('Error notificando:', notifError);
-        }
-        
-        res.json({
-            success: true,
-            message: 'Transacción verificada. Procesando pago...',
-            transaction: {
-                hash: txHash,
-                amount: verification.amount,
-                from: verification.from,
-                status: 'verifying'
-            }
-        });
-        
-    } catch (error) {
-        console.error('Error verificando USDT:', error);
-        res.status(500).json({ error: 'Error interno del servidor' });
-    }
-});
-
-// 6. Reclamar pago por ID web
-app.post('/api/claim-payment', requireAuth, async (req, res) => {
-    try {
-        const { txId } = req.body;
-        const userId = req.session.userId;
-        
-        if (!txId) {
-            return res.status(400).json({ error: 'ID de transacción requerido' });
-        }
-        
-        // Buscar pago pendiente
-        const { data: pendingPayment, error: paymentError } = await supabase
-            .from('pending_sms_payments')
-            .select('*')
-            .eq('tx_id', txId.trim().toUpperCase())
-            .eq('claimed', false)
-            .single();
-        
-        if (paymentError || !pendingPayment) {
-            return res.status(404).json({ error: 'Pago pendiente no encontrado' });
-        }
-        
-        // Verificar que el pago pertenece al usuario
-        const user = await getUser(userId);
-        if (!user || (user.telegram_id !== pendingPayment.user_id && user.phone_number !== pendingPayment.phone)) {
-            return res.status(403).json({ error: 'Este pago no te pertenece' });
-        }
-        
-        // Notificar endpoint interno para procesar
-        try {
-            const result = await axios.post(`http://localhost:${PORT}/payment-notification`, {
-                auth_token: WEBHOOK_SECRET_KEY,
-                type: 'CLAIM_PAYMENT',
-                user_id: userId,
-                amount: pendingPayment.amount,
-                currency: pendingPayment.currency,
-                tx_id: pendingPayment.tx_id,
-                tipo_pago: pendingPayment.tipo_pago,
-                payment_id: pendingPayment.id
-            });
-            
-            if (result.data.success) {
-                // Marcar como reclamado
-                await supabase
-                    .from('pending_sms_payments')
-                    .update({ 
-                        claimed: true, 
-                        claimed_by: userId,
-                        claimed_at: new Date().toISOString()
-                    })
-                    .eq('id', pendingPayment.id);
-            }
-            
-            res.json(result.data);
-            
-        } catch (botError) {
-            console.error('Error contactando servicio:', botError);
-            res.status(500).json({ error: 'Error procesando pago' });
-        }
-        
-    } catch (error) {
-        console.error('Error reclamando pago:', error);
-        res.status(500).json({ error: 'Error interno del servidor' });
-    }
-});
-
-// 7. Logout web
-app.post('/api/logout', (req, res) => {
-    req.session.destroy(err => {
-        if (err) {
-            console.error('Error en logout:', err);
-            return res.status(500).json({ error: 'Error cerrando sesión' });
-        }
-        console.log('✅ Sesión cerrada exitosamente');
-        res.json({ success: true });
-    });
-});
-
-// 8. Verificar sesión web
-app.get('/api/check-session', (req, res) => {
-    console.log('🔍 Verificando sesión:', req.session);
-    
-    if (req.session.userId && req.session.authenticated) {
-        res.json({ 
-            authenticated: true, 
-            userId: req.session.userId,
-            sessionId: req.sessionID
-        });
-    } else {
-        res.json({ 
-            authenticated: false,
-            sessionId: req.sessionID
-        });
-    }
-});
-
-// 9. Verificar transacciones USDT automáticamente
-app.post('/api/check-usdt-transactions', requireAuth, async (req, res) => {
-    try {
-        const userId = req.session.userId;
-        const user = await getUser(userId);
-        
-        if (!user || !user.usdt_wallet) {
-            return res.json({ success: false, message: 'No hay wallet configurada' });
-        }
-        
-        if (!BSCSCAN_API_KEY) {
-            return res.json({ success: false, message: 'Servicio BSCScan no configurado' });
-        }
-        
-        // Obtener órdenes pendientes del usuario
-        const { data: pendingOrders } = await supabase
-            .from('transactions')
-            .select('*')
-            .eq('user_id', userId)
-            .eq('status', 'pending')
-            .eq('currency', 'usdt')
-            .eq('type', 'DEPOSIT');
-        
-        if (!pendingOrders || pendingOrders.length === 0) {
-            return res.json({ success: false, message: 'No hay órdenes pendientes' });
-        }
-        
-        // Verificar transacciones desde la wallet del usuario a nuestra dirección
-        const url = `https://api.bscscan.com/api?module=account&action=txlist&address=${PAGO_USDT_ADDRESS}&startblock=0&endblock=99999999&page=1&offset=10&sort=desc&apikey=${BSCSCAN_API_KEY}`;
-        const response = await axios.get(url);
-        
-        let foundTransactions = [];
-        
-        if (response.data.status === '1') {
-            const transactions = response.data.result;
-            
-            for (const order of pendingOrders) {
-                // Encontrar transacción coincidente
-                const matchingTx = transactions.find(tx => {
-                    const txAmount = parseFloat(web3.utils.fromWei(tx.value, 'ether'));
-                    const amountDiff = Math.abs(txAmount - order.amount_requested);
-                    const margin = order.amount_requested * 0.01;
-                    
-                    return tx.from.toLowerCase() === user.usdt_wallet.toLowerCase() &&
-                           amountDiff <= margin &&
-                           tx.to.toLowerCase() === PAGO_USDT_ADDRESS.toLowerCase();
-                });
-                
-                if (matchingTx) {
-                    foundTransactions.push({
-                        orderId: order.id,
-                        txHash: matchingTx.hash,
-                        amount: parseFloat(web3.utils.fromWei(matchingTx.value, 'ether'))
-                    });
-                }
-            }
-        }
-        
-        res.json({
-            success: true,
-            found: foundTransactions.length > 0,
-            transactions: foundTransactions
-        });
-        
-    } catch (error) {
-        console.error('Error verificando transacciones:', error);
-        res.status(500).json({ error: 'Error interno del servidor' });
-    }
-});
-
-// 10. Estadísticas de administrador
-app.get('/api/admin/stats', requireAuth, async (req, res) => {
-    try {
-        const user = await getUser(req.session.userId);
-        
-        // Verificar si es administrador
-        const adminId = process.env.ADMIN_GROUP || '';
-        if (!adminId || user.telegram_id.toString() !== adminId.replace('-100', '')) {
-            return res.status(403).json({ error: 'Acceso denegado' });
-        }
-        
-        // Estadísticas generales
-        const { count: totalUsers } = await supabase
-            .from('users')
-            .select('*', { count: 'exact', head: true });
-        
-        const { data: recentTransactions } = await supabase
-            .from('transactions')
-            .select('*')
-            .order('created_at', { ascending: false })
-            .limit(50);
-        
-        const { data: allPending } = await supabase
-            .from('pending_sms_payments')
-            .select('*')
-            .eq('claimed', false);
-        
-        // Calcular totales por moneda
-        const { data: balances } = await supabase
-            .from('users')
-            .select('balance_cup, balance_saldo, balance_usdt');
-        
-        let totalCup = 0, totalSaldo = 0, totalUsdt = 0;
-        if (balances) {
-            balances.forEach(user => {
-                totalCup += user.balance_cup || 0;
-                totalSaldo += user.balance_saldo || 0;
-                totalUsdt += user.balance_usdt || 0;
-            });
-        }
-        
-        // Usuarios activos hoy
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        
-        const { data: activeUsers } = await supabase
-            .from('users')
-            .select('telegram_id, first_name, last_active')
-            .gte('last_active', today.toISOString());
-        
-        res.json({
-            success: true,
-            stats: {
-                totalUsers,
-                totalCup,
-                totalSaldo,
-                totalUsdt,
-                pendingPayments: allPending ? allPending.length : 0,
-                activeToday: activeUsers ? activeUsers.length : 0,
-                recentTransactions: recentTransactions ? recentTransactions.length : 0
-            },
-            recentTransactions: recentTransactions || [],
-            pendingPayments: allPending || [],
-            activeUsers: activeUsers || []
-        });
-        
-    } catch (error) {
-        console.error('Error obteniendo estadísticas:', error);
-        res.status(500).json({ error: 'Error interno del servidor' });
-    }
-});
-
-// 11. Endpoint de depuración para ver sesiones
-app.get('/api/debug', (req, res) => {
-    res.json({
-        session: req.session,
-        sessionId: req.sessionID,
-        cookies: req.cookies,
-        headers: req.headers
-    });
-});
-
-// 12. Depuración de todas las sesiones (solo desarrollo)
-app.get('/api/debug-all-sessions', (req, res) => {
-    if (process.env.NODE_ENV !== 'development') {
-        return res.status(403).json({ error: 'Solo en desarrollo' });
-    }
-    
-    res.json({
-        activeSessions: Object.keys(activeSessions),
-        totalSessions: Object.keys(activeSessions).length
-    });
-});
-
-// 13. Endpoint de depuración de sesión
-app.get('/api/debug-session', (req, res) => {
-    res.json({
-        session: req.session,
-        sessionID: req.sessionID,
-        cookies: req.cookies
-    });
-});
-
-// 14. Ruta para archivos HTML
 app.get('/', (req, res) => {
     if (req.session.authenticated) {
         res.redirect('/dashboard');
@@ -2815,440 +2156,41 @@ app.get('/', (req, res) => {
 });
 
 app.get('/dashboard', (req, res) => {
-    console.log('📄 Accediendo al dashboard, sesión:', req.session);
-    
     if (req.session.userId && req.session.authenticated) {
-        console.log('✅ Usuario autenticado, sirviendo dashboard');
         res.sendFile(__dirname + '/public/dashboard.html');
     } else {
-        console.log('❌ Usuario no autenticado, redirigiendo a login');
         res.redirect('/');
     }
 });
 
-app.get('/admin', requireAuth, async (req, res) => {
-    const user = await getUser(req.session.userId);
-    const adminId = process.env.ADMIN_GROUP || '';
-    
-    if (!adminId || user.telegram_id.toString() !== adminId.replace('-100', '')) {
-        return res.redirect('/dashboard');
-    }
-    
-    res.sendFile(__dirname + '/public/admin.html');
-});
-
-// Ruta para servir cualquier archivo del dashboard
-app.get('/:page', (req, res) => {
-    const page = req.params.page;
-    if (page.includes('.html') || page.includes('.css') || page.includes('.js') || page.includes('.ico')) {
-        res.sendFile(__dirname + '/public/' + page);
-    } else {
-        res.redirect('/');
-    }
-});
-
-// ============================================
-// RUTAS ADICIONALES NECESARIAS PARA EL DASHBOARD
-// ============================================
-
-// Ruta para notificaciones
-app.get('/api/notificaciones', requireAuth, async (req, res) => {
-  try {
-    const userId = req.session.userId;
-    
-    // Obtener notificaciones del usuario
-    const { data: notifications } = await supabase
-      .from('transactions')
-      .select('*')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false })
-      .limit(10);
-    
-    res.json({
-      success: true,
-      notifications: notifications || []
+// Keep alive endpoint
+app.get('/keepalive', (req, res) => {
+    res.json({ 
+        status: 'alive', 
+        timestamp: new Date().toISOString(),
+        service: 'cromwell-bot-server',
+        uptime: process.uptime()
     });
-  } catch (error) {
-    console.error('Error obteniendo notificaciones:', error);
-    res.json({ success: true, notifications: [] });
-  }
-});
-
-// Ruta para pagos pendientes
-app.get('/api/pagos-pendientes', requireAuth, async (req, res) => {
-  try {
-    const userId = req.session.userId;
-    const user = await getUser(userId);
-    
-    const { data: pendingPayments } = await supabase
-      .from('pending_sms_payments')
-      .select('*')
-      .eq('claimed', false)
-      .or(`user_id.eq.${userId},phone.eq.${user.phone_number}`);
-    
-    res.json({
-      success: true,
-      pendingPayments: pendingPayments || []
-    });
-  } catch (error) {
-    console.error('Error obteniendo pagos pendientes:', error);
-    res.json({ success: true, pendingPayments: [] });
-  }
-});
-
-// WebSocket endpoint (simulado)
-app.get('/ws', (req, res) => {
-  res.status(404).json({ error: 'WebSocket no implementado' });
-});
-
-// Ruta para el service worker
-app.get('/sw.js', (req, res) => {
-  res.set('Content-Type', 'application/javascript');
-  res.sendFile(__dirname + '/public/sw.js');
-});
-
-// Ruta para información de pago simplificada
-app.get('/api/payment-info-simple', (req, res) => {
-    res.json({
-        cup_target: PAGO_CUP_TARJETA || 'NO CONFIGURADO',
-        saldo_target: PAGO_SALDO_MOVIL || 'NO CONFIGURADO',
-        usdt_target: PAGO_USDT_ADDRESS || 'NO CONFIGURADO',
-        minimo_cup: MINIMO_CUP,
-        minimo_saldo: MINIMO_SALDO,
-        minimo_usdt: MINIMO_USDT,
-        maximo_cup: MAXIMO_CUP
-    });
-});
-
-// Ruta para información de pago
-app.get('/api/payment-info', requireAuth, (req, res) => {
-  res.json({
-    cup_target: PAGO_CUP_TARJETA,
-    saldo_target: PAGO_SALDO_MOVIL,
-    usdt_target: PAGO_USDT_ADDRESS,
-    minimo_cup: MINIMO_CUP,
-    minimo_saldo: MINIMO_SALDO,
-    minimo_usdt: MINIMO_USDT,
-    maximo_cup: MAXIMO_CUP,
-    cws_per_100: CWS_PER_100_SALDO,
-    cwt_per_10: CWT_PER_10_USDT,
-    min_cwt: MIN_CWT_USE,
-    min_cws: MIN_CWS_USE
-  });
-});
-
-// Ruta para notificaciones (nueva)
-app.get('/api/notifications', requireAuth, async (req, res) => {
-  try {
-    const userId = req.session.userId;
-    
-    // Obtener transacciones recientes como notificaciones
-    const { data: transactions } = await supabase
-      .from('transactions')
-      .select('*')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false })
-      .limit(10);
-    
-    // Convertir transacciones a formato de notificación
-    const notifications = (transactions || []).map(tx => ({
-      id: tx.id,
-      title: tx.type === 'DEPOSIT' ? 'Depósito' : 
-             tx.type === 'AUTO_DEPOSIT' ? 'Depósito Automático' : tx.type,
-      message: `${tx.status === 'completed' ? '✅' : '⏳'} ${formatCurrency(tx.amount || tx.amount_requested, tx.currency)}`,
-      type: tx.status === 'completed' ? 'success' : 
-            tx.status === 'pending' ? 'warning' : 'info',
-      timestamp: tx.created_at,
-      read: true,
-      icon: 'payment'
-    }));
-    
-    res.json({
-      success: true,
-      notifications: notifications
-    });
-  } catch (error) {
-    console.error('Error obteniendo notificaciones:', error);
-    res.json({ success: true, notifications: [] });
-  }
-});
-
-// Ruta para check-payment
-app.get('/api/check-payment/:orderId', requireAuth, async (req, res) => {
-  try {
-    const { orderId } = req.params;
-    const userId = req.session.userId;
-    
-    const { data: transaction, error } = await supabase
-      .from('transactions')
-      .select('*')
-      .eq('id', orderId)
-      .eq('user_id', userId)
-      .single();
-    
-    if (error || !transaction) {
-      return res.status(404).json({ 
-        success: false, 
-        error: 'Orden no encontrada' 
-      });
-    }
-    
-    res.json({
-      success: true,
-      status: transaction.status,
-      message: transaction.status === 'completed' ? 'Pago completado' :
-              transaction.status === 'pending' ? 'Pago pendiente' : 'Estado desconocido',
-      transaction: transaction
-    });
-  } catch (error) {
-    console.error('Error verificando pago:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: 'Error interno del servidor' 
-    });
-  }
-});
-
-// Ruta para cancelar depósito
-app.post('/api/cancel-deposit/:orderId', requireAuth, async (req, res) => {
-  try {
-    const { orderId } = req.params;
-    const userId = req.session.userId;
-    
-    const { data: transaction, error: fetchError } = await supabase
-      .from('transactions')
-      .select('*')
-      .eq('id', orderId)
-      .eq('user_id', userId)
-      .eq('status', 'pending')
-      .single();
-    
-    if (fetchError || !transaction) {
-      return res.status(404).json({ 
-        success: false, 
-        error: 'Orden no encontrada o no cancelable' 
-      });
-    }
-    
-    const { error: updateError } = await supabase
-      .from('transactions')
-      .update({ status: 'cancelled' })
-      .eq('id', orderId);
-    
-    if (updateError) {
-      throw updateError;
-    }
-    
-    res.json({
-      success: true,
-      message: 'Orden cancelada exitosamente'
-    });
-  } catch (error) {
-    console.error('Error cancelando depósito:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: 'Error interno del servidor' 
-    });
-  }
-});
-
-// Ruta para buscar pago por ID
-app.get('/api/search-payment/:txId', requireAuth, async (req, res) => {
-  try {
-    const { txId } = req.params;
-    const userId = req.session.userId;
-    const user = await getUser(userId);
-    
-    const { data: pendingPayments, error } = await supabase
-      .from('pending_sms_payments')
-      .select('*')
-      .or(`tx_id.ilike.%${txId}%,tx_id.ilike.%${txId.toUpperCase()}%`)
-      .eq('claimed', false);
-    
-    if (error) {
-      throw error;
-    }
-    
-    // Filtrar solo los que pertenecen al usuario
-    const userPayments = (pendingPayments || []).filter(payment => 
-      payment.user_id == userId || payment.phone === user.phone_number
-    );
-    
-    res.json({
-      success: true,
-      results: userPayments
-    });
-  } catch (error) {
-    console.error('Error buscando pago:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: 'Error interno del servidor' 
-    });
-  }
-});
-
-// Ruta para verificación manual
-app.post('/api/manual-verification', requireAuth, async (req, res) => {
-  try {
-    // Esta es una ruta simplificada - en producción necesitarías manejar archivos
-    const { amount, method, date, description } = req.body;
-    
-    if (!amount || !method || !date || !description) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Faltan datos requeridos' 
-      });
-    }
-    
-    // Crear una solicitud de verificación manual
-    const { data, error } = await supabase
-      .from('manual_verifications')
-      .insert([{
-        user_id: req.session.userId,
-        amount: parseFloat(amount),
-        currency: method,
-        description: description,
-        requested_at: new Date().toISOString(),
-        status: 'pending'
-      }]);
-    
-    if (error) {
-      throw error;
-    }
-    
-    res.json({
-      success: true,
-      message: 'Solicitud de verificación manual enviada. Un administrador la revisará en 24-48 horas.'
-    });
-  } catch (error) {
-    console.error('Error en verificación manual:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: 'Error interno del servidor' 
-    });
-  }
-});
-
-// Ruta para actualizar perfil
-app.post('/api/update-profile', requireAuth, async (req, res) => {
-    try {
-        const { first_name, phone_number, usdt_wallet, current_password } = req.body;
-        const userId = req.session.userId;
-        
-        const user = await getUser(userId);
-        if (!user) {
-            return res.status(404).json({ error: 'Usuario no encontrado' });
-        }
-        
-        // Verificar contraseña actual si se está cambiando información sensible
-        if ((phone_number || usdt_wallet) && !current_password) {
-            return res.status(400).json({ error: 'Se requiere contraseña actual para cambiar información sensible' });
-        }
-        
-        if (current_password) {
-            // Verificar si tiene contraseña configurada
-            if (!user.web_password) {
-                return res.status(400).json({ error: 'No tienes contraseña configurada' });
-            }
-            
-            const validPassword = await bcrypt.compare(current_password, user.web_password);
-            if (!validPassword) {
-                return res.status(401).json({ error: 'Contraseña actual incorrecta' });
-            }
-        }
-        
-        const updates = {};
-        if (first_name) updates.first_name = first_name;
-        
-        if (phone_number) {
-            // Normalizar teléfono
-            const cleanPhone = phone_number.replace(/[^\d]/g, '');
-            
-            // Validar formato
-            if (!cleanPhone.startsWith('53')) {
-                // Si tiene 8 dígitos, agregar 53
-                if (cleanPhone.length === 8) {
-                    updates.phone_number = '53' + cleanPhone;
-                } else if (cleanPhone.length === 9 && cleanPhone.startsWith('5')) {
-                    updates.phone_number = '53' + cleanPhone;
-                } else if (cleanPhone.length === 10 && cleanPhone.startsWith('53')) {
-                    updates.phone_number = cleanPhone;
-                } else {
-                    return res.status(400).json({ error: 'Formato de teléfono inválido' });
-                }
-            } else if (cleanPhone.length === 10) {
-                updates.phone_number = cleanPhone;
-            } else {
-                return res.status(400).json({ error: 'El teléfono debe tener 10 dígitos (53 + 8 dígitos)' });
-            }
-            
-            // Verificar si el teléfono ya está en uso por otro usuario
-            const { data: existingUser } = await supabase
-                .from('users')
-                .select('telegram_id')
-                .eq('phone_number', updates.phone_number)
-                .neq('telegram_id', userId)
-                .single();
-            
-            if (existingUser) {
-                return res.status(400).json({ error: 'Este teléfono ya está vinculado a otra cuenta' });
-            }
-        }
-        
-        if (usdt_wallet) {
-            if (!usdt_wallet.startsWith('0x') || usdt_wallet.length !== 42) {
-                return res.status(400).json({ error: 'Wallet USDT inválida. Debe comenzar con 0x y tener 42 caracteres' });
-            }
-            updates.usdt_wallet = usdt_wallet;
-        }
-        
-        // Solo actualizar si hay cambios
-        if (Object.keys(updates).length > 0) {
-            const { error } = await supabase
-                .from('users')
-                .update(updates)
-                .eq('telegram_id', userId);
-            
-            if (error) {
-                throw error;
-            }
-            
-            // Notificar al bot de Telegram sobre el cambio
-            try {
-                if (ADMIN_CHAT_ID) {
-                    const mensajeAdmin = `📱 *PERFIL ACTUALIZADO*\n\n` +
-                        `👤 Usuario: ${updates.first_name || user.first_name}\n` +
-                        `🆔 ID: ${userId}\n` +
-                        `${phone_number ? `📞 Teléfono: ${updates.phone_number}\n` : ''}` +
-                        `${usdt_wallet ? `👛 Wallet: ${updates.usdt_wallet}\n` : ''}` +
-                        `🕐 Fecha: ${new Date().toLocaleString()}`;
-                    
-                    await bot.sendMessage(ADMIN_CHAT_ID, mensajeAdmin, { parse_mode: 'Markdown' });
-                }
-            } catch (notifError) {
-                console.error('Error notificando cambio:', notifError);
-            }
-            
-            res.json({ 
-                success: true, 
-                message: 'Perfil actualizado exitosamente',
-                updates: updates 
-            });
-        } else {
-            res.json({ success: true, message: 'Sin cambios' });
-        }
-        
-    } catch (error) {
-        console.error('Error actualizando perfil:', error);
-        res.status(500).json({ error: 'Error interno del servidor' });
-    }
 });
 
 // ============================================
 // PROGRAMADORES Y TAREAS PROGRAMADAS
 // ============================================
 
-// Programar verificación de saldos pendientes
+// Limpiar sesiones inactivas
+setInterval(() => {
+    const now = Date.now();
+    const timeout = 30 * 60 * 1000;
+    
+    for (const [chatId, session] of Object.entries(activeSessions)) {
+        if (session.lastActivity && (now - session.lastActivity) > timeout) {
+            delete activeSessions[chatId];
+            console.log(`🧹 Sesión limpiada para ${chatId}`);
+        }
+    }
+}, 10 * 60 * 1000);
+
+// Verificar y acreditar saldos pendientes acumulados
 setInterval(async () => {
     try {
         const { data: users } = await supabase
@@ -3275,7 +2217,7 @@ setInterval(async () => {
                     amount: montoConBono,
                     amount_requested: user.pending_balance_cup,
                     status: 'completed',
-                    tx_id: `ACCUM_${Date.now()}`,
+                    tx_id: `ACCUM_${Date.now()}_${user.telegram_id}`,
                     tipo_pago: 'ACUMULADO'
                 });
                 
@@ -3298,82 +2240,16 @@ setInterval(async () => {
     } catch (error) {
         console.error('❌ Error en programador de saldo pendiente:', error);
     }
-}, 5 * 60 * 1000); // Cada 5 minutos
-
-// Programar verificación de USDT automáticamente
-setInterval(async () => {
-    if (!BSCSCAN_API_KEY || !PAGO_USDT_ADDRESS) return;
-    
-    try {
-        const { data: pendingUsdt } = await supabase
-            .from('transactions')
-            .select('*, users!inner(usdt_wallet, telegram_id)')
-            .eq('status', 'pending')
-            .eq('currency', 'usdt')
-            .eq('type', 'DEPOSIT')
-            .not('users.usdt_wallet', 'is', null);
-        
-        if (pendingUsdt && pendingUsdt.length > 0) {
-            console.log(`🔍 Verificando ${pendingUsdt.length} transacciones USDT pendientes...`);
-            
-            for (const tx of pendingUsdt) {
-                const user = tx.users;
-                
-                const url = `https://api.bscscan.com/api?module=account&action=txlist&address=${PAGO_USDT_ADDRESS}&startblock=0&endblock=99999999&sort=desc&apikey=${BSCSCAN_API_KEY}`;
-                const response = await axios.get(url);
-                
-                if (response.data.status === '1') {
-                    const transactions = response.data.result;
-                    
-                    const userTx = transactions.find(t => 
-                        t.from.toLowerCase() === user.usdt_wallet.toLowerCase() &&
-                        Math.abs(parseFloat(web3.utils.fromWei(t.value, 'ether')) - tx.amount_requested) <= (tx.amount_requested * 0.01)
-                    );
-                    
-                    if (userTx) {
-                        const result = await procesarPagoAutomatico(
-                            user.telegram_id,
-                            parseFloat(web3.utils.fromWei(userTx.hash, 'ether')),
-                            'usdt',
-                            userTx.hash,
-                            'USDT_AUTO_DETECTED'
-                        );
-                        
-                        if (result.success) {
-                            console.log(`✅ USDT detectado automáticamente para ${user.telegram_id}`);
-                        }
-                    }
-                }
-            }
-        }
-    } catch (error) {
-        console.error('❌ Error verificando USDT automático:', error);
-    }
-}, 10 * 60 * 1000); // Cada 10 minutos
-
-// Limpiar sesiones inactivas
-setInterval(() => {
-    const now = Date.now();
-    const timeout = 30 * 60 * 1000; // 30 minutos
-    
-    for (const [chatId, session] of Object.entries(activeSessions)) {
-        if (session.lastActivity && (now - session.lastActivity) > timeout) {
-            delete activeSessions[chatId];
-            console.log(`🧹 Sesión limpiada para ${chatId}`);
-        }
-    }
-}, 10 * 60 * 1000); // Cada 10 minutos
+}, 5 * 60 * 1000);
 
 // ============================================
-// INICIAR SERVIDORES
+// INICIAR SERVIDOR
 // ============================================
 
-// Servidor principal (bot + API)
 app.listen(PORT, () => {
     console.log(`\n🤖 Cromwell Bot & Server iniciado`);
     console.log(`🔗 http://localhost:${PORT}`);
     console.log(`📊 Dashboard: http://localhost:${PORT}/dashboard`);
-    console.log(`🛠️ Admin: http://localhost:${PORT}/admin`);
     console.log(`🔄 Keep alive: http://localhost:${PORT}/keepalive`);
     console.log(`🔐 Seguridad: ${WEBHOOK_SECRET_KEY ? '✅ ACTIVADA' : '⚠️ DESACTIVADA'}`);
     console.log(`💰 Mínimos: CUP=${MINIMO_CUP}, Saldo=${MINIMO_SALDO}, USDT=${MINIMO_USDT}`);
