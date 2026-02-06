@@ -7,6 +7,7 @@ import threading
 import time
 import schedule
 from datetime import datetime
+import unicodedata
 
 app = Flask(__name__)
 
@@ -25,6 +26,12 @@ if not MI_TARJETA_DEFAULT and TARJETAS_WEBHOOKS:
 
 print(f"💳 Tarjetas configuradas: {list(TARJETAS_WEBHOOKS.keys())}")
 print(f"🔑 Tarjeta default: {MI_TARJETA_DEFAULT}")
+
+def remove_accents(text):
+    """Elimina tildes y caracteres especiales del texto"""
+    text = unicodedata.normalize('NFD', text)
+    text = text.encode('ascii', 'ignore').decode('utf-8')
+    return text
 
 def get_webhook_config_for_card(card_number):
     """Obtiene la configuración de webhook para una tarjeta específica"""
@@ -106,7 +113,11 @@ def send_to_webhook(payload, card_number):
 def extraer_tipo_pago_y_datos(mensaje):
     """Analiza el mensaje para determinar el tipo de pago y extraer datos"""
     
-    mensaje_upper = mensaje.upper()
+    # Normalizar el mensaje: quitar tildes y convertir a mayúsculas
+    mensaje_sin_tildes = remove_accents(mensaje)
+    mensaje_upper = mensaje_sin_tildes.upper()
+    
+    print(f"🔍 Mensaje normalizado: {mensaje_upper}")
     
     # Buscar todas las tarjetas configuradas en el mensaje
     tarjetas_encontradas = []
@@ -126,23 +137,31 @@ def extraer_tipo_pago_y_datos(mensaje):
         print(f"🔍 Usando tarjeta default: {MI_TARJETA_DEFAULT}")
     
     # 1. Tarjeta a Tarjeta (con número visible)
-    if "EL TITULAR DEL TELÉFONO" in mensaje_upper and "A LA CUENTA" in mensaje_upper:
+    if "EL TITULAR DEL TELEFONO" in mensaje_upper and "A LA CUENTA" in mensaje_upper:
+        print(f"✅ Condición 1 cumplida: TARJETA A TARJETA")
         for tarjeta in tarjetas_encontradas:
             if tarjeta in mensaje or (len(tarjeta) >= 4 and tarjeta[-4:] in mensaje):
                 print(f"🔍 Detectado: TARJETA A TARJETA para {tarjeta}")
                 
-                tel_match = re.search(r'EL TITULAR DEL TELÉFONO (\d+)', mensaje, re.IGNORECASE)
+                # Usar expresión regular en el mensaje original (sin tildes)
+                tel_match = re.search(r'EL TITULAR DEL TELEFONO (\d+)', mensaje_sin_tildes, re.IGNORECASE)
                 telefono = tel_match.group(1) if tel_match else None
+                print(f"📞 Teléfono extraído: {telefono}")
                 
-                monto_match = re.search(r'DE (\d+\.?\d*)\s*CUP', mensaje, re.IGNORECASE)
+                monto_match = re.search(r'DE (\d+\.?\d*)\s*CUP', mensaje_sin_tildes, re.IGNORECASE)
                 monto = float(monto_match.group(1)) if monto_match else 0.0
+                print(f"💰 Monto extraído: {monto}")
                 
-                id_match = re.search(r'TRANSACCION\s+(\w+)', mensaje, re.IGNORECASE)
+                # Buscar ID de transacción de varias formas
+                id_match = re.search(r'TRANSACCION\s+(\w+)', mensaje_sin_tildes, re.IGNORECASE)
                 if not id_match:
-                    id_match = re.search(r'NRO\.?\s*TRANSACCION\s+(\w+)', mensaje, re.IGNORECASE)
+                    id_match = re.search(r'NRO\.?\s*TRANSACCION\s+(\w+)', mensaje_sin_tildes, re.IGNORECASE)
                 if not id_match:
-                    id_match = re.search(r'TRANSACCION:\s*(\w+)', mensaje, re.IGNORECASE)
+                    id_match = re.search(r'TRANSACCION:\s*(\w+)', mensaje_sin_tildes, re.IGNORECASE)
+                if not id_match:
+                    id_match = re.search(r'TRANSACCION\s*:\s*(\w+)', mensaje_sin_tildes, re.IGNORECASE)
                 trans_id = id_match.group(1) if id_match else f"UNKNOWN_{int(time.time())}"
+                print(f"🆔 ID Transacción extraído: {trans_id}")
                 
                 return {
                     "tipo": "TARJETA_TARJETA",
@@ -155,20 +174,21 @@ def extraer_tipo_pago_y_datos(mensaje):
     
     # 2. Tarjeta a Monedero
     elif mensaje_upper.startswith("MONEDERO MITRANSFER") or "MONEDERO MITRANSFER:" in mensaje_upper:
+        print("✅ Condición 2 cumplida: TARJETA A MONEDERO")
         print("🔍 Detectado: TARJETA A MONEDERO")
         
-        monto_match = re.search(r'RECARGADO CON:\s*(\d+\.?\d*)\s*CUP', mensaje, re.IGNORECASE)
+        monto_match = re.search(r'RECARGADO CON:\s*(\d+\.?\d*)\s*CUP', mensaje_sin_tildes, re.IGNORECASE)
         if not monto_match:
-            monto_match = re.search(r'CON:\s*(\d+\.?\d*)\s*CUP', mensaje, re.IGNORECASE)
+            monto_match = re.search(r'CON:\s*(\d+\.?\d*)\s*CUP', mensaje_sin_tildes, re.IGNORECASE)
         if not monto_match:
-            monto_match = re.search(r'DE (\d+\.?\d*)\s*CUP', mensaje, re.IGNORECASE)
+            monto_match = re.search(r'DE (\d+\.?\d*)\s*CUP', mensaje_sin_tildes, re.IGNORECASE)
         monto = float(monto_match.group(1)) if monto_match else 0.0
         
-        id_match = re.search(r'TRANSACCION:\s*(\w+)', mensaje, re.IGNORECASE)
+        id_match = re.search(r'TRANSACCION:\s*(\w+)', mensaje_sin_tildes, re.IGNORECASE)
         if not id_match:
-            id_match = re.search(r'ID TRANSACCION:\s*(\w+)', mensaje, re.IGNORECASE)
+            id_match = re.search(r'ID TRANSACCION:\s*(\w+)', mensaje_sin_tildes, re.IGNORECASE)
         if not id_match:
-            id_match = re.search(r'NRO\.?\s*TRANSACCION\s+(\w+)', mensaje, re.IGNORECASE)
+            id_match = re.search(r'NRO\.?\s*TRANSACCION\s+(\w+)', mensaje_sin_tildes, re.IGNORECASE)
         trans_id = id_match.group(1) if id_match else f"UNKNOWN_{int(time.time())}"
         
         # Para tarjeta a monedero, usar la primera tarjeta configurada
@@ -184,18 +204,19 @@ def extraer_tipo_pago_y_datos(mensaje):
         }
     
     # 3. Monedero a Monedero
-    elif "EL TITULAR DEL TELÉFONO" in mensaje_upper and "AL MONEDERO MITRANSFER" in mensaje_upper:
+    elif "EL TITULAR DEL TELEFONO" in mensaje_upper and "AL MONEDERO MITRANSFER" in mensaje_upper:
+        print("✅ Condición 3 cumplida: MONEDERO A MONEDERO")
         print("🔍 Detectado: MONEDERO A MONEDERO")
         
-        tel_match = re.search(r'EL TITULAR DEL TELÉFONO (\d+)', mensaje, re.IGNORECASE)
+        tel_match = re.search(r'EL TITULAR DEL TELEFONO (\d+)', mensaje_sin_tildes, re.IGNORECASE)
         telefono = tel_match.group(1) if tel_match else None
         
-        monto_match = re.search(r'DE (\d+\.?\d*)\s*CUP', mensaje, re.IGNORECASE)
+        monto_match = re.search(r'DE (\d+\.?\d*)\s*CUP', mensaje_sin_tildes, re.IGNORECASE)
         monto = float(monto_match.group(1)) if monto_match else 0.0
         
-        id_match = re.search(r'TRANSACCION\s+(\w+)', mensaje, re.IGNORECASE)
+        id_match = re.search(r'TRANSACCION\s+(\w+)', mensaje_sin_tildes, re.IGNORECASE)
         if not id_match:
-            id_match = re.search(r'NRO\.?\s*TRANSACCION\s+(\w+)', mensaje, re.IGNORECASE)
+            id_match = re.search(r'NRO\.?\s*TRANSACCION\s+(\w+)', mensaje_sin_tildes, re.IGNORECASE)
         trans_id = id_match.group(1) if id_match else f"UNKNOWN_{int(time.time())}"
         
         # Para monedero a monedero, usar la primera tarjeta configurada
@@ -211,12 +232,13 @@ def extraer_tipo_pago_y_datos(mensaje):
         }
     
     # 4. Monedero a Tarjeta (enmascarada)
-    elif "EL TITULAR DEL TELÉFONO" in mensaje_upper and "A LA CUENTA" in mensaje_upper:
-        if "XXXX" in mensaje or "9227XXXXXXXX" in mensaje:
+    elif "EL TITULAR DEL TELEFONO" in mensaje_upper and "A LA CUENTA" in mensaje_upper:
+        if "XXXX" in mensaje_upper or "9227XXXXXXXX" in mensaje_upper:
+            print("✅ Condición 4 cumplida: MONEDERO A TARJETA (enmascarada)")
             print("🔍 Detectado: MONEDERO A TARJETA (enmascarada)")
             
             # Intentar extraer los últimos 4 dígitos
-            ultimos_4_match = re.search(r'(\d{4})\s*\.', mensaje)
+            ultimos_4_match = re.search(r'(\d{4})\s*\.', mensaje_sin_tildes)
             if ultimos_4_match:
                 ultimos_4 = ultimos_4_match.group(1)
                 # Buscar tarjeta que termine con esos 4 dígitos
@@ -229,15 +251,15 @@ def extraer_tipo_pago_y_datos(mensaje):
             else:
                 tarjeta_destino = MI_TARJETA_DEFAULT
             
-            tel_match = re.search(r'EL TITULAR DEL TELÉFONO (\d+)', mensaje, re.IGNORECASE)
+            tel_match = re.search(r'EL TITULAR DEL TELEFONO (\d+)', mensaje_sin_tildes, re.IGNORECASE)
             telefono = tel_match.group(1) if tel_match else None
             
-            monto_match = re.search(r'DE (\d+\.?\d*)\s*CUP', mensaje, re.IGNORECASE)
+            monto_match = re.search(r'DE (\d+\.?\d*)\s*CUP', mensaje_sin_tildes, re.IGNORECASE)
             monto = float(monto_match.group(1)) if monto_match else 0.0
             
-            id_match = re.search(r'TRANSACCION\s+(\w+)', mensaje, re.IGNORECASE)
+            id_match = re.search(r'TRANSACCION\s+(\w+)', mensaje_sin_tildes, re.IGNORECASE)
             if not id_match:
-                id_match = re.search(r'NRO\.?\s*TRANSACCION\s+(\w+)', mensaje, re.IGNORECASE)
+                id_match = re.search(r'NRO\.?\s*TRANSACCION\s+(\w+)', mensaje_sin_tildes, re.IGNORECASE)
             trans_id = id_match.group(1) if id_match else f"UNKNOWN_{int(time.time())}"
             
             return {
@@ -250,6 +272,11 @@ def extraer_tipo_pago_y_datos(mensaje):
             }
     
     print(f"❌ No se pudo identificar tipo de pago en mensaje")
+    print(f"ℹ️ Condiciones verificadas:")
+    print(f"  1. TARJETA A TARJETA: {'EL TITULAR DEL TELEFONO' in mensaje_upper and 'A LA CUENTA' in mensaje_upper}")
+    print(f"  2. TARJETA A MONEDERO: {mensaje_upper.startswith('MONEDERO MITRANSFER') or 'MONEDERO MITRANSFER:' in mensaje_upper}")
+    print(f"  3. MONEDERO A MONEDERO: {'EL TITULAR DEL TELEFONO' in mensaje_upper and 'AL MONEDERO MITRANSFER' in mensaje_upper}")
+    print(f"  4. MONEDERO A TARJETA: {'EL TITULAR DEL TELEFONO' in mensaje_upper and 'A LA CUENTA' in mensaje_upper and ('XXXX' in mensaje_upper or '9227XXXXXXXX' in mensaje_upper)}")
     return None
 
 @app.route('/webhook', methods=['POST'])
@@ -376,11 +403,13 @@ def test():
     test_messages = [
         "El titular del telefono 5359190241 le ha realizado una transferencia a la cuenta: 9227069995328054 de 1000.00 CUP. Nro. Transaccion TMW164182151",
         "MONEDERO MITRANSFER: RECARGADO CON: 1500.00 CUP. TRANSACCION: TMX123456789. FECHA: 06/02/2026.",
-        "El titular del telefono 5351234567 le ha realizado una transferencia al monedero mitransfer de 500.00 CUP. Nro. Transaccion TMW987654321"
+        "El titular del telefono 5351234567 le ha realizado una transferencia al monedero mitransfer de 500.00 CUP. Nro. Transaccion TMW987654321",
+        "El titular del telefono 5359190241 le ha realizado una transferencia a la cuenta: 9227XXXXXXXX8054 de 1000.00 CUP. Nro. Transaccion TMW164182151"
     ]
     
     results = []
     for msg in test_messages:
+        print(f"\n🔍 Procesando mensaje de prueba: {msg[:50]}...")
         result = extraer_tipo_pago_y_datos(msg)
         results.append({
             "message": msg,
@@ -394,6 +423,15 @@ def test():
             "tarjetas": list(TARJETAS_WEBHOOKS.keys()),
             "default": MI_TARJETA_DEFAULT
         }
+    }), 200
+
+@app.route('/health', methods=['GET'])
+def health():
+    return jsonify({
+        "status": "healthy",
+        "timestamp": datetime.now().isoformat(),
+        "service": "sms-parser",
+        "version": "2.0.0"
     }), 200
 
 if __name__ == "__main__":
