@@ -8,10 +8,12 @@ const axios = require('axios');
 const { createClient } = require('@supabase/supabase-js');
 const express = require('express');
 const bodyParser = require('body-parser');
-const Web3 = require('web3');
 const session = require('express-session');
 const bcrypt = require('bcryptjs');
 const cors = require('cors');
+
+// Importar el handler de recarga de juegos
+const GameRechargeHandler = require('./game_recharges.js');
 
 // ============================================
 // CONFIGURACIÓN DESDE .ENV
@@ -26,14 +28,16 @@ const WEBHOOK_SECRET_KEY = process.env.WEBHOOK_SECRET_KEY;
 // Configuración de pagos
 const MINIMO_CUP = parseFloat(process.env.MINIMO_CUP || 1000);
 const MINIMO_SALDO = parseFloat(process.env.MINIMO_SALDO || 500);
-const MINIMO_USDT = parseFloat(process.env.MINIMO_USDT || 10);
 const MAXIMO_CUP = parseFloat(process.env.MAXIMO_CUP || 50000);
+
+// Tasas de cambio dinámicas
+const USDT_RATE_0_30 = parseFloat(process.env.USDT_RATE_0_30 || 650); // 0-30 USDT
+const USDT_RATE_30_PLUS = parseFloat(process.env.USDT_RATE_30_PLUS || 680); // >30 USDT
+const SALDO_MOVIL_RATE = parseFloat(process.env.SALDO_MOVIL_RATE || 2.1); // División para saldo móvil
 
 // Información de pagos
 const PAGO_CUP_TARJETA = process.env.PAGO_CUP_TARJETA;
 const PAGO_SALDO_MOVIL = process.env.PAGO_SALDO_MOVIL;
-const PAGO_USDT_ADDRESS = process.env.PAGO_USDT_ADDRESS;
-const BSCSCAN_API_KEY = process.env.BSCSCAN_API_KEY || '';
 
 // Configuración de administrador
 const ADMIN_CHAT_ID = process.env.ADMIN_GROUP;
@@ -44,9 +48,11 @@ const WEB_PORT = process.env.WEB_PORT || 8080;
 
 // Configuración de tokens
 const CWS_PER_100_SALDO = 10;
-const CWT_PER_10_USDT = 0.5;
-const MIN_CWT_USE = 5;
 const MIN_CWS_USE = 100;
+
+// LioGames API
+const LIOGAMES_SECRET = process.env.LIOGAMES_SECRET || '36b82f46524b0520808450eda62bd1fb';
+const LIOGAMES_MEMBER_CODE = process.env.LIOGAMES_MEMBER_CODE || 'M260119RKVLDNBGMY';
 
 // ============================================
 // VALIDACIÓN DE VARIABLES
@@ -55,10 +61,6 @@ const MIN_CWS_USE = 100;
 if (!TELEGRAM_TOKEN || !DB_URL || !DB_KEY) {
     console.error('❌ Faltan variables críticas de entorno. Verifica TELEGRAM_TOKEN, DB_URL, DB_KEY');
     process.exit(1);
-}
-
-if (!WEBHOOK_SECRET_KEY) {
-    console.warn('⚠️ WEBHOOK_SECRET_KEY no configurada. ¡Esto es un riesgo de seguridad!');
 }
 
 // ============================================
@@ -99,8 +101,8 @@ const bot = new TelegramBot(TELEGRAM_TOKEN, { polling: true });
 // Inicializar Supabase
 const supabase = createClient(DB_URL, DB_KEY);
 
-// Inicializar Web3 para BSC
-const web3 = new Web3(new Web3.providers.HttpProvider('https://bsc-dataseed.binance.org/'));
+// Inicializar handler de recarga de juegos
+const gameHandler = new GameRechargeHandler(bot, supabase);
 
 // Variables globales
 const activeSessions = {};
@@ -146,11 +148,9 @@ function requireAuth(req, res, next) {
         next();
     } else {
         console.log('❌ Usuario no autenticado');
-        // Para solicitudes API, retornar JSON
         if (req.originalUrl.startsWith('/api/')) {
             return res.status(401).json({ error: 'No autorizado' });
         }
-        // Para páginas HTML, redirigir a login
         res.redirect('/');
     }
 }
@@ -160,15 +160,13 @@ function formatCurrency(amount, currency) {
     const symbols = {
         'cup': 'CUP',
         'saldo': 'Saldo',
-        'usdt': 'USDT',
-        'cws': 'CWS',
-        'cwt': 'CWT'
+        'cws': 'CWS'
     };
     
     const symbol = symbols[currency] || currency.toUpperCase();
     
-    if (currency === 'usdt' || currency === 'cwt') {
-        return `${parseFloat(amount).toFixed(2)} ${symbol}`;
+    if (currency === 'cws') {
+        return `${Math.floor(amount)} ${symbol}`;
     }
     
     return `$${parseFloat(amount).toFixed(2)} ${symbol}`;
@@ -199,7 +197,7 @@ async function updateUser(telegramId, updates) {
     return !error;
 }
 
-// Obtener usuario por teléfono (MEJORADA)
+// Obtener usuario por teléfono
 async function getUserByPhone(phone) {
     try {
         if (!phone) {
@@ -207,34 +205,25 @@ async function getUserByPhone(phone) {
             return null;
         }
         
-        // Normalizar teléfono: remover todos los caracteres no numéricos
         const normalizedPhone = phone.replace(/[^\d]/g, '');
         console.log(`🔍 Buscando usuario con teléfono normalizado: ${normalizedPhone}`);
         
-        // Preparar diferentes formatos para buscar
         let searchPatterns = [];
         
-        // Si el teléfono comienza con 53 y tiene 10 dígitos
         if (normalizedPhone.startsWith('53') && normalizedPhone.length === 10) {
-            searchPatterns.push(normalizedPhone); // 5351234567
-            searchPatterns.push(normalizedPhone.substring(2)); // 51234567 (sin 53)
-        } 
-        // Si el teléfono tiene 8 dígitos (asumimos que es sin 53)
-        else if (normalizedPhone.length === 8) {
-            searchPatterns.push(`53${normalizedPhone}`); // 5351234567
-            searchPatterns.push(normalizedPhone); // 51234567
-        }
-        // Otros formatos
-        else {
+            searchPatterns.push(normalizedPhone);
+            searchPatterns.push(normalizedPhone.substring(2));
+        } else if (normalizedPhone.length === 8) {
+            searchPatterns.push(`53${normalizedPhone}`);
+            searchPatterns.push(normalizedPhone);
+        } else {
             searchPatterns.push(normalizedPhone);
         }
         
-        // Eliminar duplicados
         searchPatterns = [...new Set(searchPatterns)];
         
         console.log(`🔍 Patrones de búsqueda a probar:`, searchPatterns);
         
-        // Buscar en la base de datos con cada patrón
         for (const pattern of searchPatterns) {
             console.log(`🔍 Probando patrón: ${pattern}`);
             
@@ -245,7 +234,7 @@ async function getUserByPhone(phone) {
                 .single();
             
             if (error) {
-                if (error.code !== 'PGRST116') { // PGRST116 = no rows returned (es esperado)
+                if (error.code !== 'PGRST116') {
                     console.log(`⚠️ Error buscando con patrón ${pattern}:`, error.message);
                 }
             }
@@ -269,82 +258,20 @@ async function getUserByPhone(phone) {
     }
 }
 
-// Verificar transacción BSC
-async function checkBSCTransaction(txHash, expectedAmount, expectedTo) {
-    try {
-        if (!BSCSCAN_API_KEY) {
-            return { success: false, error: 'Clave API BSCScan no configurada' };
-        }
-        
-        const url = `https://api.bscscan.com/api?module=transaction&action=gettxreceiptstatus&txhash=${txHash}&apikey=${BSCSCAN_API_KEY}`;
-        const response = await axios.get(url);
-        
-        if (response.data.status === '1') {
-            const detailsUrl = `https://api.bscscan.com/api?module=proxy&action=eth_getTransactionByHash&txhash=${txHash}&apikey=${BSCSCAN_API_KEY}`;
-            const details = await axios.get(detailsUrl);
-            
-            if (details.data.result) {
-                const tx = details.data.result;
-                if (tx.to && tx.to.toLowerCase() === expectedTo.toLowerCase()) {
-                    const amount = parseFloat(web3.utils.fromWei(tx.value, 'ether'));
-                    const diff = Math.abs(amount - expectedAmount);
-                    const margin = expectedAmount * 0.01;
-                    
-                    if (diff <= margin) {
-                        return { success: true, amount: amount, from: tx.from };
-                    }
-                }
-            }
-        }
-        return { success: false };
-    } catch (error) {
-        console.error('Error verificando transacción BSC:', error);
-        return { success: false, error: error.message };
+// Calcular precio en CUP según cantidad de USDT
+function calculateCupFromUsdt(usdtAmount) {
+    if (usdtAmount <= 30) {
+        return usdtAmount * USDT_RATE_0_30;
+    } else {
+        return (30 * USDT_RATE_0_30) + ((usdtAmount - 30) * USDT_RATE_30_PLUS);
     }
 }
 
-// Aplicar bono de primer depósito
-async function aplicarBonoPrimerDeposito(userId, currency, amount) {
-    const user = await getUser(userId);
-    if (!user) return amount;
-
-    let bono = 0;
-    let bonoPorcentaje = 0;
-    let campoBono = '';
-
-    switch (currency) {
-        case 'cup':
-            campoBono = 'first_dep_cup';
-            bonoPorcentaje = user.first_dep_cup ? 0.10 : 0;
-            break;
-        case 'saldo':
-            campoBono = 'first_dep_saldo';
-            bonoPorcentaje = user.first_dep_saldo ? 0.10 : 0;
-            break;
-        case 'usdt':
-            campoBono = 'first_dep_usdt';
-            bonoPorcentaje = user.first_dep_usdt ? 0.05 : 0;
-            break;
-    }
-
-    if (bonoPorcentaje > 0) {
-        bono = amount * bonoPorcentaje;
-        await updateUser(userId, { [campoBono]: false });
-    }
-
-    return amount + bono;
-}
-
-// Calcular tokens
-function calcularTokens(amount, currency) {
-    switch (currency) {
-        case 'saldo':
-            return Math.floor(amount / 100) * CWS_PER_100_SALDO;
-        case 'usdt':
-            return (amount / 10) * CWT_PER_10_USDT;
-        default:
-            return 0;
-    }
+// Calcular precio en Saldo Móvil
+function calculateSaldoMovilFromCup(cupAmount) {
+    const raw = cupAmount / SALDO_MOVIL_RATE;
+    // Redondear al múltiplo de 5 más cercano hacia arriba
+    return Math.ceil(raw / 5) * 5;
 }
 
 // Verificar si ya existe una transacción con el mismo tx_id
@@ -417,32 +344,7 @@ async function notificarSolicitudNueva(solicitud) {
     }
 }
 
-// Notificar al admin sobre solicitud completada
-async function notificarSolicitudCompletada(solicitud, resultado) {
-    try {
-        if (!ADMIN_CHAT_ID) return;
-        
-        const user = await getUser(solicitud.user_id);
-        if (!user) return;
-        
-        const mensajeAdmin = `✅ *SOLICITUD COMPLETADA*\n\n` +
-            `🆔 *Orden #:* ${solicitud.id}\n` +
-            `👤 *Usuario:* ${user.first_name} (@${user.username || 'sin usuario'})\n` +
-            `💰 *Monto solicitado:* ${formatCurrency(solicitud.amount_requested, solicitud.currency)}\n` +
-            `💰 *Monto recibido:* ${formatCurrency(resultado.montoRecibido || solicitud.amount_requested, solicitud.currency)}\n` +
-            `🎁 *Bono aplicado:* ${formatCurrency(resultado.bono || 0, solicitud.currency)}\n` +
-            `💵 *Total acreditado:* ${formatCurrency(resultado.montoConBono || solicitud.amount_requested, solicitud.currency)}\n` +
-            `🎫 *Tokens ganados:* ${resultado.tokensGanados || 0}\n` +
-            `🆔 *TX ID:* \`${resultado.tx_id || solicitud.tx_id}\`\n` +
-            `📅 *Fecha:* ${new Date().toLocaleString()}`;
-        
-        await bot.sendMessage(ADMIN_CHAT_ID, mensajeAdmin, { parse_mode: 'Markdown' });
-    } catch (error) {
-        console.error('Error notificando solicitud completada:', error);
-    }
-}
-
-// Procesar pago automático (REVISADA)
+// Procesar pago automático (MODIFICADA - No notificar al usuario si no hay solicitud)
 async function procesarPagoAutomatico(userId, amount, currency, txId, tipoPago) {
     try {
         console.log(`💰 Procesando pago automático: ${userId}, ${amount}, ${currency}, ${txId}, ${tipoPago}`);
@@ -464,7 +366,7 @@ async function procesarPagoAutomatico(userId, amount, currency, txId, tipoPago) 
         if (!solicitudPendiente) {
             console.log(`❌ Usuario ${userId} no tiene solicitud pendiente para ${currency}`);
             
-            // Guardar como pago no solicitado
+            // Guardar como pago no solicitado (transferencia exterior)
             await supabase.from('unrequested_payments').insert({
                 user_id: userId,
                 amount: amount,
@@ -475,22 +377,24 @@ async function procesarPagoAutomatico(userId, amount, currency, txId, tipoPago) 
                 created_at: new Date().toISOString()
             });
             
-            // Notificar al usuario
-            const user = await getUser(userId);
-            if (user) {
-                await bot.sendMessage(userId,
-                    `⚠️ *Pago recibido sin solicitud*\n\n` +
-                    `Recibimos ${formatCurrency(amount, currency)} pero no tienes una solicitud pendiente.\n\n` +
-                    `🆔 ID de Transacción: \`${txId}\`\n\n` +
-                    `Contacta al administrador para aclaración.`,
-                    { parse_mode: 'Markdown' }
-                );
+            // NO NOTIFICAR AL USUARIO - Es una transferencia exterior
+            // Solo notificar al admin
+            if (ADMIN_CHAT_ID) {
+                const user = await getUser(userId);
+                const adminMsg = `⚠️ *Transferencia exterior recibida*\n\n` +
+                    `👤 Usuario: ${user ? user.first_name : 'Desconocido'}\n` +
+                    `🆔 ID: ${userId}\n` +
+                    `💰 Monto: ${formatCurrency(amount, currency)}\n` +
+                    `🔧 Tipo: ${tipoPago}\n` +
+                    `🆔 TX ID: \`${txId}\`\n\n` +
+                    `Este pago se guardó como transferencia exterior (sin solicitud).`;
+                await bot.sendMessage(ADMIN_CHAT_ID, adminMsg, { parse_mode: 'Markdown' });
             }
             
             return { 
                 success: false, 
-                message: 'No hay solicitud pendiente para este pago',
-                necesitaSolicitud: true 
+                message: 'Pago guardado como transferencia exterior',
+                esTransferenciaExterior: true 
             };
         }
         
@@ -525,8 +429,22 @@ async function procesarPagoAutomatico(userId, amount, currency, txId, tipoPago) 
             return { success: false, message: 'Usuario no encontrado' };
         }
         
-        const montoConBono = await aplicarBonoPrimerDeposito(userId, currency, amount);
-        const tokensGanados = calcularTokens(amount, currency);
+        let montoConBono = amount;
+        let tokensGanados = 0;
+        
+        // Aplicar bono solo para primer depósito
+        if (currency === 'cup' && user.first_dep_cup) {
+            montoConBono = amount * 1.10;
+            await updateUser(userId, { first_dep_cup: false });
+        } else if (currency === 'saldo' && user.first_dep_saldo) {
+            montoConBono = amount * 1.10;
+            await updateUser(userId, { first_dep_saldo: false });
+        }
+        
+        // Calcular tokens para saldo
+        if (currency === 'saldo') {
+            tokensGanados = Math.floor(amount / 100) * CWS_PER_100_SALDO;
+        }
         
         // Actualizar saldo del usuario
         const updates = {
@@ -535,8 +453,6 @@ async function procesarPagoAutomatico(userId, amount, currency, txId, tipoPago) 
         
         if (currency === 'saldo') {
             updates.tokens_cws = (user.tokens_cws || 0) + tokensGanados;
-        } else if (currency === 'usdt') {
-            updates.tokens_cwt = (user.tokens_cwt || 0) + tokensGanados;
         }
         
         await updateUser(userId, updates);
@@ -558,7 +474,7 @@ async function procesarPagoAutomatico(userId, amount, currency, txId, tipoPago) 
             `\n🎉 *¡Bono aplicado!* +${formatCurrency(montoConBono - amount, currency)}` : '';
         
         const tokensMensaje = tokensGanados > 0 ? 
-            `\n🎫 *Tokens ganados:* +${tokensGanados} ${currency === 'saldo' ? 'CWS' : 'CWT'}` : '';
+            `\n🎫 *Tokens ganados:* +${tokensGanados} CWS` : '';
         
         // Notificar al usuario
         const mensajeUsuario = `✨ *¡Depósito Completado!*\n\n` +
@@ -578,7 +494,7 @@ async function procesarPagoAutomatico(userId, amount, currency, txId, tipoPago) 
                 `📋 Orden #: ${solicitudPendiente.id}\n` +
                 `💰 Monto: ${formatCurrency(amount, currency)}\n` +
                 `🎁 Total con bono: ${formatCurrency(montoConBono, currency)}\n` +
-                `🎫 Tokens: ${tokensGanados} ${currency === 'saldo' ? 'CWS' : 'CWT'}\n` +
+                `🎫 Tokens: ${tokensGanados} CWS\n` +
                 `🔧 Tipo: ${tipoPago}\n` +
                 `🆔 TX ID: \`${txId}\``;
             
@@ -602,14 +518,15 @@ async function procesarPagoAutomatico(userId, amount, currency, txId, tipoPago) 
 }
 
 // ============================================
-// TELEGRAM BOT - TECLADOS ACTUALIZADOS (SIEMPRE CON BOTÓN ATRÁS)
+// TELEGRAM BOT - TECLADOS ACTUALIZADOS
 // ============================================
 
-// Teclado principal
+// Teclado principal (CON BOTÓN RECARGAR JUEGOS)
 const createMainKeyboard = () => ({
     inline_keyboard: [
         [{ text: '👛 Mi Billetera', callback_data: 'wallet' }],
         [{ text: '💰 Recargar Billetera', callback_data: 'recharge_menu' }],
+        [{ text: '🎮 Recargar Juegos', callback_data: 'games_menu' }], // NUEVO BOTÓN
         [{ text: '📱 Cambiar Teléfono', callback_data: 'link_phone' }],
         [{ text: '🎁 Reclamar Pago', callback_data: 'claim_payment' }],
         [{ text: '📜 Ver Términos Web', callback_data: 'view_terms_web' }],
@@ -621,6 +538,7 @@ const createMainKeyboard = () => ({
 const createWalletKeyboard = () => ({
     inline_keyboard: [
         [{ text: '💰 Recargar Billetera', callback_data: 'recharge_menu' }],
+        [{ text: '🎮 Recargar Juegos', callback_data: 'games_menu' }], // Añadido aquí también
         [{ text: '📜 Historial', callback_data: 'history' }],
         [{ text: '📱 Cambiar Teléfono', callback_data: 'link_phone' }],
         [{ text: '📊 Saldo Pendiente', callback_data: 'view_pending' }],
@@ -628,12 +546,11 @@ const createWalletKeyboard = () => ({
     ]
 });
 
-// Teclado de métodos de recarga
+// Teclado de métodos de recarga (SIN USDT)
 const createRechargeMethodsKeyboard = () => ({
     inline_keyboard: [
         [{ text: '💳 CUP (Tarjeta)', callback_data: 'dep_init:cup' }],
         [{ text: '📲 Saldo Móvil', callback_data: 'dep_init:saldo' }],
-        [{ text: '🪙 USDT BEP20', callback_data: 'dep_init:usdt' }],
         [{ text: '🔙 Volver a Billetera', callback_data: 'wallet' }]
     ]
 });
@@ -679,11 +596,9 @@ bot.onText(/\/start/, async (msg) => {
     
     console.log(`🚀 Usuario ${id} (${first_name}) inició el bot`);
     
-    // Verificar si el usuario existe
     let user = await getUser(chatId);
     
     if (!user) {
-        // Crear nuevo usuario
         user = {
             telegram_id: id,
             first_name: first_name,
@@ -691,15 +606,11 @@ bot.onText(/\/start/, async (msg) => {
             phone_number: null,
             first_dep_cup: true,
             first_dep_saldo: true,
-            first_dep_usdt: true,
             accepted_terms: false,
             pending_balance_cup: 0,
             balance_cup: 0,
             balance_saldo: 0,
-            balance_usdt: 0,
             tokens_cws: 0,
-            tokens_cwt: 0,
-            usdt_wallet: null,
             last_active: new Date().toISOString()
         };
         
@@ -751,10 +662,19 @@ bot.onText(/\/start/, async (msg) => {
 bot.on('callback_query', async (query) => {
     const chatId = query.message.chat.id;
     const messageId = query.message.message_id;
-    const [action, param1, param2] = query.data.split(':');
+    const data = query.data;
 
     try {
         await bot.answerCallbackQuery(query.id);
+
+        // PRIMERO: Intentar manejar con el gameHandler
+        const handledByGame = await gameHandler.handleCallback(query);
+        if (handledByGame) {
+            return; // Ya fue manejado por game_recharges
+        }
+
+        // SEGUNDO: Procesar las acciones normales del bot
+        const [action, param1, param2] = data.split(':');
 
         switch (action) {
             case 'start_back':
@@ -768,6 +688,9 @@ bot.on('callback_query', async (query) => {
                 break;
             case 'recharge_menu':
                 await handleRechargeMenu(chatId, messageId);
+                break;
+            case 'games_menu':
+                await gameHandler.showGamesList(chatId, messageId);
                 break;
             case 'dep_init':
                 await handleDepositInit(chatId, messageId, param1);
@@ -801,9 +724,6 @@ bot.on('callback_query', async (query) => {
                 break;
             case 'view_pending':
                 await handleViewPending(chatId, messageId);
-                break;
-            case 'enter_usdt_wallet':
-                await handleEnterUsdtWallet(chatId, messageId);
                 break;
             case 'view_terms_web':
                 await handleViewTermsWeb(chatId, messageId);
@@ -856,9 +776,7 @@ async function handleWallet(chatId, messageId) {
         `🆔 *ID de Telegram:* \`${chatId}\`\n\n` +
         `💰 *CUP:* **${formatCurrency(user.balance_cup, 'cup')}**\n` +
         `📱 *Saldo Móvil:* **${formatCurrency(user.balance_saldo, 'saldo')}**\n` +
-        `🪙 *USDT:* **${formatCurrency(user.balance_usdt, 'usdt')}**\n` +
-        `🎫 *CWS (Tokens de Saldo):* **${user.tokens_cws || 0}**\n` +
-        `🎟️ *CWT (Tokens de USDT):* **${(user.tokens_cwt || 0).toFixed(2)}**\n\n`;
+        `🎫 *CWS (Tokens):* **${user.tokens_cws || 0}**\n\n`;
     
     if (pendiente > 0) {
         message += `📥 *CUP Pendiente:* **${formatCurrency(pendiente, 'cup')}**\n`;
@@ -869,8 +787,9 @@ async function handleWallet(chatId, messageId) {
     
     message += `📞 *Teléfono vinculado:* ${user.phone_number ? `+53 ${user.phone_number.substring(2)}` : '❌ No vinculado'}\n\n` +
         `💡 *Mínimo para usar tokens:*\n` +
-        `• CWT: ${MIN_CWT_USE} CWT\n` +
         `• CWS: ${MIN_CWS_USE} CWS\n\n` +
+        `🎮 *Para recargar juegos:*\n` +
+        `• 1 CWS = $10 CUP de descuento\n\n` +
         `¿Qué deseas hacer?`;
     
     await bot.editMessageText(message, {
@@ -915,7 +834,7 @@ async function handleRechargeMenu(chatId, messageId) {
 async function handleDepositInit(chatId, messageId, currency) {
     const user = await getUser(chatId);
     
-    if (!user.phone_number && currency !== 'usdt') {
+    if (!user.phone_number) {
         await bot.editMessageText('❌ *Debes vincular tu teléfono primero* para pagos con CUP o Saldo Móvil.', {
             chat_id: chatId,
             message_id: messageId,
@@ -952,19 +871,6 @@ async function handleDepositInit(chatId, messageId, currency) {
         const cwsPor100 = Math.floor(minimo / 100) * CWS_PER_100_SALDO;
         extraInfo = `\n🎫 *Gana ${CWS_PER_100_SALDO} CWS por cada 100 de saldo*\n` +
             `(Ej: ${minimo} saldo = ${cwsPor100} CWS)`;
-    } else if (currency === 'usdt') {
-        minimo = MINIMO_USDT;
-        maximo = 1000;
-        metodoPago = 'USDT BEP20';
-        if (PAGO_USDT_ADDRESS) {
-            instrucciones = `🪙 *Dirección USDT (BEP20):*\n\`${PAGO_USDT_ADDRESS}\``;
-        } else {
-            instrucciones = `🪙 *Dirección USDT (BEP20):*\n\`[NO CONFIGURADO]\``;
-        }
-        const cwtPor10 = (minimo / 10) * CWT_PER_10_USDT;
-        extraInfo = `\n🎟️ *Gana ${CWT_PER_10_USDT} CWT por cada 10 USDT*\n` +
-            `(Ej: ${minimo} USDT = ${cwtPor10.toFixed(2)} CWT)\n\n` +
-            `⚠️ *SOLO RED BEP20*`;
     }
     
     activeSessions[chatId] = { 
@@ -973,7 +879,7 @@ async function handleDepositInit(chatId, messageId, currency) {
         metodoPago: metodoPago
     };
     
-    const bonoPorcentaje = currency === 'usdt' ? '5%' : '10%';
+    const bonoPorcentaje = '10%';
     
     const message = `💰 *Recargar ${currency.toUpperCase()}*\n\n` +
         `*Método:* ${metodoPago}\n` +
@@ -1011,7 +917,6 @@ async function handleConfirmDeposit(chatId, messageId, currency, amount) {
         return;
     }
     
-    // Si no se pasa el monto, obtenerlo de la sesión
     if (!amount && session && session.amount) {
         amount = session.amount;
     }
@@ -1032,11 +937,9 @@ async function handleConfirmDeposit(chatId, messageId, currency, amount) {
         return;
     }
     
-    // Validar límites
     const limites = { 
         cup: [MINIMO_CUP, MAXIMO_CUP], 
-        saldo: [MINIMO_SALDO, 10000], 
-        usdt: [MINIMO_USDT, 1000] 
+        saldo: [MINIMO_SALDO, 10000]
     };
     
     if (amount < limites[currency][0] || amount > limites[currency][1]) {
@@ -1061,7 +964,6 @@ async function handleConfirmDeposit(chatId, messageId, currency, amount) {
         return;
     }
     
-    // Verificar si ya tiene una solicitud pendiente para esta moneda
     const solicitudExistente = await verificarSolicitudPendiente(chatId, currency);
     if (solicitudExistente) {
         const mensaje = `❌ *Ya tienes una solicitud pendiente*\n\n` +
@@ -1087,13 +989,11 @@ async function handleConfirmDeposit(chatId, messageId, currency, amount) {
         return;
     }
     
-    // Calcular bono y tokens
-    const bonoPorcentaje = currency === 'usdt' ? 0.05 : 0.10;
+    const bonoPorcentaje = 0.10;
     const bono = user[`first_dep_${currency}`] ? amount * bonoPorcentaje : 0;
     const totalConBono = amount + bono;
-    const tokens = calcularTokens(amount, currency);
+    const tokens = currency === 'saldo' ? Math.floor(amount / 100) * CWS_PER_100_SALDO : 0;
     
-    // Crear orden de depósito
     const { data: transaction, error } = await supabase
         .from('transactions')
         .insert([{
@@ -1106,8 +1006,7 @@ async function handleConfirmDeposit(chatId, messageId, currency, amount) {
             status: 'pending',
             user_name: user.first_name,
             user_username: user.username,
-            user_phone: user.phone_number,
-            usdt_wallet: currency === 'usdt' ? (session ? session.usdtWallet : null) : null
+            user_phone: user.phone_number
         }])
         .select()
         .single();
@@ -1130,7 +1029,6 @@ async function handleConfirmDeposit(chatId, messageId, currency, amount) {
         return;
     }
     
-    // Preparar instrucciones según el método
     let instrucciones = '';
     let metodoPago = '';
     
@@ -1148,13 +1046,6 @@ async function handleConfirmDeposit(chatId, messageId, currency, amount) {
         } else {
             instrucciones = `📱 *Paga al número:* \`[NO CONFIGURADO]\``;
         }
-    } else if (currency === 'usdt') {
-        metodoPago = 'USDT BEP20';
-        if (PAGO_USDT_ADDRESS) {
-            instrucciones = `🪙 *Envía USDT a la dirección (BEP20):*\n\`${PAGO_USDT_ADDRESS}\``;
-        } else {
-            instrucciones = `🪙 *Envía USDT a la dirección (BEP20):*\n\`[NO CONFIGURADO]\``;
-        }
     }
     
     const mensaje = `✅ *Solicitud de depósito creada*\n\n` +
@@ -1162,7 +1053,7 @@ async function handleConfirmDeposit(chatId, messageId, currency, amount) {
         `💰 *Monto solicitado:* ${formatCurrency(amount, currency)}\n` +
         `🎁 *Bono por primer depósito:* ${formatCurrency(bono, currency)} (${bonoPorcentaje * 100}%)\n` +
         `💵 *Total a acreditar:* ${formatCurrency(totalConBono, currency)}\n` +
-        `🎫 *Tokens a ganar:* ${tokens} ${currency === 'saldo' ? 'CWS' : 'CWT'}\n\n` +
+        `🎫 *Tokens a ganar:* ${tokens} CWS\n\n` +
         `*Instrucciones de pago:*\n` +
         `${instrucciones}\n\n` +
         `⚠️ *IMPORTANTE:*\n` +
@@ -1186,10 +1077,7 @@ async function handleConfirmDeposit(chatId, messageId, currency, amount) {
         });
     }
     
-    // Notificar al admin sobre la nueva solicitud
     await notificarSolicitudNueva(transaction);
-    
-    // Limpiar sesión
     delete activeSessions[chatId];
 }
 
@@ -1198,26 +1086,29 @@ async function handleTerms(chatId, messageId) {
         `1. *ACEPTACIÓN*: Al usar este servicio, aceptas estos términos.\n\n` +
         `2. *PROPÓSITO*: La billetera es exclusiva para pagos en Cromwell Store. El dinero no es retirable, excepto los bonos que son utilizables para recargas.\n\n` +
         `3. *DEPÓSITOS*:\n` +
-        `   • Mínimos: CUP=${MINIMO_CUP}, Saldo=${MINIMO_SALDO}, USDT=${MINIMO_USDT}\n` +
+        `   • Mínimos: CUP=${MINIMO_CUP}, Saldo=${MINIMO_SALDO}\n` +
         `   • Bonos solo en el primer depósito por método\n` +
         `   • Los tokens no son retirables, solo utilizables en la tienda\n\n` +
         `4. *TOKENS*:\n` +
         `   • CWS: Gana ${CWS_PER_100_SALDO} por cada 100 de saldo\n` +
-        `   • CWT: Gana ${CWT_PER_10_USDT} por cada 10 USDT\n` +
-        `   • Mínimo para usar: CWT=${MIN_CWT_USE}, CWS=${MIN_CWS_USE}\n\n` +
-        `5. *SEGURIDAD*:\n` +
+        `   • Mínimo para usar: CWS=${MIN_CWS_USE}\n\n` +
+        `5. *RECARGAS DE JUEGOS*:\n` +
+        `   • 1 CWS = $10 CUP de descuento en recargas\n` +
+        `   • Puedes pagar con CUP, Saldo Móvil o CWS\n` +
+        `   • Las recargas se procesan a través de LioGames\n\n` +
+        `6. *SEGURIDAD*:\n` +
         `   • Toma capturas de pantalla de todas las transacciones\n` +
         `   • ETECSA puede fallar con las notificaciones SMS\n` +
         `   • Tu responsabilidad guardar los recibos\n\n` +
-        `6. *REEMBOLSOS*:\n` +
+        `7. *REEMBOLSOS*:\n` +
         `   • Si envías dinero y no se acredita pero tienes captura válida\n` +
         `   • Contacta al administrador dentro de 24 horas\n` +
         `   • Se investigará y resolverá en 48 horas máximo\n\n` +
-        `7. *PROHIBIDO*:\n` +
+        `8. *PROHIBIDO*:\n` +
         `   • Uso fraudulento o múltiples cuentas\n` +
         `   • Lavado de dinero o actividades ilegales\n` +
         `   • Spam o abuso del sistema\n\n` +
-        `8. *MODIFICACIONES*: Podemos cambiar estos términos notificando con 72 horas de anticipación.\n\n` +
+        `9. *MODIFICACIONES*: Podemos cambiar estos términos notificando con 72 horas de anticipación.\n\n` +
         `_Última actualización: ${new Date().toLocaleDateString()}_\n\n` +
         `⚠️ *Para ver estos términos y condiciones nuevamente, visita nuestra web.*`;
     
@@ -1376,12 +1267,12 @@ async function handleHistory(chatId, messageId) {
                 minute: '2-digit'
             });
             
-            message += `${icon} *${tx.type === 'DEPOSIT' ? 'Depósito' : tx.type}*\n`;
-            message += `💰 ${formatCurrency(tx.amount || tx.amount_requested, tx.currency)}\n`;
+            message += `${icon} *${tx.type === 'DEPOSIT' ? 'Depósito' : tx.type === 'GAME_RECHARGE' ? 'Recarga Juego' : tx.type}*\n`;
+            message += `💰 ${formatCurrency(Math.abs(tx.amount || tx.amount_requested), tx.currency)}\n`;
             message += `📅 ${fecha}\n`;
             message += `📊 ${tx.status === 'completed' ? 'Completado' : tx.status === 'pending' ? 'Pendiente' : tx.status}\n`;
             if (tx.tx_id) message += `🆔 \`${tx.tx_id}\`\n`;
-            if (tx.tokens_generated > 0) message += `🎫 +${tx.tokens_generated}\n`;
+            if (tx.tokens_generated > 0) message += `🎫 +${tx.tokens_generated} CWS\n`;
             message += `\n`;
         });
     }
@@ -1434,23 +1325,6 @@ async function handleViewPending(chatId, messageId) {
     });
 }
 
-async function handleEnterUsdtWallet(chatId, messageId) {
-    const message = `👛 *Wallet para USDT*\n\n` +
-        `Escribe la dirección USDT (BEP20) desde la que enviarás:\n\n` +
-        `Formato: 0x... (42 caracteres)\n` +
-        `Ejemplo: 0x742d35Cc6634C0532925a3b844Bc9e8e64dA7F2E\n\n` +
-        `⚠️ Esta wallet se vinculará a tu cuenta.`;
-    
-    activeSessions[chatId] = { step: 'waiting_usdt_wallet' };
-    
-    await bot.editMessageText(message, {
-        chat_id: chatId,
-        message_id: messageId,
-        parse_mode: 'Markdown',
-        reply_markup: createBackKeyboard('recharge_menu')
-    });
-}
-
 async function handleViewTermsWeb(chatId, messageId) {
     const message = `🌐 *Términos y Condiciones en la Web*\n\n` +
         `Para ver los términos y condiciones actualizados, visita nuestro sitio web.\n\n` +
@@ -1477,6 +1351,13 @@ bot.on('message', async (msg) => {
     if (!text || text.startsWith('/')) return;
     
     try {
+        // PRIMERO: Intentar manejar con el gameHandler (para entrada de datos de juegos)
+        const handledByGame = await gameHandler.handleMessage(msg);
+        if (handledByGame) {
+            return; // Ya fue manejado por game_recharges
+        }
+        
+        // SEGUNDO: Procesar mensajes normales del bot
         if (session) {
             switch (session.step) {
                 case 'waiting_phone':
@@ -1493,14 +1374,6 @@ bot.on('message', async (msg) => {
                     await handleDepositAmountInput(chatId, text, session);
                     break;
                     
-                case 'waiting_usdt_wallet':
-                    await handleUsdtWalletInput(chatId, text, session);
-                    break;
-                    
-                case 'waiting_usdt_hash':
-                    await handleUsdtHashInput(chatId, text, session);
-                    break;
-                    
                 default:
                     console.log(`Paso no manejado: ${session.step}`);
             }
@@ -1515,18 +1388,15 @@ bot.on('message', async (msg) => {
 
 // Función para manejar entrada de teléfono
 async function handlePhoneInput(chatId, phone, session) {
-    // Limpiar número: remover espacios, guiones, paréntesis, etc.
     let cleanPhone = phone.replace(/[^\d]/g, '');
     
     console.log(`📱 Número recibido: ${phone}, Limpio: ${cleanPhone}`);
     
     // Validar formato
     if (!cleanPhone.startsWith('53')) {
-        // Si no comienza con 53, agregarlo (asumiendo que es un número cubano)
         if (cleanPhone.length === 8) {
             cleanPhone = '53' + cleanPhone;
         } else if (cleanPhone.length === 9 && cleanPhone.startsWith('5')) {
-            // Si tiene 9 dígitos y comienza con 5, agregar 53 al principio
             cleanPhone = '53' + cleanPhone;
         } else {
             await bot.sendMessage(chatId,
@@ -1542,7 +1412,7 @@ async function handlePhoneInput(chatId, phone, session) {
         }
     }
     
-    // Validar longitud final (debe tener 10 dígitos: 53 + 8 dígitos)
+    // Validar longitud final
     if (cleanPhone.length !== 10) {
         await bot.sendMessage(chatId,
             `❌ *Longitud incorrecta*\n\n` +
@@ -1554,7 +1424,7 @@ async function handlePhoneInput(chatId, phone, session) {
         return;
     }
     
-    // Verificar que sea un número válido (solo dígitos después de limpiar)
+    // Verificar que sea un número válido
     if (!/^\d+$/.test(cleanPhone)) {
         await bot.sendMessage(chatId,
             `❌ *Caracteres inválidos*\n\n` +
@@ -1582,7 +1452,6 @@ async function handlePhoneInput(chatId, phone, session) {
             { parse_mode: 'Markdown' }
         );
         
-        // Si es el flujo de inicio, mostrar mensaje para intentar de nuevo
         if (session.step === 'waiting_phone_start') {
             activeSessions[chatId] = { step: 'waiting_phone_start' };
         }
@@ -1621,7 +1490,6 @@ async function handlePhoneInput(chatId, phone, session) {
     
     // Enviar mensaje apropiado
     if (session.step === 'waiting_phone_start') {
-        // Después de vincular teléfono al inicio, mostrar términos
         await bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
         await handleTerms(chatId, null);
     } else {
@@ -1717,8 +1585,7 @@ async function handleDepositAmountInput(chatId, amountText, session) {
     
     const limites = { 
         cup: [MINIMO_CUP, MAXIMO_CUP], 
-        saldo: [MINIMO_SALDO, 10000], 
-        usdt: [MINIMO_USDT, 1000] 
+        saldo: [MINIMO_SALDO, 10000]
     };
     
     if (isNaN(amount) || amount < limites[currency][0] || amount > limites[currency][1]) {
@@ -1732,78 +1599,29 @@ async function handleDepositAmountInput(chatId, amountText, session) {
     }
     
     const user = await getUser(chatId);
+    session.amount = amount;
     
-    if (currency === 'usdt') {
-        session.amount = amount;
-        session.step = 'waiting_usdt_wallet';
-        
-        await bot.sendMessage(chatId,
-            `✅ *Monto establecido:* ${formatCurrency(amount, 'usdt')}\n\n` +
-            `Ahora escribe la dirección USDT (BEP20) desde la que enviarás:\n\n` +
-            `Formato: 0x... (42 caracteres)\n` +
-            `Esta wallet se vinculará a tu cuenta.`,
-            { parse_mode: 'Markdown', reply_markup: createBackKeyboard('recharge_menu') }
-        );
-    } else {
-        session.amount = amount;
-        
-        // Mostrar confirmación con botones
-        const bonoPorcentaje = currency === 'usdt' ? '5%' : '10%';
-        const bono = user[`first_dep_${currency}`] ? amount * (currency === 'usdt' ? 0.05 : 0.10) : 0;
-        const totalConBono = amount + bono;
-        const tokens = calcularTokens(amount, currency);
-        
-        const confirmMessage = `📋 *Confirmar Depósito*\n\n` +
-            `💰 *Monto:* ${formatCurrency(amount, currency)}\n` +
-            `🎁 *Bono:* ${formatCurrency(bono, currency)} (${bonoPorcentaje})\n` +
-            `💵 *Total a acreditar:* ${formatCurrency(totalConBono, currency)}\n` +
-            `🎫 *Tokens a ganar:* ${tokens} ${currency === 'saldo' ? 'CWS' : 'CWT'}\n\n` +
-            `¿Confirmas la solicitud de depósito?`;
-        
-        await bot.sendMessage(chatId, confirmMessage, {
-            parse_mode: 'Markdown',
-            reply_markup: createDepositConfirmKeyboard(currency, amount)
-        });
-    }
-}
-
-async function handleUsdtWalletInput(chatId, wallet, session) {
-    if (!wallet.startsWith('0x') || wallet.length !== 42) {
-        await bot.sendMessage(chatId,
-            `❌ *Dirección inválida*\n\n` +
-            `Debe comenzar con "0x" y tener 42 caracteres.\n\n` +
-            `Ejemplo válido:\n\`0x742d35Cc6634C0532925a3b844Bc9e8e64dA7F2E\`\n\n` +
-            `Inténtalo de nuevo:`,
-            { parse_mode: 'Markdown', reply_markup: createBackKeyboard('recharge_menu') }
-        );
-        return;
-    }
+    // Mostrar confirmación con botones
+    const bonoPorcentaje = 0.10;
+    const bono = user[`first_dep_${currency}`] ? amount * bonoPorcentaje : 0;
+    const totalConBono = amount + bono;
+    const tokens = currency === 'saldo' ? Math.floor(amount / 100) * CWS_PER_100_SALDO : 0;
     
-    session.usdtWallet = wallet;
-    await updateUser(chatId, { usdt_wallet: wallet });
-    
-    // Mostrar confirmación para USDT
-    const user = await getUser(chatId);
-    const bono = user.first_dep_usdt ? session.amount * 0.05 : 0;
-    const totalConBono = session.amount + bono;
-    const tokens = calcularTokens(session.amount, 'usdt');
-    
-    const confirmMessage = `📋 *Confirmar Depósito USDT*\n\n` +
-        `💰 *Monto:* ${formatCurrency(session.amount, 'usdt')}\n` +
-        `👛 *Wallet:* \`${wallet.substring(0, 20)}...\`\n` +
-        `🎁 *Bono:* ${formatCurrency(bono, 'usdt')} (5%)\n` +
-        `💵 *Total a acreditar:* ${formatCurrency(totalConBono, 'usdt')}\n` +
-        `🎫 *Tokens a ganar:* ${tokens} CWT\n\n` +
+    const confirmMessage = `📋 *Confirmar Depósito*\n\n` +
+        `💰 *Monto:* ${formatCurrency(amount, currency)}\n` +
+        `🎁 *Bono:* ${formatCurrency(bono, currency)} (${bonoPorcentaje * 100}%)\n` +
+        `💵 *Total a acreditar:* ${formatCurrency(totalConBono, currency)}\n` +
+        `🎫 *Tokens a ganar:* ${tokens} CWS\n\n` +
         `¿Confirmas la solicitud de depósito?`;
     
     await bot.sendMessage(chatId, confirmMessage, {
         parse_mode: 'Markdown',
-        reply_markup: createDepositConfirmKeyboard('usdt', session.amount)
+        reply_markup: createDepositConfirmKeyboard(currency, amount)
     });
 }
 
 // ============================================
-// ENDPOINT PARA RECIBIR PAGOS DEL PARSER (ACTUALIZADO)
+// ENDPOINT PARA RECIBIR PAGOS DEL PARSER
 // ============================================
 
 app.post('/payment-notification', verifyWebhookToken, async (req, res) => {
@@ -1811,9 +1629,6 @@ app.post('/payment-notification', verifyWebhookToken, async (req, res) => {
         console.log('\n' + '='.repeat(80));
         console.log('📥 PAYMENT-NOTIFICATION RECIBIDA EN EL BOT');
         console.log('🕐 Hora:', new Date().toISOString());
-        console.log('📦 Datos recibidos:');
-        console.log(JSON.stringify(req.body, null, 2));
-        console.log('='.repeat(80) + '\n');
         
         const { 
             type, 
@@ -1821,14 +1636,9 @@ app.post('/payment-notification', verifyWebhookToken, async (req, res) => {
             currency, 
             tx_id, 
             tipo_pago, 
-            phone, 
-            tarjeta_destino, 
-            raw_message,
-            auth_token,
-            source
+            phone
         } = req.body;
         
-        // Validar campos requeridos
         if (!type || !amount || !currency || !tx_id) {
             console.log('❌ Campos requeridos faltantes en payload');
             return res.status(400).json({ 
@@ -1837,20 +1647,15 @@ app.post('/payment-notification', verifyWebhookToken, async (req, res) => {
             });
         }
         
-        // Procesar según tipo
         switch (type) {
             case 'SMS_PAYMENT_DETECTED':
                 console.log(`🔍 Procesando SMS_PAYMENT_DETECTED`);
                 console.log(`📞 Teléfono recibido: ${phone}`);
                 console.log(`💰 Monto: ${amount} ${currency}`);
-                console.log(`🆔 TX ID: ${tx_id}`);
-                console.log(`🔧 Tipo Pago: ${tipo_pago}`);
-                console.log(`💳 Tarjeta Destino: ${tarjeta_destino}`);
                 
                 let user = null;
                 let normalizedPhone = null;
                 
-                // Si hay teléfono, buscar usuario
                 if (phone) {
                     normalizedPhone = phone.replace(/[^\d]/g, '');
                     console.log(`🔍 Buscando usuario con teléfono normalizado: ${normalizedPhone}`);
@@ -1858,12 +1663,7 @@ app.post('/payment-notification', verifyWebhookToken, async (req, res) => {
                     user = await getUserByPhone(normalizedPhone);
                     
                     if (user) {
-                        console.log(`✅ Usuario encontrado:`);
-                        console.log(`   ID: ${user.telegram_id}`);
-                        console.log(`   Nombre: ${user.first_name}`);
-                        
-                        // Procesar pago automático
-                        console.log(`🚀 Procesando pago automático para usuario ${user.telegram_id}`);
+                        console.log(`✅ Usuario encontrado: ${user.telegram_id}`);
                         
                         const result = await procesarPagoAutomatico(
                             user.telegram_id, 
@@ -1874,50 +1674,20 @@ app.post('/payment-notification', verifyWebhookToken, async (req, res) => {
                         );
                         
                         console.log(`✅ Resultado del procesamiento:`, result);
-                        
-                        // Si se completó exitosamente, notificar al admin
-                        if (result.success && result.ordenId) {
-                            // Buscar la solicitud completada
-                            const { data: solicitud } = await supabase
-                                .from('transactions')
-                                .select('*')
-                                .eq('id', result.ordenId)
-                                .single();
-                            
-                            if (solicitud) {
-                                await notificarSolicitudCompletada(solicitud, result);
-                            }
-                        }
-                        
                         return res.json(result);
                     } else {
                         console.log(`❌ Usuario NO encontrado para teléfono: ${normalizedPhone}`);
                         
                         // Guardar como pago pendiente
-                        console.log(`📝 Guardando como pago pendiente...`);
-                        
-                        const { data, error } = await supabase
-                            .from('pending_sms_payments')
-                            .insert({
-                                phone: normalizedPhone,
-                                amount: amount,
-                                currency: currency,
-                                tx_id: tx_id,
-                                tipo_pago: tipo_pago,
-                                tarjeta_destino: tarjeta_destino,
-                                raw_message: raw_message,
-                                claimed: false,
-                                created_at: new Date().toISOString()
-                            });
-                        
-                        if (error) {
-                            console.error('❌ Error guardando pago pendiente:', error);
-                            return res.status(500).json({ 
-                                success: false, 
-                                message: 'Error guardando pago pendiente',
-                                error: error.message 
-                            });
-                        }
+                        await supabase.from('pending_sms_payments').insert({
+                            phone: normalizedPhone,
+                            amount: amount,
+                            currency: currency,
+                            tx_id: tx_id,
+                            tipo_pago: tipo_pago,
+                            claimed: false,
+                            created_at: new Date().toISOString()
+                        });
                         
                         console.log(`✅ Pago pendiente guardado para teléfono: ${normalizedPhone}`);
                         
@@ -1927,7 +1697,6 @@ app.post('/payment-notification', verifyWebhookToken, async (req, res) => {
                                 `📞 Teléfono: ${normalizedPhone}\n` +
                                 `💰 Monto: ${formatCurrency(amount, currency)}\n` +
                                 `🔧 Tipo: ${tipo_pago}\n` +
-                                `💳 Tarjeta: ${tarjeta_destino}\n` +
                                 `🆔 ID: \`${tx_id}\`\n\n` +
                                 `ℹ️ Este pago está pendiente de reclamar.`;
                             
@@ -1937,58 +1706,9 @@ app.post('/payment-notification', verifyWebhookToken, async (req, res) => {
                         return res.json({ 
                             success: false, 
                             message: 'Usuario no encontrado, pago guardado como pendiente',
-                            phone: normalizedPhone,
-                            tx_id: tx_id,
-                            tipo_pago: tipo_pago
+                            phone: normalizedPhone
                         });
                     }
-                } else {
-                    // Pago sin teléfono (tarjeta a monedero)
-                    console.log(`⚠️ Pago sin teléfono: ${tx_id}, Tipo: ${tipo_pago}`);
-                    
-                    // Guardar como pago pendiente
-                    const { data, error } = await supabase
-                        .from('pending_sms_payments')
-                        .insert({
-                            phone: null,
-                            amount: amount,
-                            currency: currency,
-                            tx_id: tx_id,
-                            tipo_pago: tipo_pago,
-                            tarjeta_destino: tarjeta_destino,
-                            raw_message: raw_message,
-                            claimed: false,
-                            created_at: new Date().toISOString()
-                        });
-                    
-                    if (error) {
-                        console.error('❌ Error guardando pago pendiente:', error);
-                        return res.status(500).json({ 
-                            success: false, 
-                            message: 'Error guardando pago pendiente',
-                            error: error.message 
-                        });
-                    }
-                    
-                    console.log(`✅ Pago pendiente guardado (sin teléfono)`);
-                    
-                    // Notificar al admin
-                    if (ADMIN_CHAT_ID) {
-                        const mensajeAdmin = `📱 *PAGO SIN TELÉFONO*\n\n` +
-                            `💰 Monto: ${formatCurrency(amount, currency)}\n` +
-                            `🔧 Tipo: ${tipo_pago}\n` +
-                            `💳 Tarjeta: ${tarjeta_destino}\n` +
-                            `🆔 ID: \`${tx_id}\`\n\n` +
-                            `ℹ️ Este pago no tiene teléfono asociado.`;
-                        
-                        await bot.sendMessage(ADMIN_CHAT_ID, mensajeAdmin, { parse_mode: 'Markdown' });
-                    }
-                    
-                    return res.json({ 
-                        success: false, 
-                        message: 'Pago sin teléfono, guardado como pendiente',
-                        tx_id: tx_id
-                    });
                 }
                 break;
                 
@@ -2003,14 +1723,11 @@ app.post('/payment-notification', verifyWebhookToken, async (req, res) => {
         
     } catch (error) {
         console.error('❌ Error en payment-notification:', error);
-        console.error('Stack trace:', error.stack);
         
-        // Enviar error al admin
         if (ADMIN_CHAT_ID) {
             const errorMsg = `❌ *ERROR EN PAYMENT-NOTIFICATION*\n\n` +
                 `Error: ${error.message}\n` +
-                `Hora: ${new Date().toLocaleString()}\n` +
-                `Body recibido: ${JSON.stringify(req.body).substring(0, 200)}...`;
+                `Hora: ${new Date().toLocaleString()}`;
             
             try {
                 await bot.sendMessage(ADMIN_CHAT_ID, errorMsg, { parse_mode: 'Markdown' });
@@ -2027,7 +1744,7 @@ app.post('/payment-notification', verifyWebhookToken, async (req, res) => {
 });
 
 // ============================================
-// RUTAS DEL PANEL WEB (SIMPLIFICADAS PARA AHORRAR ESPACIO)
+// RUTAS DEL PANEL WEB
 // ============================================
 
 app.post('/api/login', async (req, res) => {
@@ -2085,9 +1802,7 @@ app.post('/api/login', async (req, res) => {
                     phone: user.phone_number,
                     balance_cup: user.balance_cup || 0,
                     balance_saldo: user.balance_saldo || 0,
-                    balance_usdt: user.balance_usdt || 0,
-                    tokens_cws: user.tokens_cws || 0,
-                    tokens_cwt: user.tokens_cwt || 0
+                    tokens_cws: user.tokens_cws || 0
                 }
             });
         });
@@ -2098,7 +1813,6 @@ app.post('/api/login', async (req, res) => {
     }
 });
 
-// Otras rutas web (simplificadas por espacio)
 app.get('/api/user-data', requireAuth, async (req, res) => {
     try {
         const user = await getUser(req.session.userId);
@@ -2128,12 +1842,9 @@ app.get('/api/user-data', requireAuth, async (req, res) => {
                 username: user.username,
                 firstName: user.first_name,
                 phone: user.phone_number,
-                usdt_wallet: user.usdt_wallet,
                 balance_cup: user.balance_cup || 0,
                 balance_saldo: user.balance_saldo || 0,
-                balance_usdt: user.balance_usdt || 0,
                 tokens_cws: user.tokens_cws || 0,
-                tokens_cwt: user.tokens_cwt || 0,
                 pending_balance_cup: user.pending_balance_cup || 0,
                 accepted_terms: user.accepted_terms || false
             },
@@ -2190,58 +1901,6 @@ setInterval(() => {
     }
 }, 10 * 60 * 1000);
 
-// Verificar y acreditar saldos pendientes acumulados
-setInterval(async () => {
-    try {
-        const { data: users } = await supabase
-            .from('users')
-            .select('*')
-            .gte('pending_balance_cup', MINIMO_CUP);
-        
-        if (users && users.length > 0) {
-            console.log(`📊 Procesando ${users.length} usuarios con saldo pendiente...`);
-            
-            for (const user of users) {
-                const montoConBono = await aplicarBonoPrimerDeposito(user.telegram_id, 'cup', user.pending_balance_cup);
-                const nuevoSaldo = (user.balance_cup || 0) + montoConBono;
-                
-                await updateUser(user.telegram_id, { 
-                    balance_cup: nuevoSaldo,
-                    pending_balance_cup: 0 
-                });
-                
-                await supabase.from('transactions').insert({
-                    user_id: user.telegram_id,
-                    type: 'AUTO_ACCUMULATED',
-                    currency: 'cup',
-                    amount: montoConBono,
-                    amount_requested: user.pending_balance_cup,
-                    status: 'completed',
-                    tx_id: `ACCUM_${Date.now()}_${user.telegram_id}`,
-                    tipo_pago: 'ACUMULADO'
-                });
-                
-                const bonoMensaje = montoConBono > user.pending_balance_cup ? 
-                    `\n🎉 *¡Bono aplicado!* +${formatCurrency(montoConBono - user.pending_balance_cup, 'cup')}` : '';
-                
-                await bot.sendMessage(user.telegram_id,
-                    `🎉 *¡Saldo Pendiente Acreditado!*\n\n` +
-                    `Acumulado: ${formatCurrency(user.pending_balance_cup, 'cup')}\n` +
-                    `${bonoMensaje}\n` +
-                    `💵 Total: *${formatCurrency(montoConBono, 'cup')}*\n\n` +
-                    `📊 Nuevo saldo CUP: *${formatCurrency(nuevoSaldo, 'cup')}*\n\n` +
-                    `✅ ¡Ahora puedes usar tu saldo!`,
-                    { parse_mode: 'Markdown' }
-                );
-                
-                console.log(`✅ Saldo pendiente acreditado para ${user.telegram_id}`);
-            }
-        }
-    } catch (error) {
-        console.error('❌ Error en programador de saldo pendiente:', error);
-    }
-}, 5 * 60 * 1000);
-
 // ============================================
 // INICIAR SERVIDOR
 // ============================================
@@ -2251,11 +1910,15 @@ app.listen(PORT, () => {
     console.log(`🔗 http://localhost:${PORT}`);
     console.log(`📊 Dashboard: http://localhost:${PORT}/dashboard`);
     console.log(`🔄 Keep alive: http://localhost:${PORT}/keepalive`);
-    console.log(`🔐 Seguridad: ${WEBHOOK_SECRET_KEY ? '✅ ACTIVADA' : '⚠️ DESACTIVADA'}`);
-    console.log(`💰 Mínimos: CUP=${MINIMO_CUP}, Saldo=${MINIMO_SALDO}, USDT=${MINIMO_USDT}`);
+    console.log(`💰 Mínimos: CUP=${MINIMO_CUP}, Saldo=${MINIMO_SALDO}`);
     console.log(`📞 Teléfono para pagos: ${PAGO_SALDO_MOVIL || '❌ No configurado'}`);
     console.log(`💳 Tarjeta para pagos: ${PAGO_CUP_TARJETA ? '✅ Configurada' : '❌ No configurada'}`);
-    console.log(`🪙 Dirección USDT: ${PAGO_USDT_ADDRESS ? '✅ Configurada' : '❌ No configurada'}`);
+    console.log(`🎮 LioGames: ${LIOGAMES_MEMBER_CODE ? '✅ Configurado' : '❌ No configurado'}`);
+    console.log(`💱 Tasas de cambio:`);
+    console.log(`   • USDT 0-30: $${USDT_RATE_0_30} CUP`);
+    console.log(`   • USDT >30: $${USDT_RATE_30_PLUS} CUP`);
+    console.log(`   • Saldo Móvil: ÷${SALDO_MOVIL_RATE}`);
+    console.log(`   • Mínimo CWS: ${MIN_CWS_USE}`);
     console.log(`\n🚀 Bot listo para recibir mensajes...`);
 });
 
