@@ -1,4 +1,4 @@
-// game_recharges.js - VERSIÓN ACTUALIZADA
+// recharge_games.js - VERSIÓN ACTUALIZADA
 require('dotenv').config();
 const crypto = require('crypto');
 const axios = require('axios');
@@ -7,15 +7,41 @@ const axios = require('axios');
 // CONFIGURACIÓN
 // ============================================
 
-const LIOGAMES_SECRET = process.env.LIOGAMES_SECRET || '36b82f46524b0520808450eda62bd1fb';
-const LIOGAMES_MEMBER_CODE = process.env.LIOGAMES_MEMBER_CODE || 'M260119RKVLDNBGMY';
+const LIOGAMES_SECRET = process.env.LIOGAMES_SECRET;
+const LIOGAMES_MEMBER_CODE = process.env.LIOGAMES_MEMBER_CODE;
 const LIOGAMES_API_BASE = 'https://api.liogames.com/wp-json/liogames/v1';
 
 // Tasas de cambio dinámicas
-const USDT_RATE_0_30 = parseFloat(process.env.USDT_RATE_0_30 || 650); // 0-30 USDT
-const USDT_RATE_30_PLUS = parseFloat(process.env.USDT_RATE_30_PLUS || 680); // >30 USDT
-const SALDO_MOVIL_RATE = parseFloat(process.env.SALDO_MOVIL_RATE || 2.1); // División para saldo móvil
-const MIN_CWS_USE = parseInt(process.env.MIN_CWS_USE || 100);
+const USDT_RATE_0_30 = parseFloat(process.env.USDT_RATE_0_30); // 0-30 USDT
+const USDT_RATE_30_PLUS = parseFloat(process.env.USDT_RATE_30_PLUS); // >30 USDT
+const SALDO_MOVIL_RATE = parseFloat(process.env.SALDO_MOVIL_RATE); // División para saldo móvil
+const MIN_CWS_USE = parseInt(process.env.MIN_CWS_USE);
+
+// Validar variables de entorno
+if (!LIOGAMES_SECRET) {
+    console.error('❌ ERROR: LIOGAMES_SECRET no está configurado en las variables de entorno');
+    throw new Error('Falta configuración de LIOGAMES_SECRET en variables de entorno');
+}
+if (!LIOGAMES_MEMBER_CODE) {
+    console.error('❌ ERROR: LIOGAMES_MEMBER_CODE no está configurado en las variables de entorno');
+    throw new Error('Falta configuración de LIOGAMES_MEMBER_CODE en variables de entorno');
+}
+if (!USDT_RATE_0_30 || isNaN(USDT_RATE_0_30)) {
+    console.warn('⚠️ ADVERTENCIA: USDT_RATE_0_30 no configurado, usando valor por defecto 650');
+    USDT_RATE_0_30 = 650;
+}
+if (!USDT_RATE_30_PLUS || isNaN(USDT_RATE_30_PLUS)) {
+    console.warn('⚠️ ADVERTENCIA: USDT_RATE_30_PLUS no configurado, usando valor por defecto 680');
+    USDT_RATE_30_PLUS = 680;
+}
+if (!SALDO_MOVIL_RATE || isNaN(SALDO_MOVIL_RATE)) {
+    console.warn('⚠️ ADVERTENCIA: SALDO_MOVIL_RATE no configurado, usando valor por defecto 2.1');
+    SALDO_MOVIL_RATE = 2.1;
+}
+if (!MIN_CWS_USE || isNaN(MIN_CWS_USE)) {
+    console.warn('⚠️ ADVERTENCIA: MIN_CWS_USE no configurado, usando valor por defecto 100');
+    MIN_CWS_USE = 100;
+}
 
 // ============================================
 // DATOS DE JUEGOS (ACTUALIZADOS - SIN USDT/GOLD)
@@ -519,6 +545,12 @@ class GameRechargeHandler {
         this.supabase = supabase;
         this.userSessions = {};
         this.priceCache = {}; // Cache para precios
+        
+        // Validar tasas de cambio
+        if (!USDT_RATE_0_30 || !USDT_RATE_30_PLUS || !SALDO_MOVIL_RATE) {
+            console.error('❌ ERROR: Las tasas de cambio no están configuradas correctamente en las variables de entorno');
+            console.error('❌ Por favor, configura USDT_RATE_0_30, USDT_RATE_30_PLUS y SALDO_MOVIL_RATE en tu archivo .env');
+        }
     }
     
     // Iniciar sesión de recarga para usuario
