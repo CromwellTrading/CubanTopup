@@ -115,7 +115,6 @@ class SokyRecargasHandler {
             });
 
             let message = `📱 *RECARGAS ETECSA*\n\n`;
-            message += `💱 *Tasa de cambio:* 1 USDT = $${this.SOKY_CUP_RATE} CUP\n\n`;
             message += `*Ofertas disponibles:*\n\n`;
 
             // Mostrar ofertas agrupadas
