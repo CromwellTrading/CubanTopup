@@ -6,8 +6,23 @@ class SokyRecargasHandler {
     constructor(bot, supabase) {
         this.bot = bot;
         this.supabase = supabase;
-        this.SOKY_API_TOKEN = process.env.SOKY_API_TOKEN || '6970|31Cg3qhd5A72tRptPkAxROM0BF7GgtEK37cHLqu62e5f8b6b';
-        this.SOKY_CUP_RATE = parseFloat(process.env.SOKY_CUP_RATE) || 632;
+        
+        // Variables sensibles ahora solo desde .env
+        this.SOKY_API_TOKEN = process.env.SOKY_API_TOKEN;
+        this.SOKY_RATE_CUP = parseFloat(process.env.SOKY_RATE_CUP);
+        
+        // Validar que las variables requeridas existan
+        if (!this.SOKY_API_TOKEN) {
+            console.error('❌ ERROR: SOKY_API_TOKEN no está configurado en las variables de entorno');
+            console.error('❌ Por favor, añade SOKY_API_TOKEN en tu archivo .env');
+            throw new Error('Falta configuración de SOKY_API_TOKEN en variables de entorno');
+        }
+        
+        if (!this.SOKY_RATE_CUP || isNaN(this.SOKY_RATE_CUP)) {
+            console.warn('⚠️ ADVERTENCIA: SOKY_RATE_CUP no configurado, usando valor por defecto 632');
+            this.SOKY_RATE_CUP = 632;
+        }
+        
         this.baseURL = 'https://api.sokyrecargas.com';
         
         this.api = axios.create({
@@ -43,7 +58,7 @@ class SokyRecargasHandler {
             // Convertir precios de USDT a CUP
             const offersWithCUP = offers.map(offer => {
                 const pricesInCUP = offer.prices.map(price => {
-                    const cupPrice = price.public * this.SOKY_CUP_RATE;
+                    const cupPrice = price.public * this.SOKY_RATE_CUP;
                     return {
                         ...price,
                         cup_price: Math.ceil(cupPrice), // Redondear hacia arriba
@@ -304,7 +319,7 @@ class SokyRecargasHandler {
             }
 
             if (session.requiresEmail && email) {
-                const emailRegex = /^[a-zA-Z0-9._%+-]+@nauta\.(com\.cu|cu)$/i;
+                const emailRegex = /^[a-zAZ0-9._%+-]+@nauta\.(com\.cu|cu)$/i;
                 if (!emailRegex.test(email)) {
                     await this.bot.sendMessage(chatId,
                         `❌ *Email inválido*\n\n` +
@@ -457,13 +472,13 @@ class SokyRecargasHandler {
                     offer_name: session.offerName,
                     price_label: session.priceLabel,
                     original_usdt: session.originalUsdt,
-                    cup_rate: this.SOKY_CUP_RATE
+                    cup_rate: this.SOKY_RATE_CUP
                 },
                 completed_at: new Date().toISOString()
             });
 
             // 5. Notificar al usuario
-            const successMessage = `✅ *¡Recarga ETECSA Exitosa!*\n\n` +
+            let successMessage = `✅ *¡Recarga ETECSA Exitosa!*\n\n` +
                 `🎯 *Oferta:* ${session.offerName}\n` +
                 `💰 *Paquete:* ${session.priceLabel}\n` +
                 `💵 *Pagado:* $${session.cupPrice} CUP\n` +
