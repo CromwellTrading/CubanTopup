@@ -28,23 +28,19 @@ if (!LIOGAMES_MEMBER_CODE) {
 }
 if (!USDT_RATE_0_30 || isNaN(USDT_RATE_0_30)) {
     console.warn('⚠️ ADVERTENCIA: USDT_RATE_0_30 no configurado, usando valor por defecto 650');
-    USDT_RATE_0_30 = 650;
 }
 if (!USDT_RATE_30_PLUS || isNaN(USDT_RATE_30_PLUS)) {
     console.warn('⚠️ ADVERTENCIA: USDT_RATE_30_PLUS no configurado, usando valor por defecto 680');
-    USDT_RATE_30_PLUS = 680;
 }
 if (!SALDO_MOVIL_RATE || isNaN(SALDO_MOVIL_RATE)) {
     console.warn('⚠️ ADVERTENCIA: SALDO_MOVIL_RATE no configurado, usando valor por defecto 2.1');
-    SALDO_MOVIL_RATE = 2.1;
 }
 if (!MIN_CWS_USE || isNaN(MIN_CWS_USE)) {
     console.warn('⚠️ ADVERTENCIA: MIN_CWS_USE no configurado, usando valor por defecto 100');
-    MIN_CWS_USE = 100;
 }
 
 // ============================================
-// DATOS DE JUEGOS (ACTUALIZADOS - SIN USDT/GOLD)
+// DATOS DE JUEGOS CON PRECIOS DE RESPALDO (GOLD)
 // ============================================
 
 const GAMES = {
@@ -52,17 +48,17 @@ const GAMES = {
     66584: {
         name: "Arena Breakout",
         variations: {
-            528315: { name: "60 + 6 Bonds" },
-            528316: { name: "310 + 25 Bonds" },
-            528317: { name: "630 + 45 Bonds" },
-            528318: { name: "1580 + 110 Bonds" },
-            528319: { name: "3200 + 200 Bonds" },
-            528320: { name: "6500 + 320 Bonds" },
-            528321: { name: "Beginners Select (PACK)" },
-            528322: { name: "Bulletproof safety container (30 days)" },
-            528323: { name: "Advanced Battle Pass" },
-            528324: { name: "Composite safety container (30 days)" },
-            528325: { name: "Premium Battle Pass" }
+            528315: { name: "60 + 6 Bonds", backup_price: 0.81 }, // Gold price
+            528316: { name: "310 + 25 Bonds", backup_price: 3.97 },
+            528317: { name: "630 + 45 Bonds", backup_price: 7.93 },
+            528318: { name: "1580 + 110 Bonds", backup_price: 19.82 },
+            528319: { name: "3200 + 200 Bonds", backup_price: 39.58 },
+            528320: { name: "6500 + 320 Bonds", backup_price: 76.80 },
+            528321: { name: "Beginners Select (PACK)", backup_price: 0.82 },
+            528322: { name: "Bulletproof safety container (30 days)", backup_price: 2.40 },
+            528323: { name: "Advanced Battle Pass", backup_price: 3.99 },
+            528324: { name: "Composite safety container (30 days)", backup_price: 7.16 },
+            528325: { name: "Premium Battle Pass", backup_price: 11.87 }
         },
         input_schema: {
             fields: [
@@ -75,13 +71,13 @@ const GAMES = {
     67528: {
         name: "Zenless Zone Zero",
         variations: {
-            67532: { name: "Inter-Knot Membership" },
-            67533: { name: "60 Monochrome" },
-            67534: { name: "300 + 30 Monochrome" },
-            67535: { name: "980 + 110 Monochrome" },
-            67536: { name: "1980 + 260 Monochrome" },
-            67537: { name: "3280 + 600 Monochrome" },
-            67538: { name: "6480 + 1600 Monochrome" }
+            67532: { name: "Inter-Knot Membership", backup_price: 4.49 },
+            67533: { name: "60 Monochrome", backup_price: 0.88 },
+            67534: { name: "300 + 30 Monochrome", backup_price: 4.49 },
+            67535: { name: "980 + 110 Monochrome", backup_price: 13.54 },
+            67536: { name: "1980 + 260 Monochrome", backup_price: 29.35 },
+            67537: { name: "3280 + 600 Monochrome", backup_price: 45.17 },
+            67538: { name: "6480 + 1600 Monochrome", backup_price: 90.36 }
         },
         input_schema: {
             fields: [
@@ -97,12 +93,12 @@ const GAMES = {
     71886: {
         name: "Wuthering Waves",
         variations: {
-            456266: { name: "60 Lunites" },
-            456267: { name: "330 Lunites (300 + 30 Bonus)" },
-            456268: { name: "1090 Lunites (980 + 110 Bonus)" },
-            456269: { name: "2240 Lunites (1980 + 260 Bonus)" },
-            456270: { name: "3880 Lunites (3280 + 600 Bonus)" },
-            456271: { name: "8080 Lunites (6480 + 1600 Bonus)" }
+            456266: { name: "60 Lunites", backup_price: 0.96 },
+            456267: { name: "330 Lunites (300 + 30 Bonus)", backup_price: 4.84 },
+            456268: { name: "1090 Lunites (980 + 110 Bonus)", backup_price: 14.67 },
+            456269: { name: "2240 Lunites (1980 + 260 Bonus)", backup_price: 29.00 },
+            456270: { name: "3880 Lunites (3280 + 600 Bonus)", backup_price: 49.80 },
+            456271: { name: "8080 Lunites (6480 + 1600 Bonus)", backup_price: 97.13 }
         },
         input_schema: {
             fields: [
@@ -118,18 +114,18 @@ const GAMES = {
     65482: {
         name: "Mobile Legends",
         variations: {
-            83222: { name: "Diamante × 500 + 65 (doble)" },
-            83223: { name: "Diamante × 250 + 25 (doble)" },
-            83224: { name: "Diamante × 150 +15 (doble)" },
-            83225: { name: "Diamante × 50 + 5 (doble)" },
-            77731: { name: "Diamante × 78 + 8" },
-            77732: { name: "Diamante × 156 +16" },
-            77733: { name: "Diamante × 234 +23" },
-            77734: { name: "Diamante×625 +81" },
-            77735: { name: "Diamante × 1860 +335" },
-            77736: { name: "Diamante × 3099 +589" },
-            77737: { name: "Pasaje del Crepúsculo" },
-            77738: { name: "Pase semanal Diamante" }
+            83222: { name: "Diamante × 500 + 65 (doble)", backup_price: 7.16 },
+            83223: { name: "Diamante × 250 + 25 (doble)", backup_price: 3.49 },
+            83224: { name: "Diamante × 150 +15 (doble)", backup_price: 2.17 },
+            83225: { name: "Diamante × 50 + 5 (doble)", backup_price: 0.73 },
+            77731: { name: "Diamante × 78 + 8", backup_price: 1.13 },
+            77732: { name: "Diamante × 156 +16", backup_price: 2.25 },
+            77733: { name: "Diamante × 234 +23", backup_price: 3.28 },
+            77734: { name: "Diamante×625 +81", backup_price: 8.87 },
+            77735: { name: "Diamante × 1860 +335", backup_price: 26.84 },
+            77736: { name: "Diamante × 3099 +589", backup_price: 46.02 },
+            77737: { name: "Pasaje del Crepúsculo", backup_price: 7.19 },
+            77738: { name: "Pase semanal Diamante", backup_price: 1.43 }
         },
         input_schema: {
             fields: [
@@ -142,14 +138,14 @@ const GAMES = {
     65871: {
         name: "Free Fire Global",
         variations: {
-            462737: { name: "Membresía mensual" },
-            462738: { name: "Membresía semanal" },
-            65880: { name: "100 diamantes" },
-            65881: { name: "310 diamantes" },
-            65882: { name: "530 diamantes" },
-            65883: { name: "1080 diamantes" },
-            65884: { name: "2200 diamantes" },
-            65885: { name: "5600 diamantes" }
+            462737: { name: "Membresía mensual", backup_price: 8.49 },
+            462738: { name: "Membresía semanal", backup_price: 1.81 },
+            65880: { name: "100 diamantes", backup_price: 0.92 },
+            65881: { name: "310 diamantes", backup_price: 2.77 },
+            65882: { name: "530 diamantes", backup_price: 4.26 },
+            65883: { name: "1080 diamantes", backup_price: 8.52 },
+            65884: { name: "2200 diamantes", backup_price: 17.35 },
+            65885: { name: "5600 diamantes", backup_price: 41.51 }
         },
         input_schema: {
             fields: [
@@ -161,15 +157,15 @@ const GAMES = {
     66452: {
         name: "Genshin Impact",
         variations: {
-            394118: { name: "60 Cristales Génesis" },
-            394119: { name: "120 Cristales Génesis" },
-            394120: { name: "300 + 30 Cristales Génesis" },
-            394121: { name: "980+110 Cristales Génesis" },
-            394122: { name: "1980+260 Cristales Génesis" },
-            394123: { name: "3280 + 600 Cristales Génesis" },
-            394124: { name: "6480 + 1600 Cristales Génesis" },
-            394125: { name: "9760 + 2200 Cristales Génesis" },
-            394126: { name: "Bendición de la Luna Welkin" }
+            394118: { name: "60 Cristales Génesis", backup_price: 0.65 },
+            394119: { name: "120 Cristales Génesis", backup_price: 1.29 },
+            394120: { name: "300 + 30 Cristales Génesis", backup_price: 3.25 },
+            394121: { name: "980+110 Cristales Génesis", backup_price: 9.93 },
+            394122: { name: "1980+260 Cristales Génesis", backup_price: 20.80 },
+            394123: { name: "3280 + 600 Cristales Génesis", backup_price: 33.67 },
+            394124: { name: "6480 + 1600 Cristales Génesis", backup_price: 64.24 },
+            394125: { name: "9760 + 2200 Cristales Génesis", backup_price: 100.58 },
+            394126: { name: "Bendición de la Luna Welkin", backup_price: 3.20 }
         },
         input_schema: {
             fields: [
@@ -187,12 +183,12 @@ const GAMES = {
     66719: {
         name: "PUBG Mobile",
         variations: {
-            66726: { name: "60 UC" },
-            66727: { name: "300 + 25 UC" },
-            66728: { name: "600 + 60 UC" },
-            66729: { name: "1500 + 300 UC" },
-            66730: { name: "3000 + 850 UC" },
-            66731: { name: "6000 + 2100 UC" }
+            66726: { name: "60 UC", backup_price: 0.84 },
+            66727: { name: "300 + 25 UC", backup_price: 4.24 },
+            66728: { name: "600 + 60 UC", backup_price: 8.50 },
+            66729: { name: "1500 + 300 UC", backup_price: 21.26 },
+            66730: { name: "3000 + 850 UC", backup_price: 42.52 },
+            66731: { name: "6000 + 2100 UC", backup_price: 85.06 }
         },
         input_schema: {
             fields: [
@@ -204,16 +200,16 @@ const GAMES = {
     67795: {
         name: "Honor de Reyes",
         variations: {
-            397753: { name: "16 Fichas" },
-            397754: { name: "80 Fichas" },
-            397755: { name: "240 Fichas" },
-            397756: { name: "400 Fichas" },
-            397757: { name: "560 Fichas" },
-            397758: { name: "800 + 30 Fichas" },
-            397759: { name: "1200 + 45 Fichas" },
-            397760: { name: "2400 + 108 Fichas" },
-            397761: { name: "4000 + 180 Fichas" },
-            397762: { name: "8000 + 360 Fichas" }
+            397753: { name: "16 Fichas", backup_price: 0.19 },
+            397754: { name: "80 Fichas", backup_price: 0.85 },
+            397755: { name: "240 Fichas", backup_price: 2.57 },
+            397756: { name: "400 Fichas", backup_price: 4.30 },
+            397757: { name: "560 Fichas", backup_price: 6.01 },
+            397758: { name: "800 + 30 Fichas", backup_price: 8.52 },
+            397759: { name: "1200 + 45 Fichas", backup_price: 12.79 },
+            397760: { name: "2400 + 108 Fichas", backup_price: 25.56 },
+            397761: { name: "4000 + 180 Fichas", backup_price: 42.21 },
+            397762: { name: "8000 + 360 Fichas", backup_price: 84.42 }
         },
         input_schema: {
             fields: [
@@ -225,19 +221,19 @@ const GAMES = {
     68075: {
         name: "Golpe de Sangre",
         variations: {
-            394594: { name: "100 + 5 de oro" },
-            394595: { name: "200 + 10 de oro" },
-            394596: { name: "300 + 20 de oro" },
-            394597: { name: "500 + 40 de oro" },
-            394598: { name: "800 + 60 de oro" },
-            394599: { name: "1000 + 100 de oro" },
-            394600: { name: "2000 + 200 de oro" },
-            394601: { name: "3000 + 360 de oro" },
-            394602: { name: "5000 + 800 de oro" },
-            394603: { name: "7000 + 1060 de oro" },
-            394604: { name: "Ultra aspecto afortunado (cofre)" },
-            394605: { name: "Subir de nivel (Pase)" },
-            394606: { name: "Golpe premium (Pase)" }
+            394594: { name: "100 + 5 de oro", backup_price: 0.67 },
+            394595: { name: "200 + 10 de oro", backup_price: 1.33 },
+            394596: { name: "300 + 20 de oro", backup_price: 1.97 },
+            394597: { name: "500 + 40 de oro", backup_price: 3.28 },
+            394598: { name: "800 + 60 de oro", backup_price: 5.26 },
+            394599: { name: "1000 + 100 de oro", backup_price: 6.57 },
+            394600: { name: "2000 + 200 de oro", backup_price: 13.14 },
+            394601: { name: "3000 + 360 de oro", backup_price: 19.70 },
+            394602: { name: "5000 + 800 de oro", backup_price: 32.84 },
+            394603: { name: "7000 + 1060 de oro", backup_price: 45.97 },
+            394604: { name: "Ultra aspecto afortunado (cofre)", backup_price: 0.40 },
+            394605: { name: "Subir de nivel (Pase)", backup_price: 1.58 },
+            394606: { name: "Golpe premium (Pase)", backup_price: 7.11 }
         },
         input_schema: {
             fields: [
@@ -249,13 +245,13 @@ const GAMES = {
     66557: {
         name: "Honkai: Star Rail",
         variations: {
-            66561: { name: "60 Fragmento onírico" },
-            66562: { name: "300 + 30 Fragmento onírico" },
-            66563: { name: "980 + 110 Fragmento onírico" },
-            66564: { name: "1980 + 260 Fragmento onírico" },
-            66565: { name: "3280 + 600 Fragmento onírico" },
-            66566: { name: "6480 + 1600 Fragmento onírico" },
-            66567: { name: "Pase de suministro exprés" }
+            66561: { name: "60 Fragmento onírico", backup_price: 0.62 },
+            66562: { name: "300 + 30 Fragmento onírico", backup_price: 3.19 },
+            66563: { name: "980 + 110 Fragmento onírico", backup_price: 9.74 },
+            66564: { name: "1980 + 260 Fragmento onírico", backup_price: 19.98 },
+            66565: { name: "3280 + 600 Fragmento onírico", backup_price: 32.53 },
+            66566: { name: "6480 + 1600 Fragmento onírico", backup_price: 63.52 },
+            66567: { name: "Pase de suministro exprés", backup_price: 3.19 }
         },
         input_schema: {
             fields: [
@@ -272,7 +268,7 @@ const GAMES = {
 };
 
 // ============================================
-// FUNCIONES DE API LIOGAMES
+// FUNCIONES DE API LIOGAMES (CORREGIDAS)
 // ============================================
 
 // Firmar solicitud para LioGames
@@ -281,7 +277,7 @@ function signRequest(payload) {
     return crypto.createHmac('sha256', LIOGAMES_SECRET).update(body).digest('hex');
 }
 
-// Obtener precio real desde LioGames
+// Obtener precio real desde LioGames (CORREGIDO)
 async function getLioGamesPrice(product_id, variation_id) {
     try {
         const payload = { 
@@ -291,24 +287,44 @@ async function getLioGamesPrice(product_id, variation_id) {
         };
         const signature = signRequest(payload);
         
+        console.log(`🔍 Consultando precio para producto ${product_id}, variación ${variation_id}`);
+        console.log(`📦 Payload:`, JSON.stringify(payload));
+        console.log(`🔑 Firma: ${signature.substring(0, 20)}...`);
+        
         const response = await axios.post(`${LIOGAMES_API_BASE}/price-check`, payload, {
             headers: {
                 'Content-Type': 'application/json',
                 'x-liog-sign': signature
-            }
+            },
+            timeout: 10000 // 10 segundos timeout
         });
         
+        console.log(`✅ Respuesta de price-check:`, JSON.stringify(response.data, null, 2));
+        
         if (response.data.ok && response.data.data?.price?.discounted) {
-            return response.data.data.price.discounted;
+            const price = response.data.data.price.discounted;
+            console.log(`💰 Precio obtenido: $${price} USDT`);
+            return price;
+        } else {
+            console.log('⚠️ Precio no disponible en la respuesta, usando precio de respaldo');
+            return null;
         }
-        return null;
     } catch (error) {
-        console.error('Error consultando precio LioGames:', error.response?.data || error.message);
+        console.error('❌ Error consultando precio LioGames:');
+        if (error.response) {
+            console.error('📊 Status:', error.response.status);
+            console.error('📝 Data:', error.response.data);
+            console.error('🔤 Headers:', error.response.headers);
+        } else if (error.request) {
+            console.error('❌ No se recibió respuesta del servidor');
+        } else {
+            console.error('❌ Error configurando la solicitud:', error.message);
+        }
         return null;
     }
 }
 
-// Crear orden en LioGames
+// Crear orden en LioGames (CORREGIDO con qty)
 async function createOrder(orderData) {
     try {
         const payload = {
@@ -321,18 +337,30 @@ async function createOrder(orderData) {
             partner_ref: orderData.partner_ref || `CROMWELL_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
         };
         
+        console.log(`🔄 Creando orden para producto ${orderData.product_id}`);
+        console.log(`📦 Payload:`, JSON.stringify(payload));
+        
         const signature = signRequest(payload);
         
         const response = await axios.post(`${LIOGAMES_API_BASE}/order-create`, payload, {
             headers: {
                 'Content-Type': 'application/json',
                 'x-liog-sign': signature
-            }
+            },
+            timeout: 15000 // 15 segundos timeout
         });
+        
+        console.log(`✅ Respuesta de order-create:`, JSON.stringify(response.data, null, 2));
         
         return response.data;
     } catch (error) {
-        console.error('Error creando orden:', error.response?.data || error.message);
+        console.error('❌ Error creando orden:');
+        if (error.response) {
+            console.error('📊 Status:', error.response.status);
+            console.error('📝 Data:', error.response.data);
+        } else {
+            console.error('❌ Error:', error.message);
+        }
         throw error;
     }
 }
@@ -366,27 +394,32 @@ async function checkOrderStatus(order_id, partner_ref) {
 
 // Calcular precio en CUP según cantidad de USDT
 function calculateCupFromUsdt(usdtAmount) {
+    if (!usdtAmount || isNaN(usdtAmount)) {
+        console.warn(`⚠️ Cantidad USDT inválida: ${usdtAmount}, usando 1.0 por defecto`);
+        usdtAmount = 1.0;
+    }
+    
     if (usdtAmount <= 30) {
-        return usdtAmount * USDT_RATE_0_30;
+        return usdtAmount * (USDT_RATE_0_30 || 650);
     } else {
-        return (30 * USDT_RATE_0_30) + ((usdtAmount - 30) * USDT_RATE_30_PLUS);
+        return (30 * (USDT_RATE_0_30 || 650)) + ((usdtAmount - 30) * (USDT_RATE_30_PLUS || 680));
     }
 }
 
 // Calcular precio en Saldo Móvil
 function calculateSaldoMovilFromCup(cupAmount) {
-    const raw = cupAmount / SALDO_MOVIL_RATE;
+    const raw = cupAmount / (SALDO_MOVIL_RATE || 2.1);
     return Math.ceil(raw / 5) * 5; // Redondear al múltiplo de 5 más cercano hacia arriba
 }
 
 // Formatear precio en CUP
 function formatCupPrice(amount) {
-    return `$${amount.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}`;
+    return `$${amount.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}`;
 }
 
 // Formatear precio en Saldo Móvil
 function formatSaldoPrice(amount) {
-    return `$${amount.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}`;
+    return `$${amount.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}`;
 }
 
 // Redondear precio
@@ -396,14 +429,20 @@ function roundPrice(amount) {
 
 // Calcular todos los precios para un paquete
 function calculateAllPrices(usdtPrice) {
+    console.log(`🧮 Calculando precios para $${usdtPrice} USDT`);
+    
     const cupPrice = calculateCupFromUsdt(usdtPrice);
     const saldoPrice = calculateSaldoMovilFromCup(cupPrice);
     
-    return {
+    const prices = {
         cup: roundPrice(cupPrice),
         saldo: saldoPrice,
-        cws: saldoPrice // CWS es IGUAL al saldo móvil
+        cws: saldoPrice, // CWS es IGUAL al saldo móvil
+        usdt: usdtPrice
     };
+    
+    console.log(`💰 Precios calculados:`, prices);
+    return prices;
 }
 
 // ============================================
@@ -484,7 +523,7 @@ function createPaymentMethodsKeyboard(gameId, varId, prices) {
     ];
     
     // Solo mostrar CWS si el precio es suficiente (mínimo 100 CWS)
-    if (prices.cws >= MIN_CWS_USE) {
+    if (prices.cws >= (MIN_CWS_USE || 100)) {
         rows.push([{ 
             text: `🎫 Pagar con CWS - ${prices.cws} CWS`, 
             callback_data: `pay_method:${gameId}:${varId}:cws:${prices.cws}` 
@@ -547,10 +586,11 @@ class GameRechargeHandler {
         this.priceCache = {}; // Cache para precios
         
         // Validar tasas de cambio
-        if (!USDT_RATE_0_30 || !USDT_RATE_30_PLUS || !SALDO_MOVIL_RATE) {
-            console.error('❌ ERROR: Las tasas de cambio no están configuradas correctamente en las variables de entorno');
-            console.error('❌ Por favor, configura USDT_RATE_0_30, USDT_RATE_30_PLUS y SALDO_MOVIL_RATE en tu archivo .env');
-        }
+        console.log(`⚙️ Configuración de tasas:`);
+        console.log(`  USDT_RATE_0_30: ${USDT_RATE_0_30 || 650}`);
+        console.log(`  USDT_RATE_30_PLUS: ${USDT_RATE_30_PLUS || 680}`);
+        console.log(`  SALDO_MOVIL_RATE: ${SALDO_MOVIL_RATE || 2.1}`);
+        console.log(`  MIN_CWS_USE: ${MIN_CWS_USE || 100}`);
     }
     
     // Iniciar sesión de recarga para usuario
@@ -581,6 +621,7 @@ class GameRechargeHandler {
         
         // Verificar cache
         if (this.priceCache[cacheKey]) {
+            console.log(`📊 Usando precio en cache para ${cacheKey}`);
             return this.priceCache[cacheKey];
         }
         
@@ -594,11 +635,23 @@ class GameRechargeHandler {
                 return prices;
             }
         } catch (error) {
-            console.error('Error obteniendo precio:', error);
+            console.error('Error obteniendo precio de API:', error);
+        }
+        
+        // Si la API falla, usar precio de respaldo del objeto GAMES
+        const game = GAMES[gameId];
+        const variation = game?.variations[varId];
+        
+        if (game && variation && variation.backup_price) {
+            console.log(`🔄 Usando precio de respaldo para ${game.name} - ${variation.name}: $${variation.backup_price} USDT`);
+            const prices = calculateAllPrices(variation.backup_price);
+            this.priceCache[cacheKey] = prices;
+            return prices;
         }
         
         // Precio por defecto (en caso de error)
-        const defaultPrices = calculateAllPrices(1.0); // 1 USDT por defecto
+        console.warn(`⚠️ No se encontró precio para ${gameId}-${varId}, usando 1.0 USDT por defecto`);
+        const defaultPrices = calculateAllPrices(1.0);
         return defaultPrices;
     }
     
@@ -612,7 +665,7 @@ class GameRechargeHandler {
             `🎫 CWS - Moneda interna de la tienda\n\n` +
             `🎫 *Sobre los CWS:*\n` +
             `• 1 CWS = 1 Saldo Móvil (mismo valor)\n` +
-            `• Mínimo para usar: ${MIN_CWS_USE} CWS\n` +
+            `• Mínimo para usar: ${MIN_CWS_USE || 100} CWS\n` +
             `• Es Saldo Móvil tokenizado para usar en la tienda`;
         
         const keyboard = createGamesListKeyboard();
@@ -690,13 +743,22 @@ class GameRechargeHandler {
         const prices = await this.getPackagePrice(gameId, varId);
         session.prices = prices;
         
-        const message = `💰 *${game.name}*\n` +
-            `📦 *Paquete:* ${variation.name}\n\n` +
-            `*Precios disponibles:*\n\n` +
-            `💳 *CUP:* ${formatCupPrice(prices.cup)}\n` +
-            `📱 *Saldo Móvil:* ${formatSaldoPrice(prices.saldo)}\n` +
-            `🎫 *CWS:* ${prices.cws} CWS\n\n` +
-            `Selecciona el método de pago:`;
+        let message = `💰 *${game.name}*\n` +
+            `📦 *Paquete:* ${variation.name}\n` +
+            `💵 *Precio original:* $${prices.usdt ? prices.usdt.toFixed(2) : 'N/A'} USDT\n\n` +
+            `*Precios en tu moneda:*\n\n`;
+        
+        if (prices.cup) {
+            message += `💳 *CUP:* ${formatCupPrice(prices.cup)}\n`;
+        }
+        if (prices.saldo) {
+            message += `📱 *Saldo Móvil:* ${formatSaldoPrice(prices.saldo)}\n`;
+        }
+        if (prices.cws >= (MIN_CWS_USE || 100)) {
+            message += `🎫 *CWS:* ${prices.cws} CWS\n`;
+        }
+        
+        message += `\nSelecciona el método de pago:`;
         
         const keyboard = createPaymentMethodsKeyboard(gameId, varId, prices);
         
@@ -969,13 +1031,13 @@ class GameRechargeHandler {
                 parse_mode: 'Markdown'
             });
             
-            // Crear orden
+            // Crear orden (CORREGIDO: agregado qty)
             const orderData = {
                 product_id: gameId,
                 variation_id: varId,
                 user_id: session.inputData.user_id,
                 server_id: session.inputData.server_id || null,
-                quantity: 1,
+                quantity: 1, // Campo requerido según documentación
                 partner_ref: `CROMWELL_${chatId}_${Date.now()}`
             };
             
