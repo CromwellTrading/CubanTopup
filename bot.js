@@ -1,3 +1,4 @@
+// bot.js - Cromwell Store Bot Completo
 require('dotenv').config();
 
 // ============================================
@@ -10,10 +11,12 @@ const express = require('express');
 const bodyParser = require('body-parser');
 const session = require('express-session');
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 const cors = require('cors');
 
-// Importar el handler de recarga de juegos
+// Importar handlers
 const GameRechargeHandler = require('./game_recharges.js');
+const SokyRecargasHandler = require('./sokyrecargas.js');
 
 // ============================================
 // CONFIGURACIÓN DESDE .ENV
@@ -31,9 +34,13 @@ const MINIMO_SALDO = parseFloat(process.env.MINIMO_SALDO || 500);
 const MAXIMO_CUP = parseFloat(process.env.MAXIMO_CUP || 50000);
 
 // Tasas de cambio dinámicas
-const USDT_RATE_0_30 = parseFloat(process.env.USDT_RATE_0_30 || 650); // 0-30 USDT
-const USDT_RATE_30_PLUS = parseFloat(process.env.USDT_RATE_30_PLUS || 680); // >30 USDT
-const SALDO_MOVIL_RATE = parseFloat(process.env.SALDO_MOVIL_RATE || 2.1); // División para saldo móvil
+const USDT_RATE_0_30 = parseFloat(process.env.USDT_RATE_0_30 || 650);
+const USDT_RATE_30_PLUS = parseFloat(process.env.USDT_RATE_30_PLUS || 680);
+const SALDO_MOVIL_RATE = parseFloat(process.env.SALDO_MOVIL_RATE || 2.1);
+
+// Configuración de tokens
+const CWS_PER_100_SALDO = 10;
+const MIN_CWS_USE = 100;
 
 // Información de pagos
 const PAGO_CUP_TARJETA = process.env.PAGO_CUP_TARJETA;
@@ -44,11 +51,10 @@ const ADMIN_CHAT_ID = process.env.ADMIN_GROUP;
 
 // Configuración del servidor
 const PORT = process.env.PORT || 3000;
-const WEB_PORT = process.env.WEB_PORT || 8080;
 
-// Configuración de tokens
-const CWS_PER_100_SALDO = 10;
-const MIN_CWS_USE = 100;
+// Configuración SokyRecargas
+const SOKY_API_TOKEN = process.env.SOKY_API_TOKEN;
+const SOKY_CUP_RATE = parseFloat(process.env.SOKY_CUP_RATE) || 632;
 
 // LioGames API
 const LIOGAMES_SECRET = process.env.LIOGAMES_SECRET || '36b82f46524b0520808450eda62bd1fb';
@@ -101,8 +107,9 @@ const bot = new TelegramBot(TELEGRAM_TOKEN, { polling: true });
 // Inicializar Supabase
 const supabase = createClient(DB_URL, DB_KEY);
 
-// Inicializar handler de recarga de juegos
+// Inicializar handlers
 const gameHandler = new GameRechargeHandler(bot, supabase);
+const sokyHandler = new SokyRecargasHandler(bot, supabase);
 
 // Variables globales
 const activeSessions = {};
@@ -344,7 +351,7 @@ async function notificarSolicitudNueva(solicitud) {
     }
 }
 
-// Procesar pago automático (MODIFICADA - No notificar al usuario si no hay solicitud)
+// Procesar pago automático
 async function procesarPagoAutomatico(userId, amount, currency, txId, tipoPago) {
     try {
         console.log(`💰 Procesando pago automático: ${userId}, ${amount}, ${currency}, ${txId}, ${tipoPago}`);
@@ -518,15 +525,297 @@ async function procesarPagoAutomatico(userId, amount, currency, txId, tipoPago) 
 }
 
 // ============================================
+// WEBHOOK PARA NOTIFICACIONES EXTERIORES
+// ============================================
+
+// Webhook para LioGames (recargas de juegos)
+app.post('/lio-webhook', verifyWebhookToken, async (req, res) => {
+    try {
+        console.log('📥 Webhook LioGames recibido:', req.body);
+        
+        const { order_id, status, message, partner_ref } = req.body;
+        
+        if (!order_id) {
+            return res.status(400).json({ error: 'order_id es requerido' });
+        }
+        
+        // Buscar la transacción por order_id o partner_ref
+        let transaction = null;
+        
+        // Buscar por lio_transaction_id
+        const { data: txByLioId } = await supabase
+            .from('game_transactions')
+            .select('*')
+            .eq('lio_transaction_id', order_id)
+            .single();
+        
+        if (txByLioId) {
+            transaction = txByLioId;
+        } else if (partner_ref) {
+            // Buscar por partner_ref
+            const { data: txByRef } = await supabase
+                .from('game_transactions')
+                .select('*')
+                .eq('partner_ref', partner_ref)
+                .single();
+            
+            if (txByRef) {
+                transaction = txByRef;
+            }
+        }
+        
+        if (!transaction) {
+            console.log(`❌ Transacción no encontrada para order_id: ${order_id}, partner_ref: ${partner_ref}`);
+            return res.status(404).json({ error: 'Transacción no encontrada' });
+        }
+        
+        // Mapear estado de LioGames a nuestro sistema
+        let newStatus = 'processing';
+        if (status === 'SUCCESS') newStatus = 'completed';
+        else if (status === 'FAILED') newStatus = 'failed';
+        else if (status === 'PENDING') newStatus = 'pending';
+        else if (status === 'CANCELED') newStatus = 'canceled';
+        
+        // Actualizar estado de la transacción
+        const updates = {
+            status: newStatus,
+            updated_at: new Date().toISOString(),
+            response_data: req.body
+        };
+        
+        if (newStatus === 'completed') {
+            updates.completed_at = new Date().toISOString();
+        }
+        
+        await supabase
+            .from('game_transactions')
+            .update(updates)
+            .eq('id', transaction.id);
+        
+        // Actualizar también la tabla transactions general
+        await supabase
+            .from('transactions')
+            .update({ 
+                status: newStatus,
+                completed_at: newStatus === 'completed' ? new Date().toISOString() : null
+            })
+            .eq('game_transaction_id', transaction.id);
+        
+        // Notificar al usuario
+        if (transaction.telegram_user_id) {
+            let statusMessage = '';
+            switch (newStatus) {
+                case 'completed':
+                    statusMessage = `✅ *¡Recarga de ${transaction.game_name} completada!*\n\n` +
+                        `🎮 Juego: ${transaction.game_name}\n` +
+                        `💰 Monto: ${formatCurrency(transaction.amount, transaction.currency)}\n` +
+                        `🆔 Orden LioGames: ${order_id}\n` +
+                        `📅 Fecha: ${new Date().toLocaleString()}`;
+                    break;
+                case 'failed':
+                    statusMessage = `❌ *Recarga de ${transaction.game_name} fallida*\n\n` +
+                        `Error: ${message || 'Error desconocido'}\n\n` +
+                        `Contacta al administrador para más información.`;
+                    break;
+                case 'processing':
+                    statusMessage = `⏳ *Recarga de ${transaction.game_name} en proceso*\n\n` +
+                        `Estamos procesando tu recarga. Te notificaremos cuando esté completa.`;
+                    break;
+            }
+            
+            if (statusMessage) {
+                await bot.sendMessage(transaction.telegram_user_id, statusMessage, { 
+                    parse_mode: 'Markdown' 
+                });
+            }
+        }
+        
+        // Notificar al admin
+        if (ADMIN_CHAT_ID) {
+            const adminMsg = `🎮 *Webhook LioGames - Estado Actualizado*\n\n` +
+                `👤 Usuario: ${transaction.telegram_user_id}\n` +
+                `🎮 Juego: ${transaction.game_name}\n` +
+                `📦 Estado: ${newStatus}\n` +
+                `🆔 Orden LioGames: ${order_id}\n` +
+                `💰 Monto: ${formatCurrency(transaction.amount, transaction.currency)}`;
+            
+            await bot.sendMessage(ADMIN_CHAT_ID, adminMsg, { parse_mode: 'Markdown' });
+        }
+        
+        res.json({ 
+            success: true, 
+            message: 'Estado actualizado correctamente',
+            transaction_id: transaction.id,
+            new_status: newStatus
+        });
+        
+    } catch (error) {
+        console.error('❌ Error procesando webhook LioGames:', error);
+        res.status(500).json({ error: 'Error interno del servidor' });
+    }
+});
+
+// Webhook para SokyRecargas
+app.post('/soky-webhook', verifyWebhookToken, async (req, res) => {
+    try {
+        console.log('📥 Webhook SokyRecargas recibido:', req.body);
+        
+        const { transaction_id, status, message, offer_id, price_id } = req.body;
+        
+        if (!transaction_id) {
+            return res.status(400).json({ error: 'transaction_id es requerido' });
+        }
+        
+        // Buscar la transacción
+        const { data: transaction, error } = await supabase
+            .from('soky_transactions')
+            .select('*')
+            .eq('soky_transaction_id', transaction_id)
+            .single();
+        
+        if (error || !transaction) {
+            console.log(`❌ Transacción Soky no encontrada: ${transaction_id}`);
+            return res.status(404).json({ error: 'Transacción no encontrada' });
+        }
+        
+        // Mapear estado de SokyRecargas
+        let newStatus = 'pending';
+        if (status === 'completed' || status === 'success') newStatus = 'completed';
+        else if (status === 'failed') newStatus = 'failed';
+        else if (status === 'canceled') newStatus = 'canceled';
+        else newStatus = status;
+        
+        // Actualizar estado
+        const updates = {
+            status: newStatus,
+            updated_at: new Date().toISOString(),
+            metadata: { ...transaction.metadata, webhook_data: req.body }
+        };
+        
+        await supabase
+            .from('soky_transactions')
+            .update(updates)
+            .eq('id', transaction.id);
+        
+        // Notificar al usuario
+        if (transaction.telegram_user_id) {
+            let statusMessage = '';
+            switch (newStatus) {
+                case 'completed':
+                    statusMessage = `✅ *¡Recarga ETECSA completada!*\n\n` +
+                        `📱 Oferta: ${transaction.offer_name}\n` +
+                        `💰 Paquete: ${transaction.price_label}\n` +
+                        `💵 Monto: $${transaction.cup_price} CUP\n` +
+                        `📞 Destino: ${transaction.recipient_phone}\n` +
+                        `🆔 ID Soky: ${transaction_id}\n` +
+                        `📅 Fecha: ${new Date().toLocaleString()}`;
+                    break;
+                case 'failed':
+                    statusMessage = `❌ *Recarga ETECSA fallida*\n\n` +
+                        `Oferta: ${transaction.offer_name}\n` +
+                        `Error: ${message || 'Error desconocido'}\n\n` +
+                        `Contacta al administrador para más información.`;
+                    break;
+                case 'pending':
+                    statusMessage = `⏳ *Recarga ETECSA en proceso*\n\n` +
+                        `Tu recarga está siendo procesada por ETECSA. Te notificaremos cuando esté completa.`;
+                    break;
+            }
+            
+            if (statusMessage) {
+                await bot.sendMessage(transaction.telegram_user_id, statusMessage, { 
+                    parse_mode: 'Markdown' 
+                });
+            }
+        }
+        
+        // Notificar al admin
+        if (ADMIN_CHAT_ID) {
+            const adminMsg = `📱 *Webhook SokyRecargas - Estado Actualizado*\n\n` +
+                `👤 Usuario: ${transaction.telegram_user_id}\n` +
+                `📱 Oferta: ${transaction.offer_name}\n` +
+                `📦 Estado: ${newStatus}\n` +
+                `🆔 ID Soky: ${transaction_id}\n` +
+                `💰 Monto: $${transaction.cup_price} CUP`;
+            
+            await bot.sendMessage(ADMIN_CHAT_ID, adminMsg, { parse_mode: 'Markdown' });
+        }
+        
+        res.json({ 
+            success: true, 
+            message: 'Estado actualizado correctamente',
+            transaction_id: transaction.id,
+            new_status: newStatus
+        });
+        
+    } catch (error) {
+        console.error('❌ Error procesando webhook SokyRecargas:', error);
+        res.status(500).json({ error: 'Error interno del servidor' });
+    }
+});
+
+// Webhook genérico para notificaciones de estado (para otros servicios)
+app.post('/status-webhook', verifyWebhookToken, async (req, res) => {
+    try {
+        console.log('📥 Webhook de estado recibido:', req.body);
+        
+        const { service, type, data } = req.body;
+        
+        if (!service || !type || !data) {
+            return res.status(400).json({ error: 'service, type y data son requeridos' });
+        }
+        
+        switch (service) {
+            case 'liogames':
+                // Redirigir al webhook específico de LioGames
+                return app._router.handle(req, res, (err) => {
+                    if (err) throw err;
+                });
+                
+            case 'sokyrecargas':
+                // Redirigir al webhook específico de SokyRecargas
+                return app._router.handle(req, res, (err) => {
+                    if (err) throw err;
+                });
+                
+            default:
+                console.log(`⚠️ Servicio no reconocido: ${service}`);
+                // Procesar como notificación genérica
+                if (ADMIN_CHAT_ID) {
+                    const adminMsg = `🌐 *Webhook Genérico Recibido*\n\n` +
+                        `🔧 Servicio: ${service}\n` +
+                        `📋 Tipo: ${type}\n` +
+                        `📊 Datos: ${JSON.stringify(data, null, 2)}\n\n` +
+                        `Hora: ${new Date().toLocaleString()}`;
+                    
+                    await bot.sendMessage(ADMIN_CHAT_ID, adminMsg, { parse_mode: 'Markdown' });
+                }
+                
+                res.json({ 
+                    success: true, 
+                    message: 'Notificación recibida',
+                    service: service,
+                    type: type
+                });
+        }
+        
+    } catch (error) {
+        console.error('❌ Error procesando webhook de estado:', error);
+        res.status(500).json({ error: 'Error interno del servidor' });
+    }
+});
+
+// ============================================
 // TELEGRAM BOT - TECLADOS ACTUALIZADOS
 // ============================================
 
-// Teclado principal (CON BOTÓN RECARGAR JUEGOS)
+// Teclado principal
 const createMainKeyboard = () => ({
     inline_keyboard: [
         [{ text: '👛 Mi Billetera', callback_data: 'wallet' }],
         [{ text: '💰 Recargar Billetera', callback_data: 'recharge_menu' }],
-        [{ text: '🎮 Recargar Juegos', callback_data: 'games_menu' }], // NUEVO BOTÓN
+        [{ text: '📱 Recargas ETECSA', callback_data: 'soky_offers' }],
+        [{ text: '🎮 Recargar Juegos', callback_data: 'games_menu' }],
         [{ text: '📱 Cambiar Teléfono', callback_data: 'link_phone' }],
         [{ text: '🎁 Reclamar Pago', callback_data: 'claim_payment' }],
         [{ text: '📜 Ver Términos Web', callback_data: 'view_terms_web' }],
@@ -538,7 +827,8 @@ const createMainKeyboard = () => ({
 const createWalletKeyboard = () => ({
     inline_keyboard: [
         [{ text: '💰 Recargar Billetera', callback_data: 'recharge_menu' }],
-        [{ text: '🎮 Recargar Juegos', callback_data: 'games_menu' }], // Añadido aquí también
+        [{ text: '📱 Recargas ETECSA', callback_data: 'soky_offers' }],
+        [{ text: '🎮 Recargar Juegos', callback_data: 'games_menu' }],
         [{ text: '📜 Historial', callback_data: 'history' }],
         [{ text: '📱 Cambiar Teléfono', callback_data: 'link_phone' }],
         [{ text: '📊 Saldo Pendiente', callback_data: 'view_pending' }],
@@ -546,7 +836,7 @@ const createWalletKeyboard = () => ({
     ]
 });
 
-// Teclado de métodos de recarga (SIN USDT)
+// Teclado de métodos de recarga
 const createRechargeMethodsKeyboard = () => ({
     inline_keyboard: [
         [{ text: '💳 CUP (Tarjeta)', callback_data: 'dep_init:cup' }],
@@ -667,13 +957,19 @@ bot.on('callback_query', async (query) => {
     try {
         await bot.answerCallbackQuery(query.id);
 
-        // PRIMERO: Intentar manejar con el gameHandler
-        const handledByGame = await gameHandler.handleCallback(query);
-        if (handledByGame) {
-            return; // Ya fue manejado por game_recharges
+        // PRIMERO: Intentar manejar con sokyHandler (RECARGAS ETECSA)
+        const handledBySoky = await sokyHandler.handleCallback(query);
+        if (handledBySoky) {
+            return;
         }
 
-        // SEGUNDO: Procesar las acciones normales del bot
+        // SEGUNDO: Intentar manejar con gameHandler
+        const handledByGame = await gameHandler.handleCallback(query);
+        if (handledByGame) {
+            return;
+        }
+
+        // TERCERO: Procesar las acciones normales del bot
         const [action, param1, param2] = data.split(':');
 
         switch (action) {
@@ -1096,19 +1392,23 @@ async function handleTerms(chatId, messageId) {
         `   • 1 CWS = $10 CUP de descuento en recargas\n` +
         `   • Puedes pagar con CUP, Saldo Móvil o CWS\n` +
         `   • Las recargas se procesan a través de LioGames\n\n` +
-        `6. *SEGURIDAD*:\n` +
+        `6. *RECARGAS ETECSA*:\n` +
+        `   • Se procesan a través de SokyRecargas\n` +
+        `   • Los precios están en CUP (1 USDT = ${SOKY_CUP_RATE} CUP)\n` +
+        `   • Se descuentan automáticamente de tu saldo CUP\n\n` +
+        `7. *SEGURIDAD*:\n` +
         `   • Toma capturas de pantalla de todas las transacciones\n` +
         `   • ETECSA puede fallar con las notificaciones SMS\n` +
         `   • Tu responsabilidad guardar los recibos\n\n` +
-        `7. *REEMBOLSOS*:\n` +
+        `8. *REEMBOLSOS*:\n` +
         `   • Si envías dinero y no se acredita pero tienes captura válida\n` +
         `   • Contacta al administrador dentro de 24 horas\n` +
         `   • Se investigará y resolverá en 48 horas máximo\n\n` +
-        `8. *PROHIBIDO*:\n` +
+        `9. *PROHIBIDO*:\n` +
         `   • Uso fraudulento o múltiples cuentas\n` +
         `   • Lavado de dinero o actividades ilegales\n` +
         `   • Spam o abuso del sistema\n\n` +
-        `9. *MODIFICACIONES*: Podemos cambiar estos términos notificando con 72 horas de anticipación.\n\n` +
+        `10. *MODIFICACIONES*: Podemos cambiar estos términos notificando con 72 horas de anticipación.\n\n` +
         `_Última actualización: ${new Date().toLocaleDateString()}_\n\n` +
         `⚠️ *Para ver estos términos y condiciones nuevamente, visita nuestra web.*`;
     
@@ -1267,7 +1567,7 @@ async function handleHistory(chatId, messageId) {
                 minute: '2-digit'
             });
             
-            message += `${icon} *${tx.type === 'DEPOSIT' ? 'Depósito' : tx.type === 'GAME_RECHARGE' ? 'Recarga Juego' : tx.type}*\n`;
+            message += `${icon} *${tx.type === 'DEPOSIT' ? 'Depósito' : tx.type === 'GAME_RECHARGE' ? 'Recarga Juego' : tx.type === 'ETECSA_RECHARGE' ? 'Recarga ETECSA' : tx.type}*\n`;
             message += `💰 ${formatCurrency(Math.abs(tx.amount || tx.amount_requested), tx.currency)}\n`;
             message += `📅 ${fecha}\n`;
             message += `📊 ${tx.status === 'completed' ? 'Completado' : tx.status === 'pending' ? 'Pendiente' : tx.status}\n`;
@@ -1351,13 +1651,19 @@ bot.on('message', async (msg) => {
     if (!text || text.startsWith('/')) return;
     
     try {
-        // PRIMERO: Intentar manejar con el gameHandler (para entrada de datos de juegos)
+        // 1. Intentar manejar con gameHandler
         const handledByGame = await gameHandler.handleMessage(msg);
         if (handledByGame) {
-            return; // Ya fue manejado por game_recharges
+            return;
         }
         
-        // SEGUNDO: Procesar mensajes normales del bot
+        // 2. Intentar manejar con sokyHandler
+        const handledBySoky = await sokyHandler.handleMessage(chatId, text);
+        if (handledBySoky) {
+            return;
+        }
+        
+        // 3. Procesar mensajes normales del bot
         if (session) {
             switch (session.step) {
                 case 'waiting_phone':
@@ -1914,11 +2220,18 @@ app.listen(PORT, () => {
     console.log(`📞 Teléfono para pagos: ${PAGO_SALDO_MOVIL || '❌ No configurado'}`);
     console.log(`💳 Tarjeta para pagos: ${PAGO_CUP_TARJETA ? '✅ Configurada' : '❌ No configurada'}`);
     console.log(`🎮 LioGames: ${LIOGAMES_MEMBER_CODE ? '✅ Configurado' : '❌ No configurado'}`);
+    console.log(`📱 SokyRecargas: ${SOKY_API_TOKEN ? '✅ Configurado' : '❌ No configurado'}`);
     console.log(`💱 Tasas de cambio:`);
     console.log(`   • USDT 0-30: $${USDT_RATE_0_30} CUP`);
     console.log(`   • USDT >30: $${USDT_RATE_30_PLUS} CUP`);
     console.log(`   • Saldo Móvil: ÷${SALDO_MOVIL_RATE}`);
+    console.log(`   • SokyRecargas: $${SOKY_CUP_RATE} CUP por USDT`);
     console.log(`   • Mínimo CWS: ${MIN_CWS_USE}`);
+    console.log(`\n🌐 Webhooks disponibles:`);
+    console.log(`   • POST /payment-notification - Para pagos SMS`);
+    console.log(`   • POST /lio-webhook - Para LioGames`);
+    console.log(`   • POST /soky-webhook - Para SokyRecargas`);
+    console.log(`   • POST /status-webhook - Genérico`);
     console.log(`\n🚀 Bot listo para recibir mensajes...`);
 });
 
