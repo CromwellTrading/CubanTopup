@@ -1,4 +1,4 @@
-Tarjetasiguracióniguraciónetparserasche flask import Flask, request, jsonify
+from flask import Flask, request, jsonify
 import re
 import json
 import requests
@@ -17,7 +17,7 @@ app = Flask(__name__)
 
 # 1. Configuración de la RUTA SECRETA
 # Si no se define en .env, usa la ruta segura que pediste por defecto
-WEBHOOK_PATH = os.getenv("WEBHOOK_PATH")
+WEBHOOK_PATH = os.getenv("WEBHOOK_PATH", "/webhook/secretparserasche")
 
 # 2. Configuración de Tarjetas
 TARJETAS_WEBHOOKS_JSON = os.getenv("TARJETAS_WEBHOOKS", "{}")
