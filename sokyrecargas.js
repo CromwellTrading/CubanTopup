@@ -1,4 +1,4 @@
-// sokyrecargas.js - Manejador de recargas ETECSA via SokyRecargas
+// sokyrecargas.js - ACTUALIZADO CON .env
 require('dotenv').config();
 const axios = require('axios');
 
@@ -7,19 +7,16 @@ class SokyRecargasHandler {
         this.bot = bot;
         this.supabase = supabase;
         
-        // Variables sensibles ahora solo desde .env
         this.SOKY_API_TOKEN = process.env.SOKY_API_TOKEN;
         this.SOKY_RATE_CUP = parseFloat(process.env.SOKY_RATE_CUP);
         
-        // Validar que las variables requeridas existan
         if (!this.SOKY_API_TOKEN) {
-            console.error('❌ ERROR: SOKY_API_TOKEN no está configurado en las variables de entorno');
-            console.error('❌ Por favor, añade SOKY_API_TOKEN en tu archivo .env');
-            throw new Error('Falta configuración de SOKY_API_TOKEN en variables de entorno');
+            console.error('❌ ERROR: SOKY_API_TOKEN no está configurado en .env');
+            throw new Error('Falta SOKY_API_TOKEN en .env');
         }
         
         if (!this.SOKY_RATE_CUP || isNaN(this.SOKY_RATE_CUP)) {
-            console.warn('⚠️ ADVERTENCIA: SOKY_RATE_CUP no configurado, usando valor por defecto 632');
+            console.warn('⚠️ SOKY_RATE_CUP no configurado, usando valor por defecto 632');
             this.SOKY_RATE_CUP = 632;
         }
         
@@ -37,7 +34,6 @@ class SokyRecargasHandler {
         this.activeSessions = {};
     }
 
-    // Obtener ofertas y convertirlas a CUP
     async getOffers() {
         try {
             console.log('🔍 Obteniendo ofertas de SokyRecargas...');
@@ -48,20 +44,18 @@ class SokyRecargasHandler {
                 return [];
             }
             
-            // Filtrar solo ofertas de tipo recharge (ETECSA)
             const offers = response.data.data.filter(offer => 
                 offer.type === 'recharge' && 
                 offer.available === true &&
                 offer.currency?.code === 'USDT'
             );
             
-            // Convertir precios de USDT a CUP
             const offersWithCUP = offers.map(offer => {
                 const pricesInCUP = offer.prices.map(price => {
                     const cupPrice = price.public * this.SOKY_RATE_CUP;
                     return {
                         ...price,
-                        cup_price: Math.ceil(cupPrice), // Redondear hacia arriba
+                        cup_price: Math.ceil(cupPrice),
                         original_usdt: price.public
                     };
                 });
@@ -81,7 +75,6 @@ class SokyRecargasHandler {
         }
     }
 
-    // Mostrar ofertas al usuario
     async showOffers(chatId, messageId) {
         try {
             await this.bot.sendChatAction(chatId, 'typing');
@@ -119,7 +112,6 @@ class SokyRecargasHandler {
                 return;
             }
 
-            // Agrupar ofertas por nombre/descripción similar
             const groupedOffers = {};
             offers.forEach(offer => {
                 const key = offer.description || offer.name;
@@ -132,7 +124,6 @@ class SokyRecargasHandler {
             let message = `📱 *RECARGAS ETECSA*\n\n`;
             message += `*Ofertas disponibles:*\n\n`;
 
-            // Mostrar ofertas agrupadas
             Object.keys(groupedOffers).forEach((key, index) => {
                 const group = groupedOffers[key];
                 const firstOffer = group[0];
@@ -141,7 +132,6 @@ class SokyRecargasHandler {
                 message += `   📝 ${firstOffer.description || 'Recarga ETECSA'}\n`;
                 message += `   💰 Precios:\n`;
                 
-                // Mostrar todos los precios de este grupo
                 group.forEach(offer => {
                     offer.prices.forEach(price => {
                         message += `      • ${price.label}: $${price.cup_price} CUP\n`;
@@ -151,7 +141,6 @@ class SokyRecargasHandler {
                 message += `\n`;
             });
 
-            // Crear botones para cada oferta
             const buttons = offers.map(offer => 
                 offer.prices.map(price => [
                     {
@@ -189,7 +178,6 @@ class SokyRecargasHandler {
         }
     }
 
-    // Manejar selección de oferta
     async handleOfferSelection(chatId, messageId, offerId, priceId) {
         try {
             const offers = await this.getOffers();
@@ -201,7 +189,6 @@ class SokyRecargasHandler {
                 return;
             }
 
-            // Obtener usuario y verificar saldo
             const { data: user } = await this.supabase
                 .from('users')
                 .select('*')
@@ -238,7 +225,6 @@ class SokyRecargasHandler {
                 return;
             }
 
-            // Guardar en sesión
             this.activeSessions[chatId] = {
                 offerId,
                 priceId,
@@ -281,7 +267,6 @@ class SokyRecargasHandler {
         }
     }
 
-    // Procesar recarga
     async processRecharge(chatId, phone, email = null) {
         try {
             const session = this.activeSessions[chatId];
@@ -290,7 +275,6 @@ class SokyRecargasHandler {
                 return;
             }
 
-            // Validar teléfono
             const cleanPhone = phone.replace(/[^\d]/g, '');
             if (!cleanPhone.startsWith('53') || cleanPhone.length !== 10) {
                 await this.bot.sendMessage(chatId,
@@ -303,7 +287,6 @@ class SokyRecargasHandler {
                 return;
             }
 
-            // Validar email si es necesario
             if (session.requiresEmail && !email) {
                 session.phone = cleanPhone;
                 session.step = 'waiting_email';
@@ -319,7 +302,7 @@ class SokyRecargasHandler {
             }
 
             if (session.requiresEmail && email) {
-                const emailRegex = /^[a-zAZ0-9._%+-]+@nauta\.(com\.cu|cu)$/i;
+                const emailRegex = /^[a-zA-Z0-9._%+-]+@nauta\.(com\.cu|cu)$/i;
                 if (!emailRegex.test(email)) {
                     await this.bot.sendMessage(chatId,
                         `❌ *Email inválido*\n\n` +
@@ -332,7 +315,6 @@ class SokyRecargasHandler {
                 }
             }
 
-            // Obtener usuario y verificar saldo nuevamente
             const { data: user } = await this.supabase
                 .from('users')
                 .select('*')
@@ -355,7 +337,6 @@ class SokyRecargasHandler {
                 return;
             }
 
-            // Confirmación final
             let confirmMessage = `📋 *Confirmar Recarga*\n\n` +
                 `🎯 *Oferta:* ${session.offerName}\n` +
                 `💰 *Paquete:* ${session.priceLabel}\n` +
@@ -390,7 +371,6 @@ class SokyRecargasHandler {
         }
     }
 
-    // Confirmar y ejecutar recarga
     async confirmAndExecuteRecharge(chatId, messageId, offerId, priceId) {
         try {
             const session = this.activeSessions[chatId];
@@ -404,7 +384,6 @@ class SokyRecargasHandler {
                 message_id: messageId
             });
 
-            // 1. Verificar saldo del usuario
             const { data: user } = await this.supabase
                 .from('users')
                 .select('*')
@@ -420,7 +399,6 @@ class SokyRecargasHandler {
                 return;
             }
 
-            // 2. Realizar recarga en SokyRecargas
             const rechargeData = {
                 price_id: session.priceId,
                 recipient: session.phone,
@@ -444,19 +422,17 @@ class SokyRecargasHandler {
                 throw new Error('Error al procesar la recarga con ETECSA');
             }
 
-            // 3. Actualizar saldo del usuario
             const newBalance = user.balance_cup - session.cupPrice;
             await this.supabase
                 .from('users')
                 .update({ balance_cup: newBalance })
                 .eq('telegram_id', chatId);
 
-            // 4. Registrar transacción
             await this.supabase.from('transactions').insert({
                 user_id: chatId,
                 type: 'ETECSA_RECHARGE',
                 currency: 'cup',
-                amount: -session.cupPrice, // Negativo porque es un gasto
+                amount: -session.cupPrice,
                 amount_requested: session.cupPrice,
                 status: 'completed',
                 user_name: user.first_name,
@@ -477,7 +453,6 @@ class SokyRecargasHandler {
                 completed_at: new Date().toISOString()
             });
 
-            // 5. Notificar al usuario
             let successMessage = `✅ *¡Recarga ETECSA Exitosa!*\n\n` +
                 `🎯 *Oferta:* ${session.offerName}\n` +
                 `💰 *Paquete:* ${session.priceLabel}\n` +
@@ -504,10 +479,8 @@ class SokyRecargasHandler {
                 }
             });
 
-            // 6. Limpiar sesión
             delete this.activeSessions[chatId];
 
-            // 7. Notificar al admin si está configurado
             const ADMIN_CHAT_ID = process.env.ADMIN_GROUP;
             if (ADMIN_CHAT_ID) {
                 const adminMessage = `📱 *NUEVA RECARGA ETECSA*\n\n` +
@@ -544,7 +517,6 @@ class SokyRecargasHandler {
         }
     }
 
-    // Manejar mensajes de texto para recargas
     async handleMessage(chatId, text) {
         const session = this.activeSessions[chatId];
         
@@ -564,7 +536,6 @@ class SokyRecargasHandler {
         }
     }
 
-    // Manejar callbacks de recargas
     async handleCallback(query) {
         const chatId = query.message.chat.id;
         const data = query.data;
