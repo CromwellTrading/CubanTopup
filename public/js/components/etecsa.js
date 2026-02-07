@@ -1,0 +1,292 @@
+// /public/js/components/etecsa.js
+class EtecsaComponent {
+    constructor(app) {
+        this.app = app;
+        this.offers = [];
+        this.selectedOffer = null;
+        this.init();
+    }
+
+    init() {
+        this.setupEventListeners();
+    }
+
+    setupEventListeners() {
+        // Botón refrescar ofertas
+        document.getElementById('refresh-etecsa').addEventListener('click', () => {
+            this.loadOffers();
+        });
+    }
+
+    async loadOffers() {
+        try {
+            const offersContainer = document.getElementById('etecsa-offers');
+            offersContainer.innerHTML = `
+                <div class="loading">
+                    <div class="spinner"></div>
+                    <p>Cargando ofertas...</p>
+                </div>
+            `;
+
+            const response = await fetch('/api/etecsa-offers');
+            this.offers = await response.json();
+
+            this.renderOffers();
+        } catch (error) {
+            console.error('Error cargando ofertas:', error);
+            document.getElementById('etecsa-offers').innerHTML = `
+                <div class="error-message">
+                    <p>❌ Error cargando ofertas ETECSA</p>
+                    <button class="btn-secondary" onclick="window.cromwellApp.etecsa.loadOffers()">🔄 Reintentar</button>
+                </div>
+            `;
+        }
+    }
+
+    renderOffers() {
+        const offersContainer = document.getElementById('etecsa-offers');
+        
+        if (!this.offers || this.offers.length === 0) {
+            offersContainer.innerHTML = `
+                <div class="info-card">
+                    <p>No hay ofertas disponibles en este momento.</p>
+                </div>
+            `;
+            return;
+        }
+
+        let html = '';
+        this.offers.forEach(offer => {
+            html += `
+                <div class="offer-card">
+                    <div class="offer-header">
+                        <div class="offer-icon">📱</div>
+                        <div class="offer-name">${offer.name}</div>
+                    </div>
+                    <div class="offer-description">
+                        ${offer.description || 'Recarga ETECSA'}
+                    </div>
+                    <div class="offer-prices">
+                        ${offer.prices.map(price => `
+                            <div class="offer-price" data-offer-id="${offer.id}" data-price-id="${price.id}">
+                                <span class="price-label">${price.label}</span>
+                                <span class="price-value">$${price.cup_price} CUP</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+        });
+
+        offersContainer.innerHTML = html;
+
+        // Event listeners para seleccionar oferta
+        document.querySelectorAll('.offer-price').forEach(priceElement => {
+            priceElement.addEventListener('click', (e) => {
+                const offerId = e.currentTarget.dataset.offerId;
+                const priceId = e.currentTarget.dataset.priceId;
+                this.selectOffer(offerId, priceId);
+            });
+        });
+    }
+
+    selectOffer(offerId, priceId) {
+        const offer = this.offers.find(o => o.id == offerId);
+        if (!offer) return;
+
+        const price = offer.prices.find(p => p.id === priceId);
+        if (!price) return;
+
+        this.selectedOffer = {
+            offer: offer,
+            price: price
+        };
+
+        this.showEtecsaForm();
+    }
+
+    showEtecsaForm() {
+        const offersContainer = document.getElementById('etecsa-offers');
+        const etecsaForm = document.getElementById('etecsa-form');
+
+        offersContainer.classList.add('hidden');
+        etecsaForm.classList.remove('hidden');
+
+        const offer = this.selectedOffer.offer;
+        const price = this.selectedOffer.price;
+        const user = this.app.userData;
+
+        etecsaForm.innerHTML = `
+            <div class="screen-header">
+                <h2>📱 Recarga ETECSA</h2>
+                <button class="btn-secondary" id="back-to-offers">← Volver</button>
+            </div>
+            <div class="recharge-form">
+                <h3>${offer.name}</h3>
+                
+                <div class="price-summary">
+                    <div class="price-row">
+                        <span>Paquete:</span>
+                        <span class="price-value">${price.label}</span>
+                    </div>
+                    <div class="price-row">
+                        <span>Precio en CUP:</span>
+                        <span class="price-value">$${price.cup_price}</span>
+                    </div>
+                    <div class="price-row">
+                        <span>Precio original:</span>
+                        <span class="price-value">$${price.original_usdt} USDT</span>
+                    </div>
+                </div>
+
+                ${offer.requires_email ? `
+                    <div class="warning-note">
+                        ⚠️ Esta recarga requiere email de Nauta
+                    </div>
+                ` : ''}
+
+                <div class="balance-check">
+                    <div class="balance-row">
+                        <span>Tu saldo CUP:</span>
+                        <span class="balance-value">$${user.balance_cup || 0}</span>
+                    </div>
+                    <div class="balance-row">
+                        <span>Costo recarga:</span>
+                        <span class="balance-value negative">-$${price.cup_price}</span>
+                    </div>
+                    <div class="balance-row total">
+                        <span>Saldo después:</span>
+                        <span class="balance-value">$${(user.balance_cup || 0) - price.cup_price}</span>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="etecsa-phone">Número de teléfono destino *</label>
+                    <input type="tel" 
+                           id="etecsa-phone" 
+                           placeholder="5351234567" 
+                           maxlength="10"
+                           required>
+                    <p class="form-hint">Formato: 10 dígitos, comenzando con 53</p>
+                </div>
+
+                ${offer.requires_email ? `
+                    <div class="form-group">
+                        <label for="etecsa-email">Email de Nauta *</label>
+                        <input type="email" 
+                               id="etecsa-email" 
+                               placeholder="usuario@nauta.com.cu"
+                               required>
+                        <p class="form-hint">Ejemplo: usuario@nauta.com.cu</p>
+                    </div>
+                ` : ''}
+
+                <div class="form-actions">
+                    <button class="btn-primary" id="confirm-etecsa">✅ Confirmar Recarga</button>
+                    <button class="btn-secondary" id="cancel-etecsa">❌ Cancelar</button>
+                </div>
+            </div>
+        `;
+
+        // Event listeners
+        document.getElementById('back-to-offers').addEventListener('click', () => {
+            etecsaForm.classList.add('hidden');
+            offersContainer.classList.remove('hidden');
+        });
+
+        document.getElementById('cancel-etecsa').addEventListener('click', () => {
+            etecsaForm.classList.add('hidden');
+            offersContainer.classList.remove('hidden');
+        });
+
+        document.getElementById('confirm-etecsa').addEventListener('click', () => {
+            this.confirmEtecsaRecharge();
+        });
+    }
+
+    async confirmEtecsaRecharge() {
+        const phone = document.getElementById('etecsa-phone').value.trim();
+        const email = this.selectedOffer.offer.requires_email ? 
+            document.getElementById('etecsa-email').value.trim() : null;
+
+        // Validaciones
+        const cleanPhone = phone.replace(/[^\d]/g, '');
+        if (!cleanPhone.startsWith('53') || cleanPhone.length !== 10) {
+            this.app.showToast('❌ Formato de teléfono incorrecto. Debe ser 5351234567', 'error');
+            return;
+        }
+
+        if (this.selectedOffer.offer.requires_email && email) {
+            const emailRegex = /^[a-zA-Z0-9._%+-]+@nauta\.(com\.cu|cu)$/i;
+            if (!emailRegex.test(email)) {
+                this.app.showToast('❌ Email de Nauta inválido. Formato: usuario@nauta.com.cu', 'error');
+                return;
+            }
+        }
+
+        // Verificar saldo
+        const price = this.selectedOffer.price.cup_price;
+        const userBalance = this.app.userData.balance_cup || 0;
+        
+        if (userBalance < price) {
+            const faltante = price - userBalance;
+            this.app.showModal({
+                title: '❌ Saldo Insuficiente',
+                message: `Necesitas $${price} CUP\nTienes: $${userBalance} CUP\nFaltan: $${faltante} CUP\n\nRecarga tu billetera primero.`,
+                icon: '💰',
+                confirmText: 'Recargar Billetera',
+                cancelText: 'Cancelar',
+                onConfirm: () => {
+                    this.app.hideModal('confirm-modal');
+                    this.app.showScreen('recharge');
+                },
+                onCancel: () => {
+                    this.app.hideModal('confirm-modal');
+                }
+            });
+            return;
+        }
+
+        try {
+            this.app.showLoading('Procesando recarga ETECSA...');
+
+            const response = await fetch('/api/etecsa-recharge', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    telegram_id: this.app.userData.telegram_id,
+                    offer_id: this.selectedOffer.offer.id,
+                    price_id: this.selectedOffer.price.id,
+                    phone: cleanPhone,
+                    email: email,
+                    amount: price
+                })
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                this.app.showModal({
+                    title: '✅ ¡Recarga Exitosa!',
+                    message: `Recarga ETECSA completada\n\nDestino: +${cleanPhone}\nPaquete: ${this.selectedOffer.price.label}\nPrecio: $${price} CUP\nID: ${data.transactionId}`,
+                    icon: '📱',
+                    confirmText: 'Aceptar',
+                    onConfirm: () => {
+                        this.app.hideModal('confirm-modal');
+                        this.app.showScreen('dashboard');
+                        this.app.loadUserData();
+                    }
+                });
+            } else {
+                this.app.showToast(`❌ Error: ${data.error}`, 'error');
+            }
+        } catch (error) {
+            console.error('Error procesando recarga:', error);
+            this.app.showToast('❌ Error de conexión', 'error');
+        } finally {
+            this.app.hideLoading();
+        }
+    }
+}
