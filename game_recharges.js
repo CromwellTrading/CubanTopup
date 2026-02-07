@@ -1,36 +1,42 @@
-// recharge_games.js - VERSIÓN REFACTORIZADA Y ACTUALIZADA
+// game_recharges.js - VERSIÓN ACTUALIZADA CON .env
 require('dotenv').config();
 const crypto = require('crypto');
 const axios = require('axios');
 
 // ============================================
-// CONFIGURACIÓN
+// CONFIGURACIÓN DESDE .env
 // ============================================
 
 const LIOGAMES_SECRET = process.env.LIOGAMES_SECRET;
-const LIOGAMES_MEMBER_CODE = process.env.LIOGAMES_MEMBER_CODE || 'M260207UQJ9ZWAHAE';
-const LIOGAMES_API_BASE = 'https://api.liogames.com/wp-json/liogames/v1';
+const LIOGAMES_MEMBER_CODE = process.env.LIOGAMES_MEMBER_CODE;
+const LIOGAMES_API_BASE = process.env.RECARGA_ENDPOINT;
 
 // Tasas de cambio dinámicas
-const USDT_RATE_0_30 = parseFloat(process.env.USDT_RATE_0_30) || 650; // 0-30 USDT
-const USDT_RATE_30_PLUS = parseFloat(process.env.USDT_RATE_30_PLUS) || 680; // >30 USDT
-const SALDO_MOVIL_RATE = parseFloat(process.env.SALDO_MOVIL_RATE) || 2.1; // División para saldo móvil
-const MIN_CWS_USE = parseInt(process.env.MIN_CWS_USE) || 100;
+const USDT_RATE_0_30 = parseFloat(process.env.USDT_RATE_0_30);
+const USDT_RATE_30_PLUS = parseFloat(process.env.USDT_RATE_30_PLUS);
+const SALDO_MOVIL_RATE = parseFloat(process.env.SALDO_MOVIL_RATE);
+const MIN_CWS_USE = parseInt(process.env.MIN_CWS_USE);
 
 // Validar variables de entorno
 if (!LIOGAMES_SECRET) {
-    console.error('❌ ERROR: LIOGAMES_SECRET no está configurado en las variables de entorno');
-    throw new Error('Falta configuración de LIOGAMES_SECRET en variables de entorno');
+    console.error('❌ ERROR: LIOGAMES_SECRET no está configurado en .env');
+    throw new Error('Falta LIOGAMES_SECRET en .env');
 }
 
-console.log(`⚙️ Configuración de tasas cargada:`);
+if (!LIOGAMES_MEMBER_CODE) {
+    console.error('❌ ERROR: LIOGAMES_MEMBER_CODE no está configurado en .env');
+    throw new Error('Falta LIOGAMES_MEMBER_CODE en .env');
+}
+
+console.log(`⚙️ Configuración cargada desde .env:`);
+console.log(`  LIOGAMES_MEMBER_CODE: ${LIOGAMES_MEMBER_CODE}`);
 console.log(`  USDT_RATE_0_30: ${USDT_RATE_0_30}`);
 console.log(`  USDT_RATE_30_PLUS: ${USDT_RATE_30_PLUS}`);
 console.log(`  SALDO_MOVIL_RATE: ${SALDO_MOVIL_RATE}`);
 console.log(`  MIN_CWS_USE: ${MIN_CWS_USE}`);
 
 // ============================================
-// DATOS DE JUEGOS (SIN PRECIOS DE RESPALDO)
+// DATOS DE JUEGOS (ACTUALIZADO CON .env)
 // ============================================
 
 const GAMES = {
@@ -277,17 +283,14 @@ const GAMES = {
 };
 
 // ============================================
-// FUNCIONES DE API LIOGAMES (CORREGIDAS)
+// FUNCIONES DE API LIOGAMES
 // ============================================
 
-// Firmar solicitud para LioGames con JSON compacto (CRÍTICO)
 function signRequest(payload) {
-    // JSON compacto sin espacios (equivalente a separators=(',', ':') en Python)
-    const body = JSON.stringify(payload); // En Node.js, JSON.stringify ya produce JSON compacto por defecto
+    const body = JSON.stringify(payload);
     return crypto.createHmac('sha256', LIOGAMES_SECRET).update(body).digest('hex');
 }
 
-// Obtener precio real desde LioGames (ENDPOINT CORREGIDO)
 async function getLioGamesPrice(product_id, variation_id) {
     try {
         const payload = { 
@@ -305,10 +308,9 @@ async function getLioGamesPrice(product_id, variation_id) {
                 'Content-Type': 'application/json',
                 'x-liog-sign': signature
             },
-            timeout: 10000 // 10 segundos timeout
+            timeout: 10000
         });
         
-        // Nueva ruta de datos: response.data.data.pricing.discounted_price
         if (response.data.ok && response.data.data?.pricing?.discounted_price) {
             const price = parseFloat(response.data.data.pricing.discounted_price);
             console.log(`💰 Precio Gold obtenido: $${price} USDT`);
@@ -333,21 +335,19 @@ async function getLioGamesPrice(product_id, variation_id) {
     }
 }
 
-// Crear orden en LioGames (ESTRUCTURA CORREGIDA)
 async function createOrder(orderData) {
     try {
         const payload = {
             member_code: LIOGAMES_MEMBER_CODE,
-            product_id: parseInt(orderData.product_id), // Enviar como entero
-            variation_id: parseInt(orderData.variation_id), // Enviar como entero
+            product_id: parseInt(orderData.product_id),
+            variation_id: parseInt(orderData.variation_id),
             user_id: orderData.user_id,
             server_id: orderData.server_id || null,
-            quantity: 1, // Campo obligatorio con valor 1
+            quantity: 1,
             partner_ref: orderData.partner_ref || `CROMWELL_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
         };
         
         console.log(`🔄 Creando orden para producto ${orderData.product_id}`);
-        console.log('📦 Payload de orden:', payload);
         
         const signature = signRequest(payload);
         
@@ -356,7 +356,7 @@ async function createOrder(orderData) {
                 'Content-Type': 'application/json',
                 'x-liog-sign': signature
             },
-            timeout: 15000 // 15 segundos timeout
+            timeout: 15000
         });
         
         return response.data;
@@ -373,7 +373,6 @@ async function createOrder(orderData) {
     }
 }
 
-// Consultar estado de orden
 async function checkOrderStatus(order_id, partner_ref) {
     try {
         const payload = { member_code: LIOGAMES_MEMBER_CODE };
@@ -401,7 +400,6 @@ async function checkOrderStatus(order_id, partner_ref) {
 // FUNCIONES DE CONVERSIÓN DE PRECIOS
 // ============================================
 
-// Calcular precio en CUP según cantidad de USDT
 function calculateCupFromUsdt(usdtAmount) {
     if (!usdtAmount || isNaN(usdtAmount) || usdtAmount <= 0) {
         throw new Error(`Cantidad USDT inválida: ${usdtAmount}`);
@@ -414,28 +412,23 @@ function calculateCupFromUsdt(usdtAmount) {
     }
 }
 
-// Calcular precio en Saldo Móvil
 function calculateSaldoMovilFromCup(cupAmount) {
     const raw = cupAmount / SALDO_MOVIL_RATE;
-    return Math.ceil(raw / 5) * 5; // Redondear al múltiplo de 5 más cercano hacia arriba
+    return Math.ceil(raw / 5) * 5;
 }
 
-// Formatear precio en CUP
 function formatCupPrice(amount) {
     return `$${amount.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}`;
 }
 
-// Formatear precio en Saldo Móvil
 function formatSaldoPrice(amount) {
     return `$${amount.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}`;
 }
 
-// Redondear precio
 function roundPrice(amount) {
-    return Math.ceil(amount); // Redondear hacia arriba
+    return Math.ceil(amount);
 }
 
-// Calcular todos los precios para un paquete (SOLO CUP/SALDO/CWS)
 function calculateAllPrices(usdtPrice) {
     const cupPrice = calculateCupFromUsdt(usdtPrice);
     const saldoPrice = calculateSaldoMovilFromCup(cupPrice);
@@ -443,8 +436,8 @@ function calculateAllPrices(usdtPrice) {
     const prices = {
         cup: roundPrice(cupPrice),
         saldo: saldoPrice,
-        cws: saldoPrice, // CWS es IGUAL al saldo móvil
-        usdt: usdtPrice // Interno, no se muestra al cliente
+        cws: saldoPrice,
+        usdt: usdtPrice
     };
     
     console.log(`📊 Precios calculados para ${usdtPrice} USDT:`);
@@ -454,15 +447,13 @@ function calculateAllPrices(usdtPrice) {
 }
 
 // ============================================
-// TECLADOS PARA EL BOT (ACTUALIZADOS)
+// TECLADOS PARA EL BOT
 // ============================================
 
-// Teclado principal de juegos
 function createGamesListKeyboard() {
     const games = Object.entries(GAMES);
     const rows = [];
     
-    // Crear filas de 2 botones cada una
     for (let i = 0; i < games.length; i += 2) {
         const row = [];
         row.push({ text: `🎮 ${games[i][1].name}`, callback_data: `game_select:${games[i][0]}` });
@@ -474,13 +465,11 @@ function createGamesListKeyboard() {
         rows.push(row);
     }
     
-    // Añadir botón de volver
     rows.push([{ text: '🔙 Volver al Inicio', callback_data: 'start_back' }]);
     
     return { inline_keyboard: rows };
 }
 
-// Teclado de variaciones de un juego (SOLO NOMBRE)
 function createVariationsKeyboard(gameId) {
     const game = GAMES[gameId];
     if (!game) return null;
@@ -488,7 +477,6 @@ function createVariationsKeyboard(gameId) {
     const variations = Object.entries(game.variations);
     const rows = [];
     
-    // Agrupar variaciones en filas de 2
     for (let i = 0; i < variations.length; i += 2) {
         const row = [];
         const [varId, varData] = variations[i];
@@ -508,7 +496,6 @@ function createVariationsKeyboard(gameId) {
         rows.push(row);
     }
     
-    // Añadir botones de navegación
     rows.push([
         { text: '🔙 Lista de Juegos', callback_data: 'games_menu' },
         { text: '🏠 Inicio', callback_data: 'start_back' }
@@ -517,7 +504,6 @@ function createVariationsKeyboard(gameId) {
     return { inline_keyboard: rows };
 }
 
-// Teclado de métodos de pago (CON PRECIOS EN CUP/SALDO/CWS)
 function createPaymentMethodsKeyboard(gameId, varId, prices) {
     const rows = [
         [{ 
@@ -530,7 +516,6 @@ function createPaymentMethodsKeyboard(gameId, varId, prices) {
         }]
     ];
     
-    // Solo mostrar CWS si el precio es suficiente (mínimo 100 CWS)
     if (prices.cws >= MIN_CWS_USE) {
         rows.push([{ 
             text: `🎫 Pagar con CWS - ${prices.cws} CWS`, 
@@ -546,7 +531,6 @@ function createPaymentMethodsKeyboard(gameId, varId, prices) {
     return { inline_keyboard: rows };
 }
 
-// Teclado para confirmar compra
 function createConfirmKeyboard(gameId, varId, method, price) {
     return {
         inline_keyboard: [
@@ -558,7 +542,6 @@ function createConfirmKeyboard(gameId, varId, method, price) {
     };
 }
 
-// Teclado para ingresar datos
 function createInputKeyboard(gameId, varId, fieldIndex) {
     const rows = [];
     
@@ -571,7 +554,6 @@ function createInputKeyboard(gameId, varId, fieldIndex) {
     return { inline_keyboard: rows };
 }
 
-// Teclado después de compra exitosa
 function createPostPurchaseKeyboard(orderId) {
     return {
         inline_keyboard: [
@@ -591,12 +573,11 @@ class GameRechargeHandler {
         this.bot = bot;
         this.supabase = supabase;
         this.userSessions = {};
-        this.priceCache = {}; // Cache para precios
+        this.priceCache = {};
         
         console.log('🔄 GameRechargeHandler inicializado con API Liogames Gold');
     }
     
-    // Iniciar sesión de recarga para usuario
     initUserSession(chatId) {
         if (!this.userSessions[chatId]) {
             this.userSessions[chatId] = {
@@ -613,27 +594,22 @@ class GameRechargeHandler {
         return this.userSessions[chatId];
     }
     
-    // Limpiar sesión
     clearUserSession(chatId) {
         delete this.userSessions[chatId];
     }
     
-    // Obtener precio del paquete desde API (SIN PRECIOS DE RESPALDO)
     async getPackagePrice(gameId, varId) {
         const cacheKey = `${gameId}_${varId}`;
         
-        // Verificar cache
         if (this.priceCache[cacheKey]) {
             console.log(`📦 Usando precio en caché para ${gameId}-${varId}`);
             return this.priceCache[cacheKey];
         }
         
         try {
-            // Obtener precio REAL de LioGames (Gold)
             console.log(`🔄 Consultando precio Gold para ${gameId}-${varId}`);
             const usdtPrice = await getLioGamesPrice(gameId, varId);
             
-            // Calcular precios derivados
             const prices = calculateAllPrices(usdtPrice);
             this.priceCache[cacheKey] = prices;
             
@@ -642,12 +618,10 @@ class GameRechargeHandler {
         } catch (error) {
             console.error(`❌ Error crítico obteniendo precio: ${error.message}`);
             
-            // NO HAY PRECIOS DE RESPALDO - Mostrar error al usuario
             throw new Error(`⚠️ Servicio de precios no disponible temporalmente\n\nPor favor, intenta de nuevo en unos minutos o contacta al administrador.`);
         }
     }
     
-    // Mostrar lista de juegos
     async showGamesList(chatId, messageId = null) {
         const message = `🎮 *Selecciona un Juego*\n\n` +
             `Aquí puedes recargar saldo en tus juegos favoritos con precios Gold.\n\n` +
@@ -677,7 +651,6 @@ class GameRechargeHandler {
         }
     }
     
-    // Mostrar variaciones de un juego
     async showGameVariations(chatId, messageId, gameId) {
         const session = this.initUserSession(chatId);
         const game = GAMES[gameId];
@@ -707,7 +680,6 @@ class GameRechargeHandler {
         });
     }
     
-    // Mostrar precios y métodos de pago para una variación
     async showPackagePrices(chatId, messageId, gameId, varId) {
         const session = this.initUserSession(chatId);
         const game = GAMES[gameId];
@@ -725,7 +697,6 @@ class GameRechargeHandler {
         session.selectedVariation = varId;
         session.currentStep = 'selecting_payment';
         
-        // Obtener precios
         await this.bot.editMessageText('⏳ *Consultando precios Gold...*', {
             chat_id: chatId,
             message_id: messageId,
@@ -759,7 +730,6 @@ class GameRechargeHandler {
             });
             
         } catch (error) {
-            // Error al obtener precios - Mostrar mensaje de error
             await this.bot.editMessageText(
                 `❌ *Error al obtener precios*\n\n${error.message}\n\n` +
                 `Por favor, intenta de nuevo más tarde.`,
@@ -778,7 +748,6 @@ class GameRechargeHandler {
         }
     }
     
-    // Solicitar datos del usuario para el juego
     async requestUserData(chatId, messageId, gameId, varId, method, price) {
         const session = this.initUserSession(chatId);
         const game = GAMES[gameId];
@@ -798,18 +767,15 @@ class GameRechargeHandler {
         session.currentInputField = 0;
         session.inputData = {};
         
-        // Mostrar primer campo
         await this.showInputField(chatId, messageId, gameId, varId, 0);
     }
     
-    // Mostrar campo de entrada específico
     async showInputField(chatId, messageId, gameId, varId, fieldIndex) {
         const session = this.userSessions[chatId];
         const game = GAMES[gameId];
         const field = game.input_schema.fields[fieldIndex];
         
         if (!field) {
-            // Todos los campos completados, mostrar resumen
             await this.showOrderSummary(chatId, messageId, gameId, varId);
             return;
         }
@@ -851,7 +817,6 @@ class GameRechargeHandler {
         }
     }
     
-    // Procesar entrada de datos
     async processInput(chatId, text, messageId = null) {
         const session = this.userSessions[chatId];
         
@@ -865,7 +830,6 @@ class GameRechargeHandler {
         const fieldIndex = session.currentInputField;
         const field = game.input_schema.fields[fieldIndex];
         
-        // Validar entrada
         if (field.type === 'select' && field.options) {
             const validOptions = field.options.map(opt => opt.value);
             if (!validOptions.includes(text.trim())) {
@@ -876,10 +840,8 @@ class GameRechargeHandler {
             }
         }
         
-        // Guardar dato
         session.inputData[field.key] = text.trim();
         
-        // Mostrar siguiente campo o resumen
         const nextFieldIndex = fieldIndex + 1;
         if (nextFieldIndex < game.input_schema.fields.length) {
             await this.showInputField(chatId, messageId, gameId, varId, nextFieldIndex);
@@ -890,7 +852,6 @@ class GameRechargeHandler {
         return true;
     }
     
-    // Mostrar resumen de la orden
     async showOrderSummary(chatId, messageId, gameId, varId) {
         const session = this.userSessions[chatId];
         const game = GAMES[gameId];
@@ -928,7 +889,6 @@ class GameRechargeHandler {
             `💰 *Monto a pagar:* ${amountText}\n\n` +
             `*Datos del juego:*\n`;
         
-        // Mostrar datos ingresados
         Object.entries(session.inputData).forEach(([key, value]) => {
             const field = game.input_schema.fields.find(f => f.key === key);
             message += `• *${field?.label || key}:* \`${value}\`\n`;
@@ -955,7 +915,6 @@ class GameRechargeHandler {
         session.currentStep = 'confirming_order';
     }
     
-    // Procesar confirmación de compra
     async processConfirmation(chatId, messageId, gameId, varId, method, price) {
         const session = this.userSessions[chatId];
         
@@ -968,7 +927,6 @@ class GameRechargeHandler {
             return;
         }
         
-        // 1. Verificar saldo del usuario
         const { data: user, error: userError } = await this.supabase
             .from('users')
             .select('*')
@@ -1028,7 +986,6 @@ class GameRechargeHandler {
             return;
         }
         
-        // 2. Crear orden en LioGames
         const game = GAMES[gameId];
         const variation = game.variations[varId];
         
@@ -1039,13 +996,12 @@ class GameRechargeHandler {
                 parse_mode: 'Markdown'
             });
             
-            // Crear orden con estructura corregida
             const orderData = {
                 product_id: gameId,
                 variation_id: varId,
                 user_id: session.inputData.user_id,
                 server_id: session.inputData.server_id || null,
-                quantity: 1, // Campo obligatorio según documentación
+                quantity: 1,
                 partner_ref: `CROMWELL_${chatId}_${Date.now()}`
             };
             
@@ -1055,7 +1011,6 @@ class GameRechargeHandler {
                 throw new Error(orderResult.message || 'Error creando orden');
             }
             
-            // 3. Descontar saldo del usuario
             const updates = {};
             updates[balanceField] = currentBalance - price;
             
@@ -1064,14 +1019,13 @@ class GameRechargeHandler {
                 .update(updates)
                 .eq('telegram_id', chatId);
             
-            // 4. Guardar transacción
             await this.supabase
                 .from('transactions')
                 .insert({
                     user_id: chatId,
                     type: 'GAME_RECHARGE',
                     currency: method,
-                    amount: -price, // Negativo porque es un gasto
+                    amount: -price,
                     status: 'completed',
                     tx_id: orderResult.data.order_id,
                     partner_ref: orderData.partner_ref,
@@ -1085,7 +1039,6 @@ class GameRechargeHandler {
                     completed_at: new Date().toISOString()
                 });
             
-            // 5. Notificar éxito
             let successMessage = `✅ *¡Recarga Gold exitosa!*\n\n` +
                 `🎮 *Juego:* ${game.name}\n` +
                 `📦 *Paquete:* ${variation.name}\n` +
@@ -1110,10 +1063,8 @@ class GameRechargeHandler {
                 reply_markup: createPostPurchaseKeyboard(orderResult.data.order_id)
             });
             
-            // 6. Limpiar sesión
             this.clearUserSession(chatId);
             
-            // 7. Notificar al admin
             if (process.env.ADMIN_GROUP) {
                 const adminMsg = `🎮 *NUEVA RECARGA GOLD DE JUEGO*\n\n` +
                     `👤 Usuario: ${user.first_name} (@${user.username || 'sin usuario'})\n` +
@@ -1148,7 +1099,6 @@ class GameRechargeHandler {
         }
     }
     
-    // Verificar estado de una orden
     async checkOrderStatus(chatId, messageId, orderId) {
         try {
             await this.bot.editMessageText('⏳ Consultando estado de la orden...', {
@@ -1206,13 +1156,11 @@ class GameRechargeHandler {
         }
     }
     
-    // Manejar callback del bot
     async handleCallback(query) {
         const chatId = query.message.chat.id;
         const messageId = query.message.message_id;
         const data = query.data;
         
-        // Dividir el callback_data
         const parts = data.split(':');
         const action = parts[0];
         const param1 = parts[1];
@@ -1253,11 +1201,10 @@ class GameRechargeHandler {
                     break;
                     
                 default:
-                    console.log(`Acción no manejada en game_recharges: ${action}`);
-                    return false; // No manejado
+                    return false;
             }
             
-            return true; // Manejado
+            return true;
         } catch (error) {
             console.error('Error en callback de game_recharges:', error);
             await this.bot.sendMessage(chatId, '❌ Ocurrió un error. Por favor, intenta de nuevo.');
@@ -1265,7 +1212,6 @@ class GameRechargeHandler {
         }
     }
     
-    // Manejar mensajes de texto (para entrada de datos)
     async handleMessage(msg) {
         const chatId = msg.chat.id;
         const text = msg.text;
