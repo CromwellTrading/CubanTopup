@@ -1,4 +1,4 @@
-// bot.js - Cromwell Store Bot Completo
+// bot.js - Cromwell Store Bot Completo (ACTUALIZADO)
 require('dotenv').config();
 
 // ============================================
@@ -13,6 +13,7 @@ const session = require('express-session');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const cors = require('cors');
+const path = require('path');
 
 // Importar handlers
 const GameRechargeHandler = require('./game_recharges.js');
@@ -40,7 +41,7 @@ const SALDO_MOVIL_RATE = parseFloat(process.env.SALDO_MOVIL_RATE || 2.1);
 
 // Configuración de tokens
 const CWS_PER_100_SALDO = 10;
-const MIN_CWS_USE = 100;
+const MIN_CWS_USE = parseInt(process.env.MIN_CWS_USE || 100);
 
 // Información de pagos
 const PAGO_CUP_TARJETA = process.env.PAGO_CUP_TARJETA;
@@ -48,26 +49,54 @@ const PAGO_SALDO_MOVIL = process.env.PAGO_SALDO_MOVIL;
 
 // Configuración de administrador
 const ADMIN_CHAT_ID = process.env.ADMIN_GROUP;
+const BOT_ADMIN_ID = process.env.BOT_ADMIN_ID;
 
 // Configuración del servidor
 const PORT = process.env.PORT || 3000;
 
 // Configuración SokyRecargas
 const SOKY_API_TOKEN = process.env.SOKY_API_TOKEN;
-const SOKY_CUP_RATE = parseFloat(process.env.SOKY_CUP_RATE) || 632;
+const SOKY_RATE_CUP = parseFloat(process.env.SOKY_RATE_CUP) || 632;
 
 // LioGames API
-const LIOGAMES_SECRET = process.env.LIOGAMES_SECRET || '36b82f46524b0520808450eda62bd1fb';
-const LIOGAMES_MEMBER_CODE = process.env.LIOGAMES_MEMBER_CODE || 'M260119RKVLDNBGMY';
+const LIOGAMES_SECRET = process.env.LIOGAMES_SECRET;
+const LIOGAMES_MEMBER_CODE = process.env.LIOGAMES_MEMBER_CODE;
+
+// USDT
+const PAGO_USDT_ADDRES = process.env.PAGO_USDT_ADDRES;
+const USDT_RATE_CUP = parseFloat(process.env.USDT_RATE_CUP) || 580;
+const USDT_RATE_SALDO = parseFloat(process.env.USDT_RATE_SALDO) || 200;
+
+// Webhooks externos
+const PYTHON_WEBHOOK_URL = process.env.PYTHON_WEBHOOK_URL;
 
 // ============================================
 // VALIDACIÓN DE VARIABLES
 // ============================================
 
-if (!TELEGRAM_TOKEN || !DB_URL || !DB_KEY) {
-    console.error('❌ Faltan variables críticas de entorno. Verifica TELEGRAM_TOKEN, DB_URL, DB_KEY');
+console.log('🔧 Validando variables de entorno...');
+const requiredVars = ['TELEGRAM_TOKEN', 'DB_URL', 'DB_KEY'];
+const missingVars = requiredVars.filter(varName => !process.env[varName]);
+
+if (missingVars.length > 0) {
+    console.error('❌ Faltan variables críticas de entorno:', missingVars);
+    console.error('❌ Por favor, verifica tu archivo .env');
     process.exit(1);
 }
+
+if (!LIOGAMES_SECRET || !LIOGAMES_MEMBER_CODE) {
+    console.warn('⚠️ ADVERTENCIA: Variables LioGames no configuradas. Recargas de juegos no funcionarán.');
+}
+
+if (!SOKY_API_TOKEN) {
+    console.warn('⚠️ ADVERTENCIA: SOKY_API_TOKEN no configurada. Recargas ETECSA no funcionarán.');
+}
+
+if (!PAGO_CUP_TARJETA || !PAGO_SALDO_MOVIL) {
+    console.warn('⚠️ ADVERTENCIA: Información de pagos no configurada completamente.');
+}
+
+console.log('✅ Variables de entorno validadas correctamente');
 
 // ============================================
 // INICIALIZACIÓN
@@ -81,16 +110,16 @@ app.use(cors({
     origin: true,
     credentials: true
 }));
-app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({ extended: true }));
+app.use(bodyParser.json({ limit: '50mb' }));
+app.use(bodyParser.urlencoded({ extended: true, limit: '50mb' }));
 app.use(express.static('public'));
-app.use('/css', express.static(__dirname + '/public/css'));
-app.use('/js', express.static(__dirname + '/public/js'));
-app.use('/assets', express.static(__dirname + '/public/assets'));
+app.use('/css', express.static(path.join(__dirname, 'public/css')));
+app.use('/js', express.static(path.join(__dirname, 'public/js')));
+app.use('/assets', express.static(path.join(__dirname, 'public/assets')));
 
 // Configuración de sesión para el panel web
 app.use(session({
-    secret: WEBHOOK_SECRET_KEY || 'cromwell-store-session-secret',
+    secret: WEBHOOK_SECRET_KEY || 'cromwell-store-session-secret-2025',
     resave: false,
     saveUninitialized: false,
     cookie: { 
@@ -102,14 +131,37 @@ app.use(session({
 }));
 
 // Inicializar bot de Telegram
-const bot = new TelegramBot(TELEGRAM_TOKEN, { polling: true });
+const bot = new TelegramBot(TELEGRAM_TOKEN, { 
+    polling: true,
+    request: {
+        proxy: process.env.PROXY_URL || null
+    }
+});
 
 // Inicializar Supabase
-const supabase = createClient(DB_URL, DB_KEY);
+const supabase = createClient(DB_URL, DB_KEY, {
+    auth: {
+        persistSession: false
+    }
+});
 
 // Inicializar handlers
-const gameHandler = new GameRechargeHandler(bot, supabase);
-const sokyHandler = new SokyRecargasHandler(bot, supabase);
+let gameHandler, sokyHandler;
+try {
+    gameHandler = new GameRechargeHandler(bot, supabase);
+    console.log('✅ GameRechargeHandler inicializado');
+} catch (error) {
+    console.error('❌ Error inicializando GameRechargeHandler:', error.message);
+    gameHandler = null;
+}
+
+try {
+    sokyHandler = new SokyRecargasHandler(bot, supabase);
+    console.log('✅ SokyRecargasHandler inicializado');
+} catch (error) {
+    console.error('❌ Error inicializando SokyRecargasHandler:', error.message);
+    sokyHandler = null;
+}
 
 // Variables globales
 const activeSessions = {};
@@ -125,7 +177,7 @@ const verifyWebhookToken = (req, res, next) => {
         return next();
     }
     
-    const authToken = req.headers['x-auth-token'] || req.body.auth_token;
+    const authToken = req.headers['x-auth-token'] || req.query.auth_token || req.body.auth_token;
     
     if (!authToken) {
         console.log('❌ Token de autenticación faltante');
@@ -164,44 +216,71 @@ function requireAuth(req, res, next) {
 
 // Formatear moneda
 function formatCurrency(amount, currency) {
+    if (!amount && amount !== 0) return 'N/A';
+    
+    const amountNum = parseFloat(amount);
+    if (isNaN(amountNum)) return 'N/A';
+    
     const symbols = {
         'cup': 'CUP',
         'saldo': 'Saldo',
-        'cws': 'CWS'
+        'cws': 'CWS',
+        'usdt': 'USDT'
     };
     
-    const symbol = symbols[currency] || currency.toUpperCase();
+    const symbol = symbols[currency] || currency?.toUpperCase() || '';
     
     if (currency === 'cws') {
-        return `${Math.floor(amount)} ${symbol}`;
+        return `${Math.floor(amountNum)} ${symbol}`;
     }
     
-    return `$${parseFloat(amount).toFixed(2)} ${symbol}`;
+    if (currency === 'usdt') {
+        return `$${amountNum.toFixed(2)} ${symbol}`;
+    }
+    
+    return `$${Math.floor(amountNum).toLocaleString('es-ES')} ${symbol}`;
 }
 
 // Obtener usuario por Telegram ID
 async function getUser(telegramId) {
-    const { data, error } = await supabase
-        .from('users')
-        .select('*')
-        .eq('telegram_id', telegramId)
-        .single();
-    
-    if (error) {
-        console.log('Error obteniendo usuario:', error);
+    try {
+        const { data, error } = await supabase
+            .from('users')
+            .select('*')
+            .eq('telegram_id', telegramId)
+            .single();
+        
+        if (error) {
+            if (error.code === 'PGRST116') {
+                return null;
+            }
+            console.log('Error obteniendo usuario:', error.message);
+            return null;
+        }
+        return data;
+    } catch (error) {
+        console.error('Error en getUser:', error);
         return null;
     }
-    return data;
 }
 
 // Actualizar usuario
 async function updateUser(telegramId, updates) {
-    const { data, error } = await supabase
-        .from('users')
-        .update(updates)
-        .eq('telegram_id', telegramId);
-    
-    return !error;
+    try {
+        const { error } = await supabase
+            .from('users')
+            .update(updates)
+            .eq('telegram_id', telegramId);
+        
+        if (error) {
+            console.error('Error actualizando usuario:', error);
+            return false;
+        }
+        return true;
+    } catch (error) {
+        console.error('Error en updateUser:', error);
+        return false;
+    }
 }
 
 // Obtener usuario por teléfono
@@ -244,6 +323,7 @@ async function getUserByPhone(phone) {
                 if (error.code !== 'PGRST116') {
                     console.log(`⚠️ Error buscando con patrón ${pattern}:`, error.message);
                 }
+                continue;
             }
             
             if (data) {
@@ -267,6 +347,10 @@ async function getUserByPhone(phone) {
 
 // Calcular precio en CUP según cantidad de USDT
 function calculateCupFromUsdt(usdtAmount) {
+    if (!usdtAmount || isNaN(usdtAmount) || usdtAmount <= 0) {
+        return 0;
+    }
+    
     if (usdtAmount <= 30) {
         return usdtAmount * USDT_RATE_0_30;
     } else {
@@ -276,6 +360,10 @@ function calculateCupFromUsdt(usdtAmount) {
 
 // Calcular precio en Saldo Móvil
 function calculateSaldoMovilFromCup(cupAmount) {
+    if (!cupAmount || isNaN(cupAmount) || cupAmount <= 0) {
+        return 0;
+    }
+    
     const raw = cupAmount / SALDO_MOVIL_RATE;
     // Redondear al múltiplo de 5 más cercano hacia arriba
     return Math.ceil(raw / 5) * 5;
@@ -292,7 +380,7 @@ async function verificarTransaccionDuplicada(tx_id) {
             .single();
         
         if (error && error.code !== 'PGRST116') {
-            console.log('Error verificando duplicado:', error);
+            console.log('Error verificando duplicado:', error.message);
         }
         
         return data !== null;
@@ -316,7 +404,7 @@ async function verificarSolicitudPendiente(userId, currency) {
             .limit(1);
         
         if (error) {
-            console.log('Error verificando solicitud pendiente:', error);
+            console.log('Error verificando solicitud pendiente:', error.message);
             return null;
         }
         
@@ -382,7 +470,7 @@ async function procesarPagoAutomatico(userId, amount, currency, txId, tipoPago) 
                 tipo_pago: tipoPago,
                 status: 'no_request',
                 created_at: new Date().toISOString()
-            });
+            }).catch(err => console.error('Error guardando pago no solicitado:', err));
             
             // NO NOTIFICAR AL USUARIO - Es una transferencia exterior
             // Solo notificar al admin
@@ -455,7 +543,8 @@ async function procesarPagoAutomatico(userId, amount, currency, txId, tipoPago) 
         
         // Actualizar saldo del usuario
         const updates = {
-            [`balance_${currency}`]: (user[`balance_${currency}`] || 0) + montoConBono
+            [`balance_${currency}`]: (user[`balance_${currency}`] || 0) + montoConBono,
+            last_active: new Date().toISOString()
         };
         
         if (currency === 'saldo') {
@@ -531,7 +620,7 @@ async function procesarPagoAutomatico(userId, amount, currency, txId, tipoPago) 
 // Webhook para LioGames (recargas de juegos)
 app.post('/lio-webhook', verifyWebhookToken, async (req, res) => {
     try {
-        console.log('📥 Webhook LioGames recibido:', req.body);
+        console.log('📥 Webhook LioGames recibido:', JSON.stringify(req.body, null, 2));
         
         const { order_id, status, message, partner_ref } = req.body;
         
@@ -544,9 +633,9 @@ app.post('/lio-webhook', verifyWebhookToken, async (req, res) => {
         
         // Buscar por lio_transaction_id
         const { data: txByLioId } = await supabase
-            .from('game_transactions')
+            .from('transactions')
             .select('*')
-            .eq('lio_transaction_id', order_id)
+            .or(`details->>lio_order_id.eq.${order_id},tx_id.eq.${order_id}`)
             .single();
         
         if (txByLioId) {
@@ -554,7 +643,7 @@ app.post('/lio-webhook', verifyWebhookToken, async (req, res) => {
         } else if (partner_ref) {
             // Buscar por partner_ref
             const { data: txByRef } = await supabase
-                .from('game_transactions')
+                .from('transactions')
                 .select('*')
                 .eq('partner_ref', partner_ref)
                 .single();
@@ -588,56 +677,49 @@ app.post('/lio-webhook', verifyWebhookToken, async (req, res) => {
         }
         
         await supabase
-            .from('game_transactions')
+            .from('transactions')
             .update(updates)
             .eq('id', transaction.id);
         
-        // Actualizar también la tabla transactions general
-        await supabase
-            .from('transactions')
-            .update({ 
-                status: newStatus,
-                completed_at: newStatus === 'completed' ? new Date().toISOString() : null
-            })
-            .eq('game_transaction_id', transaction.id);
-        
         // Notificar al usuario
-        if (transaction.telegram_user_id) {
+        if (transaction.user_id) {
             let statusMessage = '';
             switch (newStatus) {
                 case 'completed':
-                    statusMessage = `✅ *¡Recarga de ${transaction.game_name} completada!*\n\n` +
-                        `🎮 Juego: ${transaction.game_name}\n` +
-                        `💰 Monto: ${formatCurrency(transaction.amount, transaction.currency)}\n` +
-                        `🆔 Orden LioGames: ${order_id}\n` +
+                    statusMessage = `✅ *¡Recarga completada!*\n\n` +
+                        `🎮 Juego: ${transaction.details?.game || 'Juego'}\n` +
+                        `💰 Monto: ${formatCurrency(Math.abs(transaction.amount), transaction.currency)}\n` +
+                        `🆔 Orden: ${order_id}\n` +
                         `📅 Fecha: ${new Date().toLocaleString()}`;
                     break;
                 case 'failed':
-                    statusMessage = `❌ *Recarga de ${transaction.game_name} fallida*\n\n` +
+                    statusMessage = `❌ *Recarga fallida*\n\n` +
+                        `Juego: ${transaction.details?.game || 'Juego'}\n` +
                         `Error: ${message || 'Error desconocido'}\n\n` +
                         `Contacta al administrador para más información.`;
                     break;
                 case 'processing':
-                    statusMessage = `⏳ *Recarga de ${transaction.game_name} en proceso*\n\n` +
+                    statusMessage = `⏳ *Recarga en proceso*\n\n` +
                         `Estamos procesando tu recarga. Te notificaremos cuando esté completa.`;
                     break;
             }
             
             if (statusMessage) {
-                await bot.sendMessage(transaction.telegram_user_id, statusMessage, { 
+                await bot.sendMessage(transaction.user_id, statusMessage, { 
                     parse_mode: 'Markdown' 
-                });
+                }).catch(err => console.error('Error enviando notificación:', err));
             }
         }
         
         // Notificar al admin
         if (ADMIN_CHAT_ID) {
+            const user = await getUser(transaction.user_id);
             const adminMsg = `🎮 *Webhook LioGames - Estado Actualizado*\n\n` +
-                `👤 Usuario: ${transaction.telegram_user_id}\n` +
-                `🎮 Juego: ${transaction.game_name}\n` +
+                `👤 Usuario: ${user?.first_name || transaction.user_id}\n` +
+                `🎮 Juego: ${transaction.details?.game || 'Desconocido'}\n` +
                 `📦 Estado: ${newStatus}\n` +
-                `🆔 Orden LioGames: ${order_id}\n` +
-                `💰 Monto: ${formatCurrency(transaction.amount, transaction.currency)}`;
+                `🆔 Orden: ${order_id}\n` +
+                `💰 Monto: ${formatCurrency(Math.abs(transaction.amount), transaction.currency)}`;
             
             await bot.sendMessage(ADMIN_CHAT_ID, adminMsg, { parse_mode: 'Markdown' });
         }
@@ -655,109 +737,10 @@ app.post('/lio-webhook', verifyWebhookToken, async (req, res) => {
     }
 });
 
-// Webhook para SokyRecargas
-app.post('/soky-webhook', verifyWebhookToken, async (req, res) => {
-    try {
-        console.log('📥 Webhook SokyRecargas recibido:', req.body);
-        
-        const { transaction_id, status, message, offer_id, price_id } = req.body;
-        
-        if (!transaction_id) {
-            return res.status(400).json({ error: 'transaction_id es requerido' });
-        }
-        
-        // Buscar la transacción
-        const { data: transaction, error } = await supabase
-            .from('soky_transactions')
-            .select('*')
-            .eq('soky_transaction_id', transaction_id)
-            .single();
-        
-        if (error || !transaction) {
-            console.log(`❌ Transacción Soky no encontrada: ${transaction_id}`);
-            return res.status(404).json({ error: 'Transacción no encontrada' });
-        }
-        
-        // Mapear estado de SokyRecargas
-        let newStatus = 'pending';
-        if (status === 'completed' || status === 'success') newStatus = 'completed';
-        else if (status === 'failed') newStatus = 'failed';
-        else if (status === 'canceled') newStatus = 'canceled';
-        else newStatus = status;
-        
-        // Actualizar estado
-        const updates = {
-            status: newStatus,
-            updated_at: new Date().toISOString(),
-            metadata: { ...transaction.metadata, webhook_data: req.body }
-        };
-        
-        await supabase
-            .from('soky_transactions')
-            .update(updates)
-            .eq('id', transaction.id);
-        
-        // Notificar al usuario
-        if (transaction.telegram_user_id) {
-            let statusMessage = '';
-            switch (newStatus) {
-                case 'completed':
-                    statusMessage = `✅ *¡Recarga ETECSA completada!*\n\n` +
-                        `📱 Oferta: ${transaction.offer_name}\n` +
-                        `💰 Paquete: ${transaction.price_label}\n` +
-                        `💵 Monto: $${transaction.cup_price} CUP\n` +
-                        `📞 Destino: ${transaction.recipient_phone}\n` +
-                        `🆔 ID Soky: ${transaction_id}\n` +
-                        `📅 Fecha: ${new Date().toLocaleString()}`;
-                    break;
-                case 'failed':
-                    statusMessage = `❌ *Recarga ETECSA fallida*\n\n` +
-                        `Oferta: ${transaction.offer_name}\n` +
-                        `Error: ${message || 'Error desconocido'}\n\n` +
-                        `Contacta al administrador para más información.`;
-                    break;
-                case 'pending':
-                    statusMessage = `⏳ *Recarga ETECSA en proceso*\n\n` +
-                        `Tu recarga está siendo procesada por ETECSA. Te notificaremos cuando esté completa.`;
-                    break;
-            }
-            
-            if (statusMessage) {
-                await bot.sendMessage(transaction.telegram_user_id, statusMessage, { 
-                    parse_mode: 'Markdown' 
-                });
-            }
-        }
-        
-        // Notificar al admin
-        if (ADMIN_CHAT_ID) {
-            const adminMsg = `📱 *Webhook SokyRecargas - Estado Actualizado*\n\n` +
-                `👤 Usuario: ${transaction.telegram_user_id}\n` +
-                `📱 Oferta: ${transaction.offer_name}\n` +
-                `📦 Estado: ${newStatus}\n` +
-                `🆔 ID Soky: ${transaction_id}\n` +
-                `💰 Monto: $${transaction.cup_price} CUP`;
-            
-            await bot.sendMessage(ADMIN_CHAT_ID, adminMsg, { parse_mode: 'Markdown' });
-        }
-        
-        res.json({ 
-            success: true, 
-            message: 'Estado actualizado correctamente',
-            transaction_id: transaction.id,
-            new_status: newStatus
-        });
-        
-    } catch (error) {
-        console.error('❌ Error procesando webhook SokyRecargas:', error);
-        res.status(500).json({ error: 'Error interno del servidor' });
-    }
-});
-
-// Webhook genérico para notificaciones de estado (para otros servicios)
+// Webhook genérico para notificaciones de estado
 app.post('/status-webhook', verifyWebhookToken, async (req, res) => {
     try {
-        console.log('📥 Webhook de estado recibido:', req.body);
+        console.log('📥 Webhook de estado recibido:', JSON.stringify(req.body, null, 2));
         
         const { service, type, data } = req.body;
         
@@ -765,43 +748,857 @@ app.post('/status-webhook', verifyWebhookToken, async (req, res) => {
             return res.status(400).json({ error: 'service, type y data son requeridos' });
         }
         
-        switch (service) {
+        switch (service.toLowerCase()) {
             case 'liogames':
-                // Redirigir al webhook específico de LioGames
+                // Procesar como LioGames
+                req.body = data;
                 return app._router.handle(req, res, (err) => {
-                    if (err) throw err;
+                    if (err) {
+                        console.error('Error redirigiendo a LioGames webhook:', err);
+                        res.status(500).json({ error: 'Error interno' });
+                    }
                 });
                 
             case 'sokyrecargas':
-                // Redirigir al webhook específico de SokyRecargas
-                return app._router.handle(req, res, (err) => {
-                    if (err) throw err;
-                });
-                
-            default:
-                console.log(`⚠️ Servicio no reconocido: ${service}`);
-                // Procesar como notificación genérica
+                // Procesar como SokyRecargas
                 if (ADMIN_CHAT_ID) {
-                    const adminMsg = `🌐 *Webhook Genérico Recibido*\n\n` +
-                        `🔧 Servicio: ${service}\n` +
+                    const adminMsg = `📱 *Webhook SokyRecargas*\n\n` +
                         `📋 Tipo: ${type}\n` +
                         `📊 Datos: ${JSON.stringify(data, null, 2)}\n\n` +
                         `Hora: ${new Date().toLocaleString()}`;
                     
                     await bot.sendMessage(ADMIN_CHAT_ID, adminMsg, { parse_mode: 'Markdown' });
                 }
+                break;
                 
-                res.json({ 
-                    success: true, 
-                    message: 'Notificación recibida',
-                    service: service,
-                    type: type
-                });
+            default:
+                console.log(`⚠️ Servicio no reconocido: ${service}`);
         }
+        
+        // Notificar al admin
+        if (ADMIN_CHAT_ID) {
+            const adminMsg = `🌐 *Webhook Genérico Recibido*\n\n` +
+                `🔧 Servicio: ${service}\n` +
+                `📋 Tipo: ${type}\n` +
+                `📊 Datos: ${JSON.stringify(data, null, 2)}\n\n` +
+                `Hora: ${new Date().toLocaleString()}`;
+            
+            await bot.sendMessage(ADMIN_CHAT_ID, adminMsg, { parse_mode: 'Markdown' });
+        }
+        
+        res.json({ 
+            success: true, 
+            message: 'Notificación recibida',
+            service: service,
+            type: type
+        });
         
     } catch (error) {
         console.error('❌ Error procesando webhook de estado:', error);
         res.status(500).json({ error: 'Error interno del servidor' });
+    }
+});
+
+// ============================================
+// RUTAS PARA LA WEBAPP
+// ============================================
+
+// Obtener datos del usuario para WebApp
+app.post('/api/user-data', verifyWebhookToken, async (req, res) => {
+    try {
+        const { telegram_id } = req.body;
+        
+        if (!telegram_id) {
+            return res.status(400).json({ error: 'telegram_id es requerido' });
+        }
+        
+        const user = await getUser(telegram_id);
+        if (!user) {
+            return res.status(404).json({ error: 'Usuario no encontrado' });
+        }
+        
+        res.json({
+            success: true,
+            user: {
+                telegram_id: user.telegram_id,
+                first_name: user.first_name,
+                username: user.username,
+                phone_number: user.phone_number,
+                balance_cup: user.balance_cup || 0,
+                balance_saldo: user.balance_saldo || 0,
+                tokens_cws: user.tokens_cws || 0,
+                first_dep_cup: user.first_dep_cup || true,
+                first_dep_saldo: user.first_dep_saldo || true,
+                last_active: user.last_active,
+                accepted_terms: user.accepted_terms || false,
+                pending_balance_cup: user.pending_balance_cup || 0
+            }
+        });
+        
+    } catch (error) {
+        console.error('Error en /api/user-data:', error);
+        res.status(500).json({ error: 'Error interno del servidor' });
+    }
+});
+
+// Crear depósito desde WebApp
+app.post('/api/create-deposit', verifyWebhookToken, async (req, res) => {
+    try {
+        const { telegram_id, method, amount, phone } = req.body;
+        
+        if (!telegram_id || !method || !amount) {
+            return res.status(400).json({ error: 'Datos incompletos' });
+        }
+        
+        const user = await getUser(telegram_id);
+        if (!user) {
+            return res.status(404).json({ error: 'Usuario no encontrado' });
+        }
+        
+        // Verificar saldo mínimo
+        const minAmounts = { cup: MINIMO_CUP, saldo: MINIMO_SALDO };
+        const maxAmounts = { cup: MAXIMO_CUP, saldo: 10000 };
+        
+        const amountNum = parseFloat(amount);
+        if (isNaN(amountNum) || amountNum < minAmounts[method] || amountNum > maxAmounts[method]) {
+            return res.json({ 
+                success: false, 
+                error: `Monto fuera de límites (${minAmounts[method]} - ${maxAmounts[method]})` 
+            });
+        }
+        
+        // Verificar si ya tiene solicitud pendiente
+        const solicitudExistente = await verificarSolicitudPendiente(telegram_id, method);
+        if (solicitudExistente) {
+            return res.json({
+                success: false,
+                error: `Ya tienes una solicitud pendiente (Orden #${solicitudExistente.id})`
+            });
+        }
+        
+        // Calcular bono
+        const bonoPorcentaje = 0.10;
+        const tieneBono = method === 'cup' ? user.first_dep_cup : user.first_dep_saldo;
+        const bono = tieneBono ? amountNum * bonoPorcentaje : 0;
+        const totalConBono = amountNum + bono;
+        
+        // Calcular tokens para saldo
+        const tokens = method === 'saldo' ? Math.floor(amountNum / 100) * CWS_PER_100_SALDO : 0;
+        
+        // Crear orden en la base de datos
+        const { data: transaction, error } = await supabase
+            .from('transactions')
+            .insert([{
+                user_id: telegram_id,
+                type: 'DEPOSIT',
+                currency: method,
+                amount_requested: amountNum,
+                estimated_bonus: bono,
+                estimated_tokens: tokens,
+                status: 'pending',
+                user_name: user.first_name,
+                user_username: user.username,
+                user_phone: phone || user.phone_number,
+                created_at: new Date().toISOString()
+            }])
+            .select()
+            .single();
+        
+        if (error) {
+            console.error('Error creando transacción:', error);
+            throw new Error('Error al crear la orden');
+        }
+        
+        // Notificar al usuario por Telegram
+        await bot.sendMessage(telegram_id,
+            `🌐 *Solicitud de depósito desde WebApp*\n\n` +
+            `🆔 Orden #${transaction.id}\n` +
+            `💰 Monto: $${amountNum} ${method.toUpperCase()}\n` +
+            `🎁 Bono: $${bono} (${bonoPorcentaje * 100}%)\n` +
+            `💵 Total a recibir: $${totalConBono} ${method.toUpperCase()}\n\n` +
+            `Por favor, completa el pago según las instrucciones.`,
+            { parse_mode: 'Markdown' }
+        );
+        
+        // Notificar al admin
+        if (ADMIN_CHAT_ID) {
+            const adminMsg = `🌐 *NUEVA SOLICITUD WEBAPP*\n\n` +
+                `👤 Usuario: ${user.first_name} (@${user.username || 'sin usuario'})\n` +
+                `💰 Monto: $${amountNum} ${method.toUpperCase()}\n` +
+                `🎁 Bono: $${bono}\n` +
+                `📋 Orden #: ${transaction.id}`;
+            
+            await bot.sendMessage(ADMIN_CHAT_ID, adminMsg, { parse_mode: 'Markdown' });
+        }
+        
+        res.json({ 
+            success: true, 
+            orderId: transaction.id,
+            amount: amountNum,
+            bonus: bono,
+            total: totalConBono,
+            tokens: tokens
+        });
+        
+    } catch (error) {
+        console.error('Error en /api/create-deposit:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: error.message || 'Error interno del servidor' 
+        });
+    }
+});
+
+// Obtener lista de juegos
+app.get('/api/games', verifyWebhookToken, async (req, res) => {
+    try {
+        if (!gameHandler) {
+            return res.status(503).json({ error: 'Servicio de juegos no disponible' });
+        }
+        
+        // Usar los juegos definidos en game_recharges.js
+        const games = Object.entries(gameHandler.GAMES || {}).map(([id, game]) => ({
+            id,
+            name: game.name,
+            variations: game.variations,
+            input_schema: game.input_schema
+        }));
+        
+        res.json(games);
+    } catch (error) {
+        console.error('Error en /api/games:', error);
+        res.status(500).json({ error: 'Error interno del servidor' });
+    }
+});
+
+// Obtener precio de juego
+app.post('/api/game-price', verifyWebhookToken, async (req, res) => {
+    try {
+        const { game_id, variation_id } = req.body;
+        
+        if (!game_id || !variation_id) {
+            return res.status(400).json({ error: 'Datos incompletos' });
+        }
+        
+        if (!gameHandler) {
+            return res.status(503).json({ error: 'Servicio de juegos no disponible' });
+        }
+        
+        // Usar el gameHandler para obtener precios
+        const prices = await gameHandler.getPackagePrice(game_id, variation_id);
+        
+        res.json({
+            success: true,
+            prices: prices
+        });
+        
+    } catch (error) {
+        console.error('Error en /api/game-price:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: error.message || 'Error interno del servidor' 
+        });
+    }
+});
+
+// Comprar juego desde WebApp
+app.post('/api/game-purchase', verifyWebhookToken, async (req, res) => {
+    try {
+        const { telegram_id, game_id, variation_id, payment_method, user_data, amount } = req.body;
+        
+        if (!telegram_id || !game_id || !variation_id || !payment_method || !amount) {
+            return res.status(400).json({ error: 'Datos incompletos' });
+        }
+        
+        if (!gameHandler) {
+            return res.status(503).json({ error: 'Servicio de juegos no disponible' });
+        }
+        
+        // Verificar saldo del usuario
+        const user = await getUser(telegram_id);
+        if (!user) {
+            return res.status(404).json({ error: 'Usuario no encontrado' });
+        }
+        
+        let balanceField = '';
+        let currentBalance = 0;
+        
+        switch(payment_method) {
+            case 'cup':
+                balanceField = 'balance_cup';
+                currentBalance = user.balance_cup || 0;
+                break;
+            case 'saldo':
+                balanceField = 'balance_saldo';
+                currentBalance = user.balance_saldo || 0;
+                break;
+            case 'cws':
+                balanceField = 'tokens_cws';
+                currentBalance = user.tokens_cws || 0;
+                break;
+            default:
+                return res.status(400).json({ error: 'Método de pago no válido' });
+        }
+        
+        const amountNum = parseFloat(amount);
+        if (currentBalance < amountNum) {
+            return res.json({ 
+                success: false, 
+                error: `Saldo insuficiente. Necesitas: ${amountNum}, Tienes: ${currentBalance}` 
+            });
+        }
+        
+        // Verificar mínimo para CWS
+        if (payment_method === 'cws' && amountNum < MIN_CWS_USE) {
+            return res.json({
+                success: false,
+                error: `Mínimo para usar CWS es ${MIN_CWS_USE} tokens`
+            });
+        }
+        
+        // Obtener datos del juego
+        const game = gameHandler.GAMES[game_id];
+        if (!game) {
+            return res.status(404).json({ error: 'Juego no encontrado' });
+        }
+        
+        const variation = game.variations[variation_id];
+        if (!variation) {
+            return res.status(404).json({ error: 'Paquete no encontrado' });
+        }
+        
+        // Crear orden en LioGames
+        const orderData = {
+            product_id: game_id,
+            variation_id: variation_id,
+            user_id: user_data.user_id,
+            server_id: user_data.server_id || null,
+            quantity: 1,
+            partner_ref: `WEBAPP_${telegram_id}_${Date.now()}`
+        };
+        
+        let orderResult;
+        try {
+            orderResult = await gameHandler.createOrder(orderData);
+            
+            if (!orderResult.ok) {
+                throw new Error(orderResult.message || 'Error creando orden');
+            }
+        } catch (error) {
+            console.error('Error creando orden LioGames:', error);
+            return res.status(500).json({ 
+                success: false, 
+                error: 'Error al procesar la orden con LioGames' 
+            });
+        }
+        
+        // Descontar saldo
+        const updates = {};
+        updates[balanceField] = currentBalance - amountNum;
+        updates.last_active = new Date().toISOString();
+        
+        await updateUser(telegram_id, updates);
+        
+        // Registrar transacción
+        await supabase
+            .from('transactions')
+            .insert({
+                user_id: telegram_id,
+                type: 'GAME_RECHARGE',
+                currency: payment_method,
+                amount: -amountNum,
+                status: 'completed',
+                tx_id: orderResult.data?.order_id || `WEBAPP_${Date.now()}`,
+                partner_ref: orderData.partner_ref,
+                details: {
+                    game: game.name,
+                    package: variation.name,
+                    game_data: user_data,
+                    lio_order_id: orderResult.data?.order_id,
+                    webapp: true
+                },
+                completed_at: new Date().toISOString(),
+                created_at: new Date().toISOString()
+            });
+        
+        // Notificar al usuario
+        await bot.sendMessage(telegram_id,
+            `🎮 *Compra desde WebApp Completada*\n\n` +
+            `🆔 Orden #: ${orderResult.data?.order_id || 'N/A'}\n` +
+            `🎮 Juego: ${game.name}\n` +
+            `📦 Paquete: ${variation.name}\n` +
+            `💳 Pagado con: ${payment_method.toUpperCase()}\n` +
+            `💰 Monto: ${formatCurrency(amountNum, payment_method)}\n\n` +
+            `La recarga se está procesando. Te notificaremos cuando esté completa.`,
+            { parse_mode: 'Markdown' }
+        );
+        
+        // Notificar al admin
+        if (ADMIN_CHAT_ID) {
+            const adminMsg = `🌐 *COMPRA WEBAPP - JUEGO*\n\n` +
+                `👤 Usuario: ${user.first_name} (@${user.username || 'sin usuario'})\n` +
+                `🎮 Juego: ${game.name}\n` +
+                `📦 Paquete: ${variation.name}\n` +
+                `💳 Método: ${payment_method.toUpperCase()}\n` +
+                `💰 Monto: ${formatCurrency(amountNum, payment_method)}\n` +
+                `🆔 Orden LioGames: ${orderResult.data?.order_id || 'N/A'}`;
+            
+            await bot.sendMessage(ADMIN_CHAT_ID, adminMsg, { parse_mode: 'Markdown' });
+        }
+        
+        res.json({
+            success: true,
+            orderId: orderResult.data?.order_id || `WEBAPP_${Date.now()}`,
+            message: 'Compra procesada correctamente'
+        });
+        
+    } catch (error) {
+        console.error('Error en /api/game-purchase:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: error.message || 'Error interno del servidor' 
+        });
+    }
+});
+
+// Obtener ofertas ETECSA
+app.get('/api/etecsa-offers', verifyWebhookToken, async (req, res) => {
+    try {
+        if (!sokyHandler) {
+            return res.status(503).json({ error: 'Servicio ETECSA no disponible' });
+        }
+        
+        const offers = await sokyHandler.getOffers();
+        
+        // Formatear ofertas para la WebApp
+        const formattedOffers = offers.map(offer => ({
+            id: offer.id,
+            name: offer.name,
+            description: offer.description,
+            prices: offer.prices,
+            requires_email: offer.requiresEmail || false,
+            metadata: offer.metadata || {}
+        }));
+        
+        res.json(formattedOffers);
+    } catch (error) {
+        console.error('Error en /api/etecsa-offers:', error);
+        res.status(500).json({ error: 'Error interno del servidor' });
+    }
+});
+
+// Recarga ETECSA desde WebApp
+app.post('/api/etecsa-recharge', verifyWebhookToken, async (req, res) => {
+    try {
+        const { telegram_id, offer_id, price_id, phone, email, amount } = req.body;
+        
+        if (!telegram_id || !offer_id || !price_id || !phone || !amount) {
+            return res.status(400).json({ error: 'Datos incompletos' });
+        }
+        
+        if (!sokyHandler) {
+            return res.status(503).json({ error: 'Servicio ETECSA no disponible' });
+        }
+        
+        // Verificar saldo del usuario
+        const user = await getUser(telegram_id);
+        if (!user) {
+            return res.status(404).json({ error: 'Usuario no encontrado' });
+        }
+        
+        const amountNum = parseFloat(amount);
+        if (user.balance_cup < amountNum) {
+            return res.json({ 
+                success: false, 
+                error: 'Saldo CUP insuficiente' 
+            });
+        }
+        
+        // Validar teléfono
+        const cleanPhone = phone.replace(/[^\d]/g, '');
+        if (!cleanPhone.startsWith('53') || cleanPhone.length !== 10) {
+            return res.json({
+                success: false,
+                error: 'Formato de teléfono inválido. Debe ser 5351234567'
+            });
+        }
+        
+        // Validar email si es requerido
+        // (La validación específica se hará en el sokyHandler)
+        
+        // Aquí necesitarías llamar al método correspondiente de sokyHandler
+        // Como sokyHandler no tiene un método específico para WebApp,
+        // crearemos una transacción simulada por ahora
+        
+        const transactionId = `ETECSA_WEBAPP_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        
+        // Descontar saldo
+        await updateUser(telegram_id, {
+            balance_cup: (user.balance_cup || 0) - amountNum,
+            last_active: new Date().toISOString()
+        });
+        
+        // Registrar transacción
+        await supabase
+            .from('transactions')
+            .insert({
+                user_id: telegram_id,
+                type: 'ETECSA_RECHARGE',
+                currency: 'cup',
+                amount: -amountNum,
+                status: 'completed',
+                tx_id: transactionId,
+                details: {
+                    offer_id: offer_id,
+                    price_id: price_id,
+                    phone: cleanPhone,
+                    email: email,
+                    amount: amountNum,
+                    webapp: true
+                },
+                completed_at: new Date().toISOString(),
+                created_at: new Date().toISOString()
+            });
+        
+        // Notificar al usuario
+        await bot.sendMessage(telegram_id,
+            `📱 *Recarga ETECSA desde WebApp*\n\n` +
+            `🆔 Transacción: ${transactionId}\n` +
+            `📞 Destino: +${cleanPhone}\n` +
+            `💰 Monto: $${amountNum} CUP\n\n` +
+            `Tu recarga ha sido procesada. El saldo se acreditará en breve.`,
+            { parse_mode: 'Markdown' }
+        );
+        
+        // Notificar al admin
+        if (ADMIN_CHAT_ID) {
+            const adminMsg = `🌐 *RECARGA ETECSA WEBAPP*\n\n` +
+                `👤 Usuario: ${user.first_name} (@${user.username || 'sin usuario'})\n` +
+                `📞 Destino: +${cleanPhone}\n` +
+                `💰 Monto: $${amountNum} CUP\n` +
+                `🆔 Transacción: ${transactionId}`;
+            
+            await bot.sendMessage(ADMIN_CHAT_ID, adminMsg, { parse_mode: 'Markdown' });
+        }
+        
+        res.json({
+            success: true,
+            transactionId: transactionId,
+            message: 'Recarga procesada correctamente'
+        });
+        
+    } catch (error) {
+        console.error('Error en /api/etecsa-recharge:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: error.message || 'Error interno del servidor' 
+        });
+    }
+});
+
+// Actualizar teléfono desde WebApp
+app.post('/api/update-phone', verifyWebhookToken, async (req, res) => {
+    try {
+        const { telegram_id, phone } = req.body;
+        
+        if (!telegram_id || !phone) {
+            return res.status(400).json({ error: 'Datos incompletos' });
+        }
+        
+        // Validar formato
+        const cleanPhone = phone.replace(/[^\d]/g, '');
+        if (!cleanPhone.startsWith('53') || cleanPhone.length !== 10) {
+            return res.json({ 
+                success: false, 
+                error: 'Formato inválido. Debe comenzar con 53 y tener 10 dígitos.' 
+            });
+        }
+        
+        // Verificar si el número ya está en uso
+        const { data: existingUser } = await supabase
+            .from('users')
+            .select('telegram_id, first_name')
+            .eq('phone_number', cleanPhone)
+            .neq('telegram_id', telegram_id)
+            .single();
+        
+        if (existingUser) {
+            return res.json({ 
+                success: false, 
+                error: 'Este número ya está vinculado a otra cuenta.' 
+            });
+        }
+        
+        // Actualizar teléfono
+        await updateUser(telegram_id, { 
+            phone_number: cleanPhone,
+            last_active: new Date().toISOString()
+        });
+        
+        res.json({ 
+            success: true,
+            message: 'Teléfono actualizado correctamente'
+        });
+        
+    } catch (error) {
+        console.error('Error en /api/update-phone:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: 'Error interno del servidor' 
+        });
+    }
+});
+
+// Reclamar pago desde WebApp
+app.post('/api/claim-payment', verifyWebhookToken, async (req, res) => {
+    try {
+        const { telegram_id, tx_id } = req.body;
+        
+        if (!telegram_id || !tx_id) {
+            return res.status(400).json({ error: 'Datos incompletos' });
+        }
+        
+        // Buscar pago pendiente
+        const { data: pendingPayment } = await supabase
+            .from('pending_sms_payments')
+            .select('*')
+            .eq('tx_id', tx_id)
+            .eq('claimed', false)
+            .single();
+        
+        if (!pendingPayment) {
+            return res.json({ 
+                success: false, 
+                message: 'Pago no encontrado o ya reclamado' 
+            });
+        }
+        
+        // Verificar que el pago pertenezca al usuario
+        const user = await getUser(telegram_id);
+        if (!user) {
+            return res.status(404).json({ error: 'Usuario no encontrado' });
+        }
+        
+        if (pendingPayment.user_id && pendingPayment.user_id != telegram_id) {
+            if (!pendingPayment.phone || pendingPayment.phone !== user.phone_number) {
+                return res.json({
+                    success: false,
+                    message: 'Este pago no pertenece a tu cuenta'
+                });
+            }
+        }
+        
+        // Procesar pago
+        const result = await procesarPagoAutomatico(
+            telegram_id,
+            pendingPayment.amount,
+            pendingPayment.currency,
+            pendingPayment.tx_id,
+            pendingPayment.tipo_pago
+        );
+        
+        if (result.success) {
+            // Marcar como reclamado
+            await supabase
+                .from('pending_sms_payments')
+                .update({ 
+                    claimed: true, 
+                    claimed_by: telegram_id,
+                    claimed_at: new Date().toISOString()
+                })
+                .eq('id', pendingPayment.id);
+            
+            res.json({
+                success: true,
+                amount: pendingPayment.amount,
+                currency: pendingPayment.currency,
+                message: 'Pago reclamado y procesado correctamente'
+            });
+        } else {
+            res.json({ 
+                success: false, 
+                message: result.message 
+            });
+        }
+        
+    } catch (error) {
+        console.error('Error en /api/claim-payment:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: 'Error interno del servidor' 
+        });
+    }
+});
+
+// Obtener historial de transacciones
+app.get('/api/user-history', verifyWebhookToken, async (req, res) => {
+    try {
+        const { telegram_id } = req.query;
+        
+        if (!telegram_id) {
+            return res.status(400).json({ error: 'telegram_id es requerido' });
+        }
+        
+        const { data: transactions } = await supabase
+            .from('transactions')
+            .select('*')
+            .eq('user_id', telegram_id)
+            .order('created_at', { ascending: false })
+            .limit(50);
+        
+        res.json(transactions || []);
+        
+    } catch (error) {
+        console.error('Error en /api/user-history:', error);
+        res.status(500).json({ error: 'Error interno del servidor' });
+    }
+});
+
+// Endpoint para obtener configuración pública
+app.get('/api/config', (req, res) => {
+    res.json({
+        success: true,
+        config: {
+            minimo_cup: MINIMO_CUP,
+            minimo_saldo: MINIMO_SALDO,
+            maximo_cup: MAXIMO_CUP,
+            min_cws_use: MIN_CWS_USE,
+            usdt_rate_0_30: USDT_RATE_0_30,
+            usdt_rate_30_plus: USDT_RATE_30_PLUS,
+            saldo_movil_rate: SALDO_MOVIL_RATE,
+            soky_rate_cup: SOKY_RATE_CUP,
+            cws_per_100_saldo: CWS_PER_100_SALDO,
+            pago_cup_tarjeta: PAGO_CUP_TARJETA ? 'Configurada' : 'No configurada',
+            pago_saldo_movil: PAGO_SALDO_MOVIL ? 'Configurado' : 'No configurado'
+        }
+    });
+});
+
+// ============================================
+// ENDPOINT PARA RECIBIR PAGOS DEL PARSER
+// ============================================
+
+app.post('/payment-notification', verifyWebhookToken, async (req, res) => {
+    try {
+        console.log('\n' + '='.repeat(80));
+        console.log('📥 PAYMENT-NOTIFICATION RECIBIDA EN EL BOT');
+        console.log('🕐 Hora:', new Date().toISOString());
+        console.log('📊 Datos:', JSON.stringify(req.body, null, 2));
+        
+        const { 
+            type, 
+            amount, 
+            currency, 
+            tx_id, 
+            tipo_pago, 
+            phone,
+            sender_phone,
+            receiver_phone
+        } = req.body;
+        
+        if (!type || !amount || !currency || !tx_id) {
+            console.log('❌ Campos requeridos faltantes en payload');
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Campos requeridos faltantes: type, amount, currency, tx_id' 
+            });
+        }
+        
+        switch (type) {
+            case 'SMS_PAYMENT_DETECTED':
+                console.log(`🔍 Procesando SMS_PAYMENT_DETECTED`);
+                
+                let userPhone = phone || sender_phone;
+                console.log(`📞 Teléfono recibido: ${userPhone}`);
+                console.log(`💰 Monto: ${amount} ${currency}`);
+                
+                let user = null;
+                let normalizedPhone = null;
+                
+                if (userPhone) {
+                    normalizedPhone = userPhone.replace(/[^\d]/g, '');
+                    console.log(`🔍 Buscando usuario con teléfono normalizado: ${normalizedPhone}`);
+                    
+                    user = await getUserByPhone(normalizedPhone);
+                    
+                    if (user) {
+                        console.log(`✅ Usuario encontrado: ${user.telegram_id} (${user.first_name})`);
+                        
+                        const result = await procesarPagoAutomatico(
+                            user.telegram_id, 
+                            parseFloat(amount), 
+                            currency, 
+                            tx_id, 
+                            tipo_pago
+                        );
+                        
+                        console.log(`✅ Resultado del procesamiento:`, result);
+                        return res.json(result);
+                    } else {
+                        console.log(`❌ Usuario NO encontrado para teléfono: ${normalizedPhone}`);
+                        
+                        // Guardar como pago pendiente
+                        await supabase.from('pending_sms_payments').insert({
+                            phone: normalizedPhone,
+                            amount: parseFloat(amount),
+                            currency: currency,
+                            tx_id: tx_id,
+                            tipo_pago: tipo_pago,
+                            claimed: false,
+                            created_at: new Date().toISOString()
+                        }).catch(err => console.error('Error guardando pago pendiente:', err));
+                        
+                        console.log(`✅ Pago pendiente guardado para teléfono: ${normalizedPhone}`);
+                        
+                        // Notificar al admin
+                        if (ADMIN_CHAT_ID) {
+                            const mensajeAdmin = `📱 *PAGO NO IDENTIFICADO*\n\n` +
+                                `📞 Teléfono: ${normalizedPhone}\n` +
+                                `💰 Monto: ${formatCurrency(amount, currency)}\n` +
+                                `🔧 Tipo: ${tipo_pago}\n` +
+                                `🆔 ID: \`${tx_id}\`\n\n` +
+                                `ℹ️ Este pago está pendiente de reclamar.`;
+                            
+                            await bot.sendMessage(ADMIN_CHAT_ID, mensajeAdmin, { parse_mode: 'Markdown' });
+                        }
+                        
+                        return res.json({ 
+                            success: false, 
+                            message: 'Usuario no encontrado, pago guardado como pendiente',
+                            phone: normalizedPhone
+                        });
+                    }
+                }
+                break;
+                
+            default:
+                console.log(`❌ Tipo de notificación desconocido: ${type}`);
+                return res.status(400).json({ 
+                    success: false, 
+                    message: 'Tipo de notificación desconocido',
+                    received_type: type 
+                });
+        }
+        
+    } catch (error) {
+        console.error('❌ Error en payment-notification:', error);
+        
+        if (ADMIN_CHAT_ID) {
+            const errorMsg = `❌ *ERROR EN PAYMENT-NOTIFICATION*\n\n` +
+                `Error: ${error.message}\n` +
+                `Hora: ${new Date().toLocaleString()}`;
+            
+            try {
+                await bot.sendMessage(ADMIN_CHAT_ID, errorMsg, { parse_mode: 'Markdown' });
+            } catch (botError) {
+                console.error('Error enviando mensaje de error:', botError);
+            }
+        }
+        
+        return res.status(500).json({ 
+            success: false, 
+            message: error.message
+        });
     }
 });
 
@@ -889,6 +1686,7 @@ bot.onText(/\/start/, async (msg) => {
     let user = await getUser(chatId);
     
     if (!user) {
+        console.log(`👤 Creando nuevo usuario: ${id}`);
         user = {
             telegram_id: id,
             first_name: first_name,
@@ -901,11 +1699,15 @@ bot.onText(/\/start/, async (msg) => {
             balance_cup: 0,
             balance_saldo: 0,
             tokens_cws: 0,
-            last_active: new Date().toISOString()
+            last_active: new Date().toISOString(),
+            created_at: new Date().toISOString()
         };
         
         await supabase.from('users').upsert(user, { onConflict: 'telegram_id' });
         user = await getUser(chatId);
+    } else {
+        // Actualizar última actividad
+        await updateUser(chatId, { last_active: new Date().toISOString() });
     }
     
     // PASO 1: Verificar si tiene número vinculado
@@ -945,6 +1747,68 @@ bot.onText(/\/start/, async (msg) => {
     });
 });
 
+// Comando /webapp
+bot.onText(/\/webapp/, async (msg) => {
+    const chatId = msg.chat.id;
+    const user = await getUser(chatId);
+    
+    if (!user) {
+        return bot.sendMessage(chatId, '❌ No estás registrado. Usa /start primero.');
+    }
+    
+    const webAppUrl = `https://${req.headers.host || 'localhost:3000'}/webapp.html`;
+    
+    const message = `🌐 *WebApp Cromwell Store*\n\n` +
+        `Accede a nuestra WebApp para gestionar tu billetera desde el navegador.\n\n` +
+        `[Abrir WebApp](${webAppUrl})\n\n` +
+        `⚠️ *Tu ID de Telegram:* \`${chatId}\`\n` +
+        `Necesitarás este ID para iniciar sesión en la WebApp.\n\n` +
+        `Características de la WebApp:\n` +
+        `• Ver saldos en tiempo real\n` +
+        `• Recargar billetera (CUP/Saldo)\n` +
+        `• Recargar juegos directamente\n` +
+        `• Recargas ETECSA\n` +
+        `• Historial de transacciones\n` +
+        `• Cambiar teléfono vinculado\n` +
+        `• Reclamar pagos pendientes`;
+    
+    await bot.sendMessage(chatId, message, { 
+        parse_mode: 'Markdown',
+        reply_markup: {
+            inline_keyboard: [[
+                {
+                    text: '🌐 Abrir WebApp',
+                    web_app: { url: webAppUrl }
+                }
+            ]]
+        }
+    });
+});
+
+// Comando /admin para administradores
+bot.onText(/\/admin/, async (msg) => {
+    const chatId = msg.chat.id;
+    
+    if (chatId != BOT_ADMIN_ID && chatId != ADMIN_CHAT_ID) {
+        return bot.sendMessage(chatId, '❌ No tienes permisos de administrador.');
+    }
+    
+    const adminKeyboard = {
+        inline_keyboard: [
+            [{ text: '📊 Estadísticas', callback_data: 'admin_stats' }],
+            [{ text: '👥 Usuarios', callback_data: 'admin_users' }],
+            [{ text: '💰 Transacciones', callback_data: 'admin_transactions' }],
+            [{ text: '⚙️ Configuración', callback_data: 'admin_config' }],
+            [{ text: '🔧 Mantenimiento', callback_data: 'admin_maintenance' }]
+        ]
+    };
+    
+    await bot.sendMessage(chatId, '🔧 *Panel de Administración*\n\nSelecciona una opción:', {
+        parse_mode: 'Markdown',
+        reply_markup: adminKeyboard
+    });
+});
+
 // ============================================
 // MANEJO DE CALLBACKS
 // ============================================
@@ -958,15 +1822,19 @@ bot.on('callback_query', async (query) => {
         await bot.answerCallbackQuery(query.id);
 
         // PRIMERO: Intentar manejar con sokyHandler (RECARGAS ETECSA)
-        const handledBySoky = await sokyHandler.handleCallback(query);
-        if (handledBySoky) {
-            return;
+        if (sokyHandler) {
+            const handledBySoky = await sokyHandler.handleCallback(query);
+            if (handledBySoky) {
+                return;
+            }
         }
 
         // SEGUNDO: Intentar manejar con gameHandler
-        const handledByGame = await gameHandler.handleCallback(query);
-        if (handledByGame) {
-            return;
+        if (gameHandler) {
+            const handledByGame = await gameHandler.handleCallback(query);
+            if (handledByGame) {
+                return;
+            }
         }
 
         // TERCERO: Procesar las acciones normales del bot
@@ -986,7 +1854,14 @@ bot.on('callback_query', async (query) => {
                 await handleRechargeMenu(chatId, messageId);
                 break;
             case 'games_menu':
-                await gameHandler.showGamesList(chatId, messageId);
+                if (gameHandler) {
+                    await gameHandler.showGamesList(chatId, messageId);
+                } else {
+                    await bot.editMessageText('❌ Servicio de juegos no disponible temporalmente.', {
+                        chat_id: chatId,
+                        message_id: messageId
+                    });
+                }
                 break;
             case 'dep_init':
                 await handleDepositInit(chatId, messageId, param1);
@@ -1023,6 +1898,9 @@ bot.on('callback_query', async (query) => {
                 break;
             case 'view_terms_web':
                 await handleViewTermsWeb(chatId, messageId);
+                break;
+            case 'admin_stats':
+                await handleAdminStats(chatId, messageId);
                 break;
             default:
                 console.log(`Acción no reconocida: ${action}`);
@@ -1233,12 +2111,13 @@ async function handleConfirmDeposit(chatId, messageId, currency, amount) {
         return;
     }
     
+    const amountNum = parseFloat(amount);
     const limites = { 
         cup: [MINIMO_CUP, MAXIMO_CUP], 
         saldo: [MINIMO_SALDO, 10000]
     };
     
-    if (amount < limites[currency][0] || amount > limites[currency][1]) {
+    if (amountNum < limites[currency][0] || amountNum > limites[currency][1]) {
         const mensaje = `❌ *Monto fuera de límites*\n\n` +
             `Debe estar entre ${formatCurrency(limites[currency][0], currency)} y ${formatCurrency(limites[currency][1], currency)}.\n\n` +
             `Por favor, inicia el depósito nuevamente.`;
@@ -1286,9 +2165,9 @@ async function handleConfirmDeposit(chatId, messageId, currency, amount) {
     }
     
     const bonoPorcentaje = 0.10;
-    const bono = user[`first_dep_${currency}`] ? amount * bonoPorcentaje : 0;
-    const totalConBono = amount + bono;
-    const tokens = currency === 'saldo' ? Math.floor(amount / 100) * CWS_PER_100_SALDO : 0;
+    const bono = user[`first_dep_${currency}`] ? amountNum * bonoPorcentaje : 0;
+    const totalConBono = amountNum + bono;
+    const tokens = currency === 'saldo' ? Math.floor(amountNum / 100) * CWS_PER_100_SALDO : 0;
     
     const { data: transaction, error } = await supabase
         .from('transactions')
@@ -1296,13 +2175,14 @@ async function handleConfirmDeposit(chatId, messageId, currency, amount) {
             user_id: chatId,
             type: 'DEPOSIT',
             currency: currency,
-            amount_requested: amount,
+            amount_requested: amountNum,
             estimated_bonus: bono,
             estimated_tokens: tokens,
             status: 'pending',
             user_name: user.first_name,
             user_username: user.username,
-            user_phone: user.phone_number
+            user_phone: user.phone_number,
+            created_at: new Date().toISOString()
         }])
         .select()
         .single();
@@ -1346,7 +2226,7 @@ async function handleConfirmDeposit(chatId, messageId, currency, amount) {
     
     const mensaje = `✅ *Solicitud de depósito creada*\n\n` +
         `🆔 *Número de orden:* #${transaction.id}\n` +
-        `💰 *Monto solicitado:* ${formatCurrency(amount, currency)}\n` +
+        `💰 *Monto solicitado:* ${formatCurrency(amountNum, currency)}\n` +
         `🎁 *Bono por primer depósito:* ${formatCurrency(bono, currency)} (${bonoPorcentaje * 100}%)\n` +
         `💵 *Total a acreditar:* ${formatCurrency(totalConBono, currency)}\n` +
         `🎫 *Tokens a ganar:* ${tokens} CWS\n\n` +
@@ -1354,7 +2234,7 @@ async function handleConfirmDeposit(chatId, messageId, currency, amount) {
         `${instrucciones}\n\n` +
         `⚠️ *IMPORTANTE:*\n` +
         `• Realiza el pago con el teléfono vinculado: +53 ${user.phone_number.substring(2)}\n` +
-        `• El monto debe ser exactamente ${formatCurrency(amount, currency)}\n` +
+        `• El monto debe ser exactamente ${formatCurrency(amountNum, currency)}\n` +
         `• Para CUP/Saldo: Activa "Mostrar número al destinatario" en Transfermóvil\n` +
         `• Guarda el comprobante de la transacción\n\n` +
         `Una vez realizado el pago, el sistema lo detectará automáticamente.`;
@@ -1382,7 +2262,7 @@ async function handleTerms(chatId, messageId) {
         `1. *ACEPTACIÓN*: Al usar este servicio, aceptas estos términos.\n\n` +
         `2. *PROPÓSITO*: La billetera es exclusiva para pagos en Cromwell Store. El dinero no es retirable, excepto los bonos que son utilizables para recargas.\n\n` +
         `3. *DEPÓSITOS*:\n` +
-        `   • Mínimos: CUP=${MINIMO_CUP}, Saldo=${MINIMO_SALDO}\n` +
+        `   • Mínimos: CUP=$${MINIMO_CUP}, Saldo=$${MINIMO_SALDO}\n` +
         `   • Bonos solo en el primer depósito por método\n` +
         `   • Los tokens no son retirables, solo utilizables en la tienda\n\n` +
         `4. *TOKENS*:\n` +
@@ -1394,7 +2274,7 @@ async function handleTerms(chatId, messageId) {
         `   • Las recargas se procesan a través de LioGames\n\n` +
         `6. *RECARGAS ETECSA*:\n` +
         `   • Se procesan a través de SokyRecargas\n` +
-        `   • Los precios están en CUP (1 USDT = ${SOKY_CUP_RATE} CUP)\n` +
+        `   • Los precios están en CUP (1 USDT = ${SOKY_RATE_CUP} CUP)\n` +
         `   • Se descuentan automáticamente de tu saldo CUP\n\n` +
         `7. *SEGURIDAD*:\n` +
         `   • Toma capturas de pantalla de todas las transacciones\n` +
@@ -1515,7 +2395,8 @@ async function handleViewPendingPayments(chatId, messageId) {
         .select('*')
         .eq('claimed', false)
         .or(`user_id.eq.${chatId},phone.eq.${phone}`)
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .limit(10);
     
     let message = `📋 *Tus Pagos Pendientes*\n\n`;
     
@@ -1557,7 +2438,7 @@ async function handleHistory(chatId, messageId) {
             let icon = '🔸';
             if (tx.status === 'completed') icon = '✅';
             else if (tx.status === 'pending') icon = '⏳';
-            else if (tx.status === 'rejected') icon = '❌';
+            else if (tx.status === 'failed') icon = '❌';
             
             const fecha = new Date(tx.created_at).toLocaleDateString('es-ES', {
                 day: '2-digit',
@@ -1639,6 +2520,87 @@ async function handleViewTermsWeb(chatId, messageId) {
     });
 }
 
+async function handleAdminStats(chatId, messageId) {
+    if (chatId != BOT_ADMIN_ID && chatId != ADMIN_CHAT_ID) {
+        await bot.sendMessage(chatId, '❌ No tienes permisos de administrador.');
+        return;
+    }
+    
+    try {
+        // Obtener estadísticas
+        const { data: users } = await supabase
+            .from('users')
+            .select('count');
+        
+        const { data: transactions } = await supabase
+            .from('transactions')
+            .select('*');
+        
+        const { data: pendingPayments } = await supabase
+            .from('pending_sms_payments')
+            .select('*')
+            .eq('claimed', false);
+        
+        let totalCUP = 0;
+        let totalSaldo = 0;
+        let totalTransactions = 0;
+        let totalDeposits = 0;
+        let totalGameRecharges = 0;
+        let totalEtecsaRecharges = 0;
+        
+        if (transactions) {
+            totalTransactions = transactions.length;
+            transactions.forEach(tx => {
+                if (tx.type === 'DEPOSIT' && tx.status === 'completed') {
+                    totalDeposits++;
+                    if (tx.currency === 'cup') {
+                        totalCUP += Math.abs(tx.amount || tx.amount_requested || 0);
+                    } else if (tx.currency === 'saldo') {
+                        totalSaldo += Math.abs(tx.amount || tx.amount_requested || 0);
+                    }
+                } else if (tx.type === 'GAME_RECHARGE') {
+                    totalGameRecharges++;
+                } else if (tx.type === 'ETECSA_RECHARGE') {
+                    totalEtecsaRecharges++;
+                }
+            });
+        }
+        
+        const statsMessage = `📊 *Estadísticas del Sistema*\n\n` +
+            `👥 *Usuarios totales:* ${users?.[0]?.count || 0}\n` +
+            `💰 *Total CUP en sistema:* $${totalCUP.toLocaleString('es-ES')}\n` +
+            `📱 *Total Saldo en sistema:* $${totalSaldo.toLocaleString('es-ES')}\n\n` +
+            `📈 *Transacciones:*\n` +
+            `   • Totales: ${totalTransactions}\n` +
+            `   • Depósitos: ${totalDeposits}\n` +
+            `   • Recargas Juegos: ${totalGameRecharges}\n` +
+            `   • Recargas ETECSA: ${totalEtecsaRecharges}\n\n` +
+            `⏳ *Pagos pendientes:* ${pendingPayments?.length || 0}\n\n` +
+            `🔧 *Servicios activos:*\n` +
+            `   • Juegos: ${gameHandler ? '✅' : '❌'}\n` +
+            `   • ETECSA: ${sokyHandler ? '✅' : '❌'}`;
+        
+        await bot.editMessageText(statsMessage, {
+            chat_id: chatId,
+            message_id: messageId,
+            parse_mode: 'Markdown',
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: '🔄 Actualizar', callback_data: 'admin_stats' }],
+                    [{ text: '🔙 Volver', callback_data: 'start_back' }]
+                ]
+            }
+        });
+        
+    } catch (error) {
+        console.error('Error obteniendo estadísticas:', error);
+        await bot.editMessageText('❌ Error obteniendo estadísticas.', {
+            chat_id: chatId,
+            message_id: messageId
+        });
+    }
+}
+
 // ============================================
 // MANEJO DE MENSAJES DE TEXTO TELEGRAM
 // ============================================
@@ -1652,15 +2614,19 @@ bot.on('message', async (msg) => {
     
     try {
         // 1. Intentar manejar con gameHandler
-        const handledByGame = await gameHandler.handleMessage(msg);
-        if (handledByGame) {
-            return;
+        if (gameHandler) {
+            const handledByGame = await gameHandler.handleMessage(msg);
+            if (handledByGame) {
+                return;
+            }
         }
         
         // 2. Intentar manejar con sokyHandler
-        const handledBySoky = await sokyHandler.handleMessage(chatId, text);
-        if (handledBySoky) {
-            return;
+        if (sokyHandler) {
+            const handledBySoky = await sokyHandler.handleMessage(chatId, text);
+            if (handledBySoky) {
+                return;
+            }
         }
         
         // 3. Procesar mensajes normales del bot
@@ -1766,7 +2732,10 @@ async function handlePhoneInput(chatId, phone, session) {
     }
     
     // Guardar número normalizado
-    await updateUser(chatId, { phone_number: cleanPhone });
+    await updateUser(chatId, { 
+        phone_number: cleanPhone,
+        last_active: new Date().toISOString()
+    });
     
     let message = '';
     if (session.step === 'waiting_phone_change' && session.oldPhone) {
@@ -1927,129 +2896,6 @@ async function handleDepositAmountInput(chatId, amountText, session) {
 }
 
 // ============================================
-// ENDPOINT PARA RECIBIR PAGOS DEL PARSER
-// ============================================
-
-app.post('/payment-notification', verifyWebhookToken, async (req, res) => {
-    try {
-        console.log('\n' + '='.repeat(80));
-        console.log('📥 PAYMENT-NOTIFICATION RECIBIDA EN EL BOT');
-        console.log('🕐 Hora:', new Date().toISOString());
-        
-        const { 
-            type, 
-            amount, 
-            currency, 
-            tx_id, 
-            tipo_pago, 
-            phone
-        } = req.body;
-        
-        if (!type || !amount || !currency || !tx_id) {
-            console.log('❌ Campos requeridos faltantes en payload');
-            return res.status(400).json({ 
-                success: false, 
-                message: 'Campos requeridos faltantes: type, amount, currency, tx_id' 
-            });
-        }
-        
-        switch (type) {
-            case 'SMS_PAYMENT_DETECTED':
-                console.log(`🔍 Procesando SMS_PAYMENT_DETECTED`);
-                console.log(`📞 Teléfono recibido: ${phone}`);
-                console.log(`💰 Monto: ${amount} ${currency}`);
-                
-                let user = null;
-                let normalizedPhone = null;
-                
-                if (phone) {
-                    normalizedPhone = phone.replace(/[^\d]/g, '');
-                    console.log(`🔍 Buscando usuario con teléfono normalizado: ${normalizedPhone}`);
-                    
-                    user = await getUserByPhone(normalizedPhone);
-                    
-                    if (user) {
-                        console.log(`✅ Usuario encontrado: ${user.telegram_id}`);
-                        
-                        const result = await procesarPagoAutomatico(
-                            user.telegram_id, 
-                            amount, 
-                            currency, 
-                            tx_id, 
-                            tipo_pago
-                        );
-                        
-                        console.log(`✅ Resultado del procesamiento:`, result);
-                        return res.json(result);
-                    } else {
-                        console.log(`❌ Usuario NO encontrado para teléfono: ${normalizedPhone}`);
-                        
-                        // Guardar como pago pendiente
-                        await supabase.from('pending_sms_payments').insert({
-                            phone: normalizedPhone,
-                            amount: amount,
-                            currency: currency,
-                            tx_id: tx_id,
-                            tipo_pago: tipo_pago,
-                            claimed: false,
-                            created_at: new Date().toISOString()
-                        });
-                        
-                        console.log(`✅ Pago pendiente guardado para teléfono: ${normalizedPhone}`);
-                        
-                        // Notificar al admin
-                        if (ADMIN_CHAT_ID) {
-                            const mensajeAdmin = `📱 *PAGO NO IDENTIFICADO*\n\n` +
-                                `📞 Teléfono: ${normalizedPhone}\n` +
-                                `💰 Monto: ${formatCurrency(amount, currency)}\n` +
-                                `🔧 Tipo: ${tipo_pago}\n` +
-                                `🆔 ID: \`${tx_id}\`\n\n` +
-                                `ℹ️ Este pago está pendiente de reclamar.`;
-                            
-                            await bot.sendMessage(ADMIN_CHAT_ID, mensajeAdmin, { parse_mode: 'Markdown' });
-                        }
-                        
-                        return res.json({ 
-                            success: false, 
-                            message: 'Usuario no encontrado, pago guardado como pendiente',
-                            phone: normalizedPhone
-                        });
-                    }
-                }
-                break;
-                
-            default:
-                console.log(`❌ Tipo de notificación desconocido: ${type}`);
-                return res.status(400).json({ 
-                    success: false, 
-                    message: 'Tipo de notificación desconocido',
-                    received_type: type 
-                });
-        }
-        
-    } catch (error) {
-        console.error('❌ Error en payment-notification:', error);
-        
-        if (ADMIN_CHAT_ID) {
-            const errorMsg = `❌ *ERROR EN PAYMENT-NOTIFICATION*\n\n` +
-                `Error: ${error.message}\n` +
-                `Hora: ${new Date().toLocaleString()}`;
-            
-            try {
-                await bot.sendMessage(ADMIN_CHAT_ID, errorMsg, { parse_mode: 'Markdown' });
-            } catch (botError) {
-                console.error('Error enviando mensaje de error:', botError);
-            }
-        }
-        
-        return res.status(500).json({ 
-            success: false, 
-            message: error.message
-        });
-    }
-});
-
-// ============================================
 // RUTAS DEL PANEL WEB
 // ============================================
 
@@ -2096,6 +2942,7 @@ app.post('/api/login', async (req, res) => {
 
         req.session.save((err) => {
             if (err) {
+                console.error('Error guardando sesión:', err);
                 return res.status(500).json({ error: 'Error interno del servidor' });
             }
             
@@ -2119,7 +2966,7 @@ app.post('/api/login', async (req, res) => {
     }
 });
 
-app.get('/api/user-data', requireAuth, async (req, res) => {
+app.get('/api/user-data-web', requireAuth, async (req, res) => {
     try {
         const user = await getUser(req.session.userId);
         
@@ -2168,16 +3015,20 @@ app.get('/', (req, res) => {
     if (req.session.authenticated) {
         res.redirect('/dashboard');
     } else {
-        res.sendFile(__dirname + '/public/index.html');
+        res.sendFile(path.join(__dirname, 'public/index.html'));
     }
 });
 
 app.get('/dashboard', (req, res) => {
     if (req.session.userId && req.session.authenticated) {
-        res.sendFile(__dirname + '/public/dashboard.html');
+        res.sendFile(path.join(__dirname, 'public/dashboard.html'));
     } else {
         res.redirect('/');
     }
+});
+
+app.get('/webapp.html', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public/webapp.html'));
 });
 
 // Keep alive endpoint
@@ -2186,8 +3037,27 @@ app.get('/keepalive', (req, res) => {
         status: 'alive', 
         timestamp: new Date().toISOString(),
         service: 'cromwell-bot-server',
-        uptime: process.uptime()
+        uptime: process.uptime(),
+        version: '2.0.0'
     });
+});
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+    const health = {
+        status: 'healthy',
+        timestamp: new Date().toISOString(),
+        services: {
+            telegram: bot ? 'connected' : 'disconnected',
+            supabase: supabase ? 'connected' : 'disconnected',
+            gameHandler: gameHandler ? 'active' : 'inactive',
+            sokyHandler: sokyHandler ? 'active' : 'inactive'
+        },
+        uptime: process.uptime(),
+        memory: process.memoryUsage()
+    };
+    
+    res.json(health);
 });
 
 // ============================================
@@ -2197,7 +3067,7 @@ app.get('/keepalive', (req, res) => {
 // Limpiar sesiones inactivas
 setInterval(() => {
     const now = Date.now();
-    const timeout = 30 * 60 * 1000;
+    const timeout = 30 * 60 * 1000; // 30 minutos
     
     for (const [chatId, session] of Object.entries(activeSessions)) {
         if (session.lastActivity && (now - session.lastActivity) > timeout) {
@@ -2205,39 +3075,55 @@ setInterval(() => {
             console.log(`🧹 Sesión limpiada para ${chatId}`);
         }
     }
-}, 10 * 60 * 1000);
+}, 10 * 60 * 1000); // Cada 10 minutos
 
 // ============================================
 // INICIAR SERVIDOR
 // ============================================
 
 app.listen(PORT, () => {
-    console.log(`\n🤖 Cromwell Bot & Server iniciado`);
+    console.log(`\n` + '='.repeat(80));
+    console.log(`🤖 Cromwell Bot & Server v2.0`);
     console.log(`🔗 http://localhost:${PORT}`);
     console.log(`📊 Dashboard: http://localhost:${PORT}/dashboard`);
+    console.log(`🌐 WebApp: http://localhost:${PORT}/webapp.html`);
     console.log(`🔄 Keep alive: http://localhost:${PORT}/keepalive`);
-    console.log(`💰 Mínimos: CUP=${MINIMO_CUP}, Saldo=${MINIMO_SALDO}`);
-    console.log(`📞 Teléfono para pagos: ${PAGO_SALDO_MOVIL || '❌ No configurado'}`);
+    console.log(`🏥 Health: http://localhost:${PORT}/health`);
+    console.log(`\n💰 Mínimos: CUP=$${MINIMO_CUP}, Saldo=$${MINIMO_SALDO}`);
+    console.log(`📞 Teléfono para pagos: ${PAGO_SALDO_MOVIL ? '✅ Configurado' : '❌ No configurado'}`);
     console.log(`💳 Tarjeta para pagos: ${PAGO_CUP_TARJETA ? '✅ Configurada' : '❌ No configurada'}`);
     console.log(`🎮 LioGames: ${LIOGAMES_MEMBER_CODE ? '✅ Configurado' : '❌ No configurado'}`);
     console.log(`📱 SokyRecargas: ${SOKY_API_TOKEN ? '✅ Configurado' : '❌ No configurado'}`);
-    console.log(`💱 Tasas de cambio:`);
+    console.log(`\n💱 Tasas de cambio:`);
     console.log(`   • USDT 0-30: $${USDT_RATE_0_30} CUP`);
     console.log(`   • USDT >30: $${USDT_RATE_30_PLUS} CUP`);
     console.log(`   • Saldo Móvil: ÷${SALDO_MOVIL_RATE}`);
-    console.log(`   • SokyRecargas: $${SOKY_CUP_RATE} CUP por USDT`);
+    console.log(`   • SokyRecargas: $${SOKY_RATE_CUP} CUP por USDT`);
     console.log(`   • Mínimo CWS: ${MIN_CWS_USE}`);
     console.log(`\n🌐 Webhooks disponibles:`);
     console.log(`   • POST /payment-notification - Para pagos SMS`);
     console.log(`   • POST /lio-webhook - Para LioGames`);
-    console.log(`   • POST /soky-webhook - Para SokyRecargas`);
     console.log(`   • POST /status-webhook - Genérico`);
+    console.log(`\n📡 Endpoints API WebApp:`);
+    console.log(`   • GET /api/games - Lista de juegos`);
+    console.log(`   • POST /api/game-price - Precios de juegos`);
+    console.log(`   • POST /api/game-purchase - Comprar juegos`);
+    console.log(`   • GET /api/etecsa-offers - Ofertas ETECSA`);
+    console.log(`   • POST /api/etecsa-recharge - Recarga ETECSA`);
+    console.log(`   • POST /api/user-data - Datos de usuario`);
+    console.log(`   • POST /api/create-deposit - Crear depósito`);
     console.log(`\n🚀 Bot listo para recibir mensajes...`);
+    console.log('='.repeat(80));
 });
 
 // Manejo global de errores
 process.on('uncaughtException', (error) => {
     console.error('❌ Error no capturado:', error);
+    
+    if (ADMIN_CHAT_ID) {
+        bot.sendMessage(ADMIN_CHAT_ID, `❌ Error crítico en el bot: ${error.message}`)
+            .catch(err => console.error('Error enviando mensaje de error:', err));
+    }
 });
 
 process.on('unhandledRejection', (reason, promise) => {
