@@ -264,6 +264,25 @@ const GAMES = {
                 ]}
             ]
         }
+    },
+    // Razer Gold Colombia
+    66524: {
+        name: "Razer Gold Colombia",
+        variations: {
+            66529: { name: "Razer Gold COP 15000", backup_price: 3.63 },
+            66530: { name: "Razer Gold COP 30000", backup_price: 7.17 },
+            66531: { name: "Razer Gold COP 50000", backup_price: 11.92 },
+            66532: { name: "Razer Gold COP 60000", backup_price: 14.34 },
+            66533: { name: "Razer Gold COP 75000", backup_price: 17.86 },
+            66534: { name: "Razer Gold COP 90000", backup_price: 21.40 },
+            66535: { name: "Razer Gold COP 100000", backup_price: 23.75 },
+            66536: { name: "Razer Gold COP 150000", backup_price: 33.21 }
+        },
+        input_schema: {
+            fields: [
+                { key: "user_id", label: "Razer Gold ID", required: true, type: "text" }
+            ]
+        }
     }
 };
 
@@ -288,8 +307,6 @@ async function getLioGamesPrice(product_id, variation_id) {
         const signature = signRequest(payload);
         
         console.log(`🔍 Consultando precio para producto ${product_id}, variación ${variation_id}`);
-        console.log(`📦 Payload:`, JSON.stringify(payload));
-        console.log(`🔑 Firma: ${signature.substring(0, 20)}...`);
         
         const response = await axios.post(`${LIOGAMES_API_BASE}/price-check`, payload, {
             headers: {
@@ -298,8 +315,6 @@ async function getLioGamesPrice(product_id, variation_id) {
             },
             timeout: 10000 // 10 segundos timeout
         });
-        
-        console.log(`✅ Respuesta de price-check:`, JSON.stringify(response.data, null, 2));
         
         if (response.data.ok && response.data.data?.price?.discounted) {
             const price = response.data.data.price.discounted;
@@ -314,7 +329,6 @@ async function getLioGamesPrice(product_id, variation_id) {
         if (error.response) {
             console.error('📊 Status:', error.response.status);
             console.error('📝 Data:', error.response.data);
-            console.error('🔤 Headers:', error.response.headers);
         } else if (error.request) {
             console.error('❌ No se recibió respuesta del servidor');
         } else {
@@ -338,7 +352,6 @@ async function createOrder(orderData) {
         };
         
         console.log(`🔄 Creando orden para producto ${orderData.product_id}`);
-        console.log(`📦 Payload:`, JSON.stringify(payload));
         
         const signature = signRequest(payload);
         
@@ -349,8 +362,6 @@ async function createOrder(orderData) {
             },
             timeout: 15000 // 15 segundos timeout
         });
-        
-        console.log(`✅ Respuesta de order-create:`, JSON.stringify(response.data, null, 2));
         
         return response.data;
     } catch (error) {
@@ -429,8 +440,6 @@ function roundPrice(amount) {
 
 // Calcular todos los precios para un paquete
 function calculateAllPrices(usdtPrice) {
-    console.log(`🧮 Calculando precios para $${usdtPrice} USDT`);
-    
     const cupPrice = calculateCupFromUsdt(usdtPrice);
     const saldoPrice = calculateSaldoMovilFromCup(cupPrice);
     
@@ -441,7 +450,6 @@ function calculateAllPrices(usdtPrice) {
         usdt: usdtPrice
     };
     
-    console.log(`💰 Precios calculados:`, prices);
     return prices;
 }
 
@@ -621,7 +629,6 @@ class GameRechargeHandler {
         
         // Verificar cache
         if (this.priceCache[cacheKey]) {
-            console.log(`📊 Usando precio en cache para ${cacheKey}`);
             return this.priceCache[cacheKey];
         }
         
@@ -643,7 +650,6 @@ class GameRechargeHandler {
         const variation = game?.variations[varId];
         
         if (game && variation && variation.backup_price) {
-            console.log(`🔄 Usando precio de respaldo para ${game.name} - ${variation.name}: $${variation.backup_price} USDT`);
             const prices = calculateAllPrices(variation.backup_price);
             this.priceCache[cacheKey] = prices;
             return prices;
@@ -715,7 +721,7 @@ class GameRechargeHandler {
         });
     }
     
-    // Mostrar precios y métodos de pago para una variación
+    // Mostrar precios y métodos de pago para una variación (SIN MOSTRAR PRECIO USDT)
     async showPackagePrices(chatId, messageId, gameId, varId) {
         const session = this.initUserSession(chatId);
         const game = GAMES[gameId];
@@ -744,9 +750,8 @@ class GameRechargeHandler {
         session.prices = prices;
         
         let message = `💰 *${game.name}*\n` +
-            `📦 *Paquete:* ${variation.name}\n` +
-            `💵 *Precio original:* $${prices.usdt ? prices.usdt.toFixed(2) : 'N/A'} USDT\n\n` +
-            `*Precios en tu moneda:*\n\n`;
+            `📦 *Paquete:* ${variation.name}\n\n` +
+            `*Precios disponibles:*\n\n`;
         
         if (prices.cup) {
             message += `💳 *CUP:* ${formatCupPrice(prices.cup)}\n`;
