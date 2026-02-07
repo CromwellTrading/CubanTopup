@@ -1,4 +1,4 @@
-// game_recharges.js
+// game_recharges.js - VERSIÓN ACTUALIZADA
 require('dotenv').config();
 const crypto = require('crypto');
 const axios = require('axios');
@@ -18,25 +18,25 @@ const SALDO_MOVIL_RATE = parseFloat(process.env.SALDO_MOVIL_RATE || 2.1); // Div
 const MIN_CWS_USE = parseInt(process.env.MIN_CWS_USE || 100);
 
 // ============================================
-// DATOS DE JUEGOS (Extraídos de tu lista)
+// DATOS DE JUEGOS (ACTUALIZADOS - SIN USDT/GOLD)
 // ============================================
 
 const GAMES = {
     // Arena Breakout
     66584: {
-        name: "Arena Breakout (MOBILE)",
+        name: "Arena Breakout",
         variations: {
-            528315: { name: "60 + 6 Bonds", price_gold: 0.81 },
-            528316: { name: "310 + 25 Bonds", price_gold: 3.97 },
-            528317: { name: "630 + 45 Bonds", price_gold: 7.93 },
-            528318: { name: "1580 + 110 Bonds", price_gold: 19.82 },
-            528319: { name: "3200 + 200 Bonds", price_gold: 39.58 },
-            528320: { name: "6500 + 320 Bonds", price_gold: 76.80 },
-            528321: { name: "Beginners Select (PACK)", price_gold: 0.82 },
-            528322: { name: "Bulletproof safety container (30 days)", price_gold: 2.40 },
-            528323: { name: "Advanced Battle Pass", price_gold: 3.99 },
-            528324: { name: "Composite safety container (30 days)", price_gold: 7.16 },
-            528325: { name: "Premium Battle Pass", price_gold: 11.87 }
+            528315: { name: "60 + 6 Bonds" },
+            528316: { name: "310 + 25 Bonds" },
+            528317: { name: "630 + 45 Bonds" },
+            528318: { name: "1580 + 110 Bonds" },
+            528319: { name: "3200 + 200 Bonds" },
+            528320: { name: "6500 + 320 Bonds" },
+            528321: { name: "Beginners Select (PACK)" },
+            528322: { name: "Bulletproof safety container (30 days)" },
+            528323: { name: "Advanced Battle Pass" },
+            528324: { name: "Composite safety container (30 days)" },
+            528325: { name: "Premium Battle Pass" }
         },
         input_schema: {
             fields: [
@@ -49,13 +49,13 @@ const GAMES = {
     67528: {
         name: "Zenless Zone Zero",
         variations: {
-            67532: { name: "Inter-Knot Membership", price_gold: 4.49 },
-            67533: { name: "60 Monochrome", price_gold: 0.88 },
-            67534: { name: "300 + 30 Monochrome", price_gold: 4.49 },
-            67535: { name: "980 + 110 Monochrome", price_gold: 13.54 },
-            67536: { name: "1980 + 260 Monochrome", price_gold: 29.35 },
-            67537: { name: "3280 + 600 Monochrome", price_gold: 45.17 },
-            67538: { name: "6480 + 1600 Monochrome", price_gold: 90.36 }
+            67532: { name: "Inter-Knot Membership" },
+            67533: { name: "60 Monochrome" },
+            67534: { name: "300 + 30 Monochrome" },
+            67535: { name: "980 + 110 Monochrome" },
+            67536: { name: "1980 + 260 Monochrome" },
+            67537: { name: "3280 + 600 Monochrome" },
+            67538: { name: "6480 + 1600 Monochrome" }
         },
         input_schema: {
             fields: [
@@ -71,12 +71,12 @@ const GAMES = {
     71886: {
         name: "Wuthering Waves",
         variations: {
-            456266: { name: "60 Lunites", price_gold: 0.96 },
-            456267: { name: "330 Lunites (300 + 30 Bonus)", price_gold: 4.84 },
-            456268: { name: "1090 Lunites (980 + 110 Bonus)", price_gold: 14.67 },
-            456269: { name: "2240 Lunites (1980 + 260 Bonus)", price_gold: 29.00 },
-            456270: { name: "3880 Lunites (3280 + 600 Bonus)", price_gold: 49.80 },
-            456271: { name: "8080 Lunites (6480 + 1600 Bonus)", price_gold: 97.13 }
+            456266: { name: "60 Lunites" },
+            456267: { name: "330 Lunites (300 + 30 Bonus)" },
+            456268: { name: "1090 Lunites (980 + 110 Bonus)" },
+            456269: { name: "2240 Lunites (1980 + 260 Bonus)" },
+            456270: { name: "3880 Lunites (3280 + 600 Bonus)" },
+            456271: { name: "8080 Lunites (6480 + 1600 Bonus)" }
         },
         input_schema: {
             fields: [
@@ -92,18 +92,18 @@ const GAMES = {
     65482: {
         name: "Mobile Legends",
         variations: {
-            83222: { name: "Diamante × 500 + 65 (doble)", price_gold: 7.16 },
-            83223: { name: "Diamante × 250 + 25 (doble)", price_gold: 3.49 },
-            83224: { name: "Diamante × 150 +15 (doble)", price_gold: 2.17 },
-            83225: { name: "Diamante × 50 + 5 (doble)", price_gold: 0.73 },
-            77731: { name: "Diamante × 78 + 8", price_gold: 1.13 },
-            77732: { name: "Diamante × 156 +16", price_gold: 2.25 },
-            77733: { name: "Diamante × 234 +23", price_gold: 3.28 },
-            77734: { name: "Diamante×625 +81", price_gold: 8.87 },
-            77735: { name: "Diamante × 1860 +335", price_gold: 26.84 },
-            77736: { name: "Diamante × 3099 +589", price_gold: 46.02 },
-            77737: { name: "Pasaje del Crepúsculo", price_gold: 7.19 },
-            77738: { name: "Pase semanal Diamante", price_gold: 1.43 }
+            83222: { name: "Diamante × 500 + 65 (doble)" },
+            83223: { name: "Diamante × 250 + 25 (doble)" },
+            83224: { name: "Diamante × 150 +15 (doble)" },
+            83225: { name: "Diamante × 50 + 5 (doble)" },
+            77731: { name: "Diamante × 78 + 8" },
+            77732: { name: "Diamante × 156 +16" },
+            77733: { name: "Diamante × 234 +23" },
+            77734: { name: "Diamante×625 +81" },
+            77735: { name: "Diamante × 1860 +335" },
+            77736: { name: "Diamante × 3099 +589" },
+            77737: { name: "Pasaje del Crepúsculo" },
+            77738: { name: "Pase semanal Diamante" }
         },
         input_schema: {
             fields: [
@@ -116,19 +116,18 @@ const GAMES = {
     65871: {
         name: "Free Fire Global",
         variations: {
-            462737: { name: "Membresía mensual", price_gold: 8.49 },
-            462738: { name: "Membresía semanal", price_gold: 1.81 },
-            65880: { name: "100 diamantes", price_gold: 0.92 },
-            65881: { name: "310 diamantes", price_gold: 2.77 },
-            65882: { name: "530 diamantes", price_gold: 4.26 },
-            65883: { name: "1080 diamantes", price_gold: 8.52 },
-            65884: { name: "2200 diamantes", price_gold: 17.35 },
-            65885: { name: "5600 diamantes", price_gold: 41.51 }
+            462737: { name: "Membresía mensual" },
+            462738: { name: "Membresía semanal" },
+            65880: { name: "100 diamantes" },
+            65881: { name: "310 diamantes" },
+            65882: { name: "530 diamantes" },
+            65883: { name: "1080 diamantes" },
+            65884: { name: "2200 diamantes" },
+            65885: { name: "5600 diamantes" }
         },
         input_schema: {
             fields: [
                 { key: "user_id", label: "User ID", required: true, type: "text" }
-                // Free Fire no requiere server_id
             ]
         }
     },
@@ -136,15 +135,15 @@ const GAMES = {
     66452: {
         name: "Genshin Impact",
         variations: {
-            394118: { name: "60 Cristales Génesis", price_gold: 0.65 },
-            394119: { name: "120 Cristales Génesis", price_gold: 1.29 },
-            394120: { name: "300 + 30 Cristales Génesis", price_gold: 3.25 },
-            394121: { name: "980+110 Cristales Génesis", price_gold: 9.93 },
-            394122: { name: "1980+260 Cristales Génesis", price_gold: 20.80 },
-            394123: { name: "3280 + 600 Cristales Génesis", price_gold: 33.67 },
-            394124: { name: "6480 + 1600 Cristales Génesis", price_gold: 64.24 },
-            394125: { name: "9760 + 2200 Cristales Génesis", price_gold: 100.58 },
-            394126: { name: "Bendición de la Luna Welkin", price_gold: 3.20 }
+            394118: { name: "60 Cristales Génesis" },
+            394119: { name: "120 Cristales Génesis" },
+            394120: { name: "300 + 30 Cristales Génesis" },
+            394121: { name: "980+110 Cristales Génesis" },
+            394122: { name: "1980+260 Cristales Génesis" },
+            394123: { name: "3280 + 600 Cristales Génesis" },
+            394124: { name: "6480 + 1600 Cristales Génesis" },
+            394125: { name: "9760 + 2200 Cristales Génesis" },
+            394126: { name: "Bendición de la Luna Welkin" }
         },
         input_schema: {
             fields: [
@@ -160,19 +159,18 @@ const GAMES = {
     },
     // PUBG Mobile
     66719: {
-        name: "PUBG Mobile (Global)",
+        name: "PUBG Mobile",
         variations: {
-            66726: { name: "60 UC", price_gold: 0.84 },
-            66727: { name: "300 + 25 UC", price_gold: 4.24 },
-            66728: { name: "600 + 60 UC", price_gold: 8.50 },
-            66729: { name: "1500 + 300 UC", price_gold: 21.26 },
-            66730: { name: "3000 + 850 UC", price_gold: 42.52 },
-            66731: { name: "6000 + 2100 UC", price_gold: 85.06 }
+            66726: { name: "60 UC" },
+            66727: { name: "300 + 25 UC" },
+            66728: { name: "600 + 60 UC" },
+            66729: { name: "1500 + 300 UC" },
+            66730: { name: "3000 + 850 UC" },
+            66731: { name: "6000 + 2100 UC" }
         },
         input_schema: {
             fields: [
                 { key: "user_id", label: "User ID", required: true, type: "text" }
-                // PUBG no requiere server_id
             ]
         }
     },
@@ -180,21 +178,20 @@ const GAMES = {
     67795: {
         name: "Honor de Reyes",
         variations: {
-            397753: { name: "16 Fichas", price_gold: 0.19 },
-            397754: { name: "80 Fichas", price_gold: 0.85 },
-            397755: { name: "240 Fichas", price_gold: 2.57 },
-            397756: { name: "400 Fichas", price_gold: 4.30 },
-            397757: { name: "560 Fichas", price_gold: 6.01 },
-            397758: { name: "800 + 30 Fichas", price_gold: 8.52 },
-            397759: { name: "1200 + 45 Fichas", price_gold: 12.79 },
-            397760: { name: "2400 + 108 Fichas", price_gold: 25.56 },
-            397761: { name: "4000 + 180 Fichas", price_gold: 42.21 },
-            397762: { name: "8000 + 360 Fichas", price_gold: 84.42 }
+            397753: { name: "16 Fichas" },
+            397754: { name: "80 Fichas" },
+            397755: { name: "240 Fichas" },
+            397756: { name: "400 Fichas" },
+            397757: { name: "560 Fichas" },
+            397758: { name: "800 + 30 Fichas" },
+            397759: { name: "1200 + 45 Fichas" },
+            397760: { name: "2400 + 108 Fichas" },
+            397761: { name: "4000 + 180 Fichas" },
+            397762: { name: "8000 + 360 Fichas" }
         },
         input_schema: {
             fields: [
                 { key: "user_id", label: "User ID", required: true, type: "text" }
-                // Honor de Reyes no requiere server_id
             ]
         }
     },
@@ -202,24 +199,23 @@ const GAMES = {
     68075: {
         name: "Golpe de Sangre",
         variations: {
-            394594: { name: "100 + 5 de oro", price_gold: 0.67 },
-            394595: { name: "200 + 10 de oro", price_gold: 1.33 },
-            394596: { name: "300 + 20 de oro", price_gold: 1.97 },
-            394597: { name: "500 + 40 de oro", price_gold: 3.28 },
-            394598: { name: "800 + 60 de oro", price_gold: 5.26 },
-            394599: { name: "1000 + 100 de oro", price_gold: 6.57 },
-            394600: { name: "2000 + 200 de oro", price_gold: 13.14 },
-            394601: { name: "3000 + 360 de oro", price_gold: 19.70 },
-            394602: { name: "5000 + 800 de oro", price_gold: 32.84 },
-            394603: { name: "7000 + 1060 de oro", price_gold: 45.97 },
-            394604: { name: "Ultra aspecto afortunado (cofre)", price_gold: 0.40 },
-            394605: { name: "Subir de nivel (Pase)", price_gold: 1.58 },
-            394606: { name: "Golpe premium (Pase)", price_gold: 7.11 }
+            394594: { name: "100 + 5 de oro" },
+            394595: { name: "200 + 10 de oro" },
+            394596: { name: "300 + 20 de oro" },
+            394597: { name: "500 + 40 de oro" },
+            394598: { name: "800 + 60 de oro" },
+            394599: { name: "1000 + 100 de oro" },
+            394600: { name: "2000 + 200 de oro" },
+            394601: { name: "3000 + 360 de oro" },
+            394602: { name: "5000 + 800 de oro" },
+            394603: { name: "7000 + 1060 de oro" },
+            394604: { name: "Ultra aspecto afortunado (cofre)" },
+            394605: { name: "Subir de nivel (Pase)" },
+            394606: { name: "Golpe premium (Pase)" }
         },
         input_schema: {
             fields: [
                 { key: "user_id", label: "User ID", required: true, type: "text" }
-                // Golpe de Sangre no requiere server_id
             ]
         }
     },
@@ -227,13 +223,13 @@ const GAMES = {
     66557: {
         name: "Honkai: Star Rail",
         variations: {
-            66561: { name: "60 Fragmento onírico", price_gold: 0.62 },
-            66562: { name: "300 + 30 Fragmento onírico", price_gold: 3.19 },
-            66563: { name: "980 + 110 Fragmento onírico", price_gold: 9.74 },
-            66564: { name: "1980 + 260 Fragmento onírico", price_gold: 19.98 },
-            66565: { name: "3280 + 600 Fragmento onírico", price_gold: 32.53 },
-            66566: { name: "6480 + 1600 Fragmento onírico", price_gold: 63.52 },
-            66567: { name: "Pase de suministro exprés", price_gold: 3.19 }
+            66561: { name: "60 Fragmento onírico" },
+            66562: { name: "300 + 30 Fragmento onírico" },
+            66563: { name: "980 + 110 Fragmento onírico" },
+            66564: { name: "1980 + 260 Fragmento onírico" },
+            66565: { name: "3280 + 600 Fragmento onírico" },
+            66566: { name: "6480 + 1600 Fragmento onírico" },
+            66567: { name: "Pase de suministro exprés" }
         },
         input_schema: {
             fields: [
@@ -259,28 +255,8 @@ function signRequest(payload) {
     return crypto.createHmac('sha256', LIOGAMES_SECRET).update(body).digest('hex');
 }
 
-// Consultar saldo en LioGames
-async function checkLioGamesBalance() {
-    try {
-        const payload = { member_code: LIOGAMES_MEMBER_CODE };
-        const signature = signRequest(payload);
-        
-        const response = await axios.post(`${LIOGAMES_API_BASE}/balance`, payload, {
-            headers: {
-                'Content-Type': 'application/json',
-                'x-liog-sign': signature
-            }
-        });
-        
-        return response.data;
-    } catch (error) {
-        console.error('Error consultando saldo LioGames:', error.response?.data || error.message);
-        throw error;
-    }
-}
-
-// Consultar precio con descuento
-async function checkPrice(product_id, variation_id) {
+// Obtener precio real desde LioGames
+async function getLioGamesPrice(product_id, variation_id) {
     try {
         const payload = { 
             member_code: LIOGAMES_MEMBER_CODE,
@@ -296,10 +272,13 @@ async function checkPrice(product_id, variation_id) {
             }
         });
         
-        return response.data;
+        if (response.data.ok && response.data.data?.price?.discounted) {
+            return response.data.data.price.discounted;
+        }
+        return null;
     } catch (error) {
-        console.error('Error consultando precio:', error.response?.data || error.message);
-        throw error;
+        console.error('Error consultando precio LioGames:', error.response?.data || error.message);
+        return null;
     }
 }
 
@@ -355,25 +334,8 @@ async function checkOrderStatus(order_id, partner_ref) {
     }
 }
 
-// Consultar esquema de producto
-async function getProductSchema(product_id, variation_id) {
-    try {
-        const response = await axios.get(`${LIOGAMES_API_BASE}/product-schema`, {
-            params: {
-                product_id: parseInt(product_id),
-                variation_id: parseInt(variation_id)
-            }
-        });
-        
-        return response.data;
-    } catch (error) {
-        console.error('Error consultando esquema:', error.response?.data || error.message);
-        throw error;
-    }
-}
-
 // ============================================
-// FUNCIONES DE CONVERSIÓN DE MONEDA
+// FUNCIONES DE CONVERSIÓN DE PRECIOS
 // ============================================
 
 // Calcular precio en CUP según cantidad de USDT
@@ -391,29 +353,35 @@ function calculateSaldoMovilFromCup(cupAmount) {
     return Math.ceil(raw / 5) * 5; // Redondear al múltiplo de 5 más cercano hacia arriba
 }
 
-// Calcular precio en CWS (1 CWS = 10 CUP de descuento)
-function calculateCwsFromCup(cupAmount) {
-    return Math.floor(cupAmount / 10);
+// Formatear precio en CUP
+function formatCupPrice(amount) {
+    return `$${amount.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}`;
 }
 
-// Convertir precios a diferentes métodos de pago
-function convertPrice(usdtPrice, method) {
+// Formatear precio en Saldo Móvil
+function formatSaldoPrice(amount) {
+    return `$${amount.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}`;
+}
+
+// Redondear precio
+function roundPrice(amount) {
+    return Math.ceil(amount); // Redondear hacia arriba
+}
+
+// Calcular todos los precios para un paquete
+function calculateAllPrices(usdtPrice) {
     const cupPrice = calculateCupFromUsdt(usdtPrice);
+    const saldoPrice = calculateSaldoMovilFromCup(cupPrice);
     
-    switch (method) {
-        case 'cup':
-            return cupPrice;
-        case 'saldo':
-            return calculateSaldoMovilFromCup(cupPrice);
-        case 'cws':
-            return calculateCwsFromCup(cupPrice);
-        default:
-            return cupPrice;
-    }
+    return {
+        cup: roundPrice(cupPrice),
+        saldo: saldoPrice,
+        cws: saldoPrice // CWS es IGUAL al saldo móvil
+    };
 }
 
 // ============================================
-// TECLADOS PARA EL BOT
+// TECLADOS PARA EL BOT (ACTUALIZADOS)
 // ============================================
 
 // Teclado principal de juegos
@@ -424,10 +392,10 @@ function createGamesListKeyboard() {
     // Crear filas de 2 botones cada una
     for (let i = 0; i < games.length; i += 2) {
         const row = [];
-        row.push({ text: games[i][1].name, callback_data: `game_select:${games[i][0]}` });
+        row.push({ text: `🎮 ${games[i][1].name}`, callback_data: `game_select:${games[i][0]}` });
         
         if (games[i + 1]) {
-            row.push({ text: games[i + 1][1].name, callback_data: `game_select:${games[i + 1][0]}` });
+            row.push({ text: `🎮 ${games[i + 1][1].name}`, callback_data: `game_select:${games[i + 1][0]}` });
         }
         
         rows.push(row);
@@ -439,7 +407,7 @@ function createGamesListKeyboard() {
     return { inline_keyboard: rows };
 }
 
-// Teclado de variaciones de un juego
+// Teclado de variaciones de un juego (SOLO NOMBRE)
 function createVariationsKeyboard(gameId) {
     const game = GAMES[gameId];
     if (!game) return null;
@@ -452,14 +420,14 @@ function createVariationsKeyboard(gameId) {
         const row = [];
         const [varId, varData] = variations[i];
         row.push({ 
-            text: `${varData.name} - $${varData.price_gold}`, 
+            text: `📦 ${varData.name}`, 
             callback_data: `var_select:${gameId}:${varId}` 
         });
         
         if (variations[i + 1]) {
             const [varId2, varData2] = variations[i + 1];
             row.push({ 
-                text: `${varData2.name} - $${varData2.price_gold}`, 
+                text: `📦 ${varData2.name}`, 
                 callback_data: `var_select:${gameId}:${varId2}` 
             });
         }
@@ -476,28 +444,24 @@ function createVariationsKeyboard(gameId) {
     return { inline_keyboard: rows };
 }
 
-// Teclado de métodos de pago
-function createPaymentMethodsKeyboard(gameId, varId, usdtPrice) {
-    const cupPrice = calculateCupFromUsdt(usdtPrice);
-    const saldoPrice = calculateSaldoMovilFromCup(cupPrice);
-    const cwsPrice = calculateCwsFromCup(cupPrice);
-    
+// Teclado de métodos de pago (CON PRECIOS EN CUP/SALDO/CWS)
+function createPaymentMethodsKeyboard(gameId, varId, prices) {
     const rows = [
         [{ 
-            text: `💳 Pagar con CUP - $${cupPrice.toFixed(2)}`, 
-            callback_data: `pay_method:${gameId}:${varId}:cup:${cupPrice}` 
+            text: `💳 Pagar con CUP - ${formatCupPrice(prices.cup)}`, 
+            callback_data: `pay_method:${gameId}:${varId}:cup:${prices.cup}` 
         }],
         [{ 
-            text: `📱 Pagar con Saldo Móvil - $${saldoPrice.toFixed(2)}`, 
-            callback_data: `pay_method:${gameId}:${varId}:saldo:${saldoPrice}` 
+            text: `📱 Pagar con Saldo Móvil - ${formatSaldoPrice(prices.saldo)}`, 
+            callback_data: `pay_method:${gameId}:${varId}:saldo:${prices.saldo}` 
         }]
     ];
     
-    // Solo mostrar CWS si el precio es suficiente
-    if (cwsPrice >= MIN_CWS_USE) {
+    // Solo mostrar CWS si el precio es suficiente (mínimo 100 CWS)
+    if (prices.cws >= MIN_CWS_USE) {
         rows.push([{ 
-            text: `🎫 Pagar con CWS - ${cwsPrice} CWS`, 
-            callback_data: `pay_method:${gameId}:${varId}:cws:${cwsPrice}` 
+            text: `🎫 Pagar con CWS - ${prices.cws} CWS`, 
+            callback_data: `pay_method:${gameId}:${varId}:cws:${prices.cws}` 
         }]);
     }
     
@@ -554,6 +518,7 @@ class GameRechargeHandler {
         this.bot = bot;
         this.supabase = supabase;
         this.userSessions = {};
+        this.priceCache = {}; // Cache para precios
     }
     
     // Iniciar sesión de recarga para usuario
@@ -566,7 +531,8 @@ class GameRechargeHandler {
                 paymentMethod: null,
                 paymentAmount: null,
                 inputData: {},
-                currentInputField: 0
+                currentInputField: 0,
+                prices: null
             };
         }
         return this.userSessions[chatId];
@@ -577,6 +543,33 @@ class GameRechargeHandler {
         delete this.userSessions[chatId];
     }
     
+    // Obtener precio del paquete
+    async getPackagePrice(gameId, varId) {
+        const cacheKey = `${gameId}_${varId}`;
+        
+        // Verificar cache
+        if (this.priceCache[cacheKey]) {
+            return this.priceCache[cacheKey];
+        }
+        
+        try {
+            // Obtener precio de LioGames
+            const usdtPrice = await getLioGamesPrice(gameId, varId);
+            
+            if (usdtPrice !== null) {
+                const prices = calculateAllPrices(usdtPrice);
+                this.priceCache[cacheKey] = prices;
+                return prices;
+            }
+        } catch (error) {
+            console.error('Error obteniendo precio:', error);
+        }
+        
+        // Precio por defecto (en caso de error)
+        const defaultPrices = calculateAllPrices(1.0); // 1 USDT por defecto
+        return defaultPrices;
+    }
+    
     // Mostrar lista de juegos
     async showGamesList(chatId, messageId = null) {
         const message = `🎮 *Selecciona un Juego*\n\n` +
@@ -584,10 +577,11 @@ class GameRechargeHandler {
             `*Métodos de pago aceptados:*\n` +
             `💳 CUP - Saldo en tu billetera\n` +
             `📱 Saldo Móvil - Saldo en tu billetera\n` +
-            `🎫 CWS - Tokens (mínimo ${MIN_CWS_USE} CWS)\n\n` +
-            `*Conversión:*\n` +
-            `• 1 CWS = $10 CUP de descuento\n` +
-            `• Mínimo para usar CWS: ${MIN_CWS_USE} CWS`;
+            `🎫 CWS - Moneda interna de la tienda\n\n` +
+            `🎫 *Sobre los CWS:*\n` +
+            `• 1 CWS = 1 Saldo Móvil (mismo valor)\n` +
+            `• Mínimo para usar: ${MIN_CWS_USE} CWS\n` +
+            `• Es Saldo Móvil tokenizado para usar en la tienda`;
         
         const keyboard = createGamesListKeyboard();
         
@@ -606,7 +600,7 @@ class GameRechargeHandler {
         }
     }
     
-    // Mostrar variaciones de un juego
+    // Mostrar variaciones de un juego (SOLO NOMBRES)
     async showGameVariations(chatId, messageId, gameId) {
         const session = this.initUserSession(chatId);
         const game = GAMES[gameId];
@@ -624,8 +618,7 @@ class GameRechargeHandler {
         session.currentStep = 'selecting_variation';
         
         const message = `🎮 *${game.name}*\n\n` +
-            `Selecciona el paquete que deseas comprar:\n\n` +
-            `*Precios en USDT (nivel GOLD):*`;
+            `Selecciona el paquete que deseas comprar:`;
         
         const keyboard = createVariationsKeyboard(gameId);
         
@@ -637,14 +630,14 @@ class GameRechargeHandler {
         });
     }
     
-    // Mostrar métodos de pago para una variación
-    async showPaymentMethods(chatId, messageId, gameId, varId) {
+    // Mostrar precios y métodos de pago para una variación
+    async showPackagePrices(chatId, messageId, gameId, varId) {
         const session = this.initUserSession(chatId);
         const game = GAMES[gameId];
         const variation = game?.variations[varId];
         
         if (!game || !variation) {
-            await this.bot.editMessageText('❌ Variación no encontrada.', {
+            await this.bot.editMessageText('❌ Paquete no encontrado.', {
                 chat_id: chatId,
                 message_id: messageId,
                 reply_markup: { inline_keyboard: [[{ text: '🔙 Volver', callback_data: `game_select:${gameId}` }]] }
@@ -655,29 +648,25 @@ class GameRechargeHandler {
         session.selectedVariation = varId;
         session.currentStep = 'selecting_payment';
         
-        // Obtener precio actualizado
-        let usdtPrice = variation.price_gold;
-        try {
-            const priceData = await checkPrice(gameId, varId);
-            if (priceData.ok && priceData.data?.price?.discounted) {
-                usdtPrice = priceData.data.price.discounted;
-            }
-        } catch (error) {
-            console.log('Usando precio local, error al consultar:', error.message);
-        }
+        // Obtener precios
+        await this.bot.editMessageText('⏳ *Consultando precios...*', {
+            chat_id: chatId,
+            message_id: messageId,
+            parse_mode: 'Markdown'
+        });
         
-        const cupPrice = calculateCupFromUsdt(usdtPrice);
-        const saldoPrice = calculateSaldoMovilFromCup(cupPrice);
+        const prices = await this.getPackagePrice(gameId, varId);
+        session.prices = prices;
         
         const message = `💰 *${game.name}*\n` +
             `📦 *Paquete:* ${variation.name}\n\n` +
-            `*Precios:*\n` +
-            `🪙 USDT: $${usdtPrice.toFixed(2)} (GOLD)\n` +
-            `💳 CUP: $${cupPrice.toFixed(2)}\n` +
-            `📱 Saldo Móvil: $${saldoPrice.toFixed(2)}\n\n` +
+            `*Precios disponibles:*\n\n` +
+            `💳 *CUP:* ${formatCupPrice(prices.cup)}\n` +
+            `📱 *Saldo Móvil:* ${formatSaldoPrice(prices.saldo)}\n` +
+            `🎫 *CWS:* ${prices.cws} CWS\n\n` +
             `Selecciona el método de pago:`;
         
-        const keyboard = createPaymentMethodsKeyboard(gameId, varId, usdtPrice);
+        const keyboard = createPaymentMethodsKeyboard(gameId, varId, prices);
         
         await this.bot.editMessageText(message, {
             chat_id: chatId,
@@ -805,35 +794,28 @@ class GameRechargeHandler {
         const game = GAMES[gameId];
         const variation = game.variations[varId];
         
-        let usdtPrice = variation.price_gold;
-        try {
-            const priceData = await checkPrice(gameId, varId);
-            if (priceData.ok && priceData.data?.price?.discounted) {
-                usdtPrice = priceData.data.price.discounted;
-            }
-        } catch (error) {
-            console.log('Usando precio local para resumen');
-        }
-        
-        const cupPrice = calculateCupFromUsdt(usdtPrice);
         const method = session.paymentMethod;
         const amount = session.paymentAmount;
         
         let methodText = '';
         let methodSymbol = '';
+        let amountText = '';
         
         switch (method) {
             case 'cup':
                 methodText = 'CUP';
                 methodSymbol = '💳';
+                amountText = formatCupPrice(amount);
                 break;
             case 'saldo':
                 methodText = 'Saldo Móvil';
                 methodSymbol = '📱';
+                amountText = formatSaldoPrice(amount);
                 break;
             case 'cws':
                 methodText = 'CWS';
                 methodSymbol = '🎫';
+                amountText = `${amount} CWS`;
                 break;
         }
         
@@ -841,7 +823,7 @@ class GameRechargeHandler {
             `🎮 *Juego:* ${game.name}\n` +
             `📦 *Paquete:* ${variation.name}\n` +
             `${methodSymbol} *Método de pago:* ${methodText}\n` +
-            `💰 *Monto a pagar:* ${method === 'cws' ? `${amount} CWS` : `$${amount.toFixed(2)} ${methodText}`}\n\n` +
+            `💰 *Monto a pagar:* ${amountText}\n\n` +
             `*Datos del juego:*\n`;
         
         // Mostrar datos ingresados
@@ -926,8 +908,8 @@ class GameRechargeHandler {
         if (!hasEnoughBalance) {
             await this.bot.editMessageText(
                 `❌ *Saldo insuficiente*\n\n` +
-                `Necesitas: ${method === 'cws' ? `${price} CWS` : `$${price.toFixed(2)} ${method}`}\n` +
-                `Tienes: ${method === 'cws' ? `${currentBalance} CWS` : `$${currentBalance.toFixed(2)} ${method}`}\n\n` +
+                `Necesitas: ${method === 'cws' ? `${price} CWS` : method === 'cup' ? formatCupPrice(price) : formatSaldoPrice(price)}\n` +
+                `Tienes: ${method === 'cws' ? `${currentBalance} CWS` : method === 'cup' ? formatCupPrice(currentBalance) : formatSaldoPrice(currentBalance)}\n\n` +
                 `Por favor, recarga tu billetera primero.`,
                 {
                     chat_id: chatId,
@@ -949,13 +931,6 @@ class GameRechargeHandler {
         const variation = game.variations[varId];
         
         try {
-            // Obtener precio actualizado
-            let usdtPrice = variation.price_gold;
-            const priceData = await checkPrice(gameId, varId);
-            if (priceData.ok && priceData.data?.price?.discounted) {
-                usdtPrice = priceData.data.price.discounted;
-            }
-            
             await this.bot.editMessageText('⏳ *Creando orden en LioGames...*', {
                 chat_id: chatId,
                 message_id: messageId,
@@ -1003,8 +978,7 @@ class GameRechargeHandler {
                         package: variation.name,
                         game_data: session.inputData,
                         lio_order_id: orderResult.data.order_id,
-                        usdt_price: usdtPrice,
-                        cup_price: calculateCupFromUsdt(usdtPrice)
+                        prices: session.prices
                     },
                     completed_at: new Date().toISOString()
                 });
@@ -1013,8 +987,7 @@ class GameRechargeHandler {
             let successMessage = `✅ *¡Recarga exitosa!*\n\n` +
                 `🎮 *Juego:* ${game.name}\n` +
                 `📦 *Paquete:* ${variation.name}\n` +
-                `💰 *Precio USDT:* $${usdtPrice.toFixed(2)}\n` +
-                `${method === 'cws' ? '🎫' : method === 'saldo' ? '📱' : '💳'} *Pagado con:* ${method === 'cws' ? `${price} CWS` : `$${price.toFixed(2)} ${method}`}\n` +
+                `${method === 'cws' ? '🎫' : method === 'saldo' ? '📱' : '💳'} *Pagado con:* ${method === 'cws' ? `${price} CWS` : method === 'cup' ? formatCupPrice(price) : formatSaldoPrice(price)}\n` +
                 `🆔 *ID de orden:* ${orderResult.data.order_id}\n\n` +
                 `*Datos ingresados:*\n`;
             
@@ -1045,8 +1018,7 @@ class GameRechargeHandler {
                     `🆔 ID: ${chatId}\n` +
                     `🎮 Juego: ${game.name}\n` +
                     `📦 Paquete: ${variation.name}\n` +
-                    `💰 Precio USDT: $${usdtPrice.toFixed(2)}\n` +
-                    `💳 Pagado con: ${method === 'cws' ? `${price} CWS` : `$${price.toFixed(2)} ${method}`}\n` +
+                    `💳 Pagado con: ${method === 'cws' ? `${price} CWS` : method === 'cup' ? formatCupPrice(price) : formatSaldoPrice(price)}\n` +
                     `🆔 Orden LioGames: ${orderResult.data.order_id}`;
                 
                 await this.bot.sendMessage(process.env.ADMIN_GROUP, adminMsg, { parse_mode: 'Markdown' });
@@ -1153,7 +1125,7 @@ class GameRechargeHandler {
                     break;
                     
                 case 'var_select':
-                    await this.showPaymentMethods(chatId, messageId, param1, param2);
+                    await this.showPackagePrices(chatId, messageId, param1, param2);
                     break;
                     
                 case 'pay_method':
