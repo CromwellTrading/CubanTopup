@@ -2,66 +2,83 @@
 const GAME_IMAGES = {
     // Arena Breakout
     66584: {
-        logo: 'https://[PROJECT-ID].supabase.co/storage/v1/object/public/game-images/logos/arena-breakout.png',
-        color: '#FF6B35'
+        logo: '/assets/games/arena-breakout.png',
+        color: '#FF6B35',
+        icon: '🎯'
     },
     // Zenless Zone Zero
     67528: {
-        logo: 'https://[PROJECT-ID].supabase.co/storage/v1/object/public/game-images/logos/zenless-zone-zero.png',
-        color: '#6C5CE7'
+        logo: '/assets/games/zenless-zone-zero.png',
+        color: '#6C5CE7',
+        icon: '🌀'
     },
     // Wuthering Waves
     71886: {
-        logo: 'https://[PROJECT-ID].supabase.co/storage/v1/object/public/game-images/logos/wuthering-waves.png',
-        color: '#00CEC9'
+        logo: '/assets/games/wuthering-waves.png',
+        color: '#00CEC9',
+        icon: '🌊'
     },
     // Mobile Legends
     65482: {
-        logo: 'https://[PROJECT-ID].supabase.co/storage/v1/object/public/game-images/logos/mobile-legends.png',
-        color: '#FDCB6E'
+        logo: '/assets/games/mobile-legends.png',
+        color: '#FDCB6E',
+        icon: '⚔️'
     },
     // Free Fire Global
     65871: {
-        logo: 'https://[PROJECT-ID].supabase.co/storage/v1/object/public/game-images/logos/free-fire.png',
-        color: '#FF7675'
+        logo: '/assets/games/free-fire.png',
+        color: '#FF7675',
+        icon: '🔥'
     },
     // Genshin Impact
     66452: {
-        logo: 'https://[PROJECT-ID].supabase.co/storage/v1/object/public/game-images/logos/genshin-impact.png',
-        color: '#74B9FF'
+        logo: '/assets/games/genshin-impact.png',
+        color: '#74B9FF',
+        icon: '🌍'
     },
     // PUBG Mobile
     66719: {
-        logo: 'https://[PROJECT-ID].supabase.co/storage/v1/object/public/game-images/logos/pubg-mobile.png',
-        color: '#F39C12'
+        logo: '/assets/games/pubg-mobile.png',
+        color: '#F39C12',
+        icon: '🎯'
     },
     // Honor de Reyes
     67795: {
-        logo: 'https://[PROJECT-ID].supabase.co/storage/v1/object/public/game-images/logos/honor-de-reyes.png',
-        color: '#E84393'
+        logo: '/assets/games/honor-de-reyes.png',
+        color: '#E84393',
+        icon: '👑'
     },
     // Golpe de Sangre
     68075: {
-        logo: 'https://[PROJECT-ID].supabase.co/storage/v1/object/public/game-images/logos/golpe-de-sangre.png',
-        color: '#FF5252'
+        logo: '/assets/games/golpe-de-sangre.png',
+        color: '#FF5252',
+        icon: '💥'
     },
     // Honkai: Star Rail
     66557: {
-        logo: 'https://[PROJECT-ID].supabase.co/storage/v1/object/public/game-images/logos/honkai-star-rail.png',
-        color: '#A29BFE'
+        logo: '/assets/games/honkai-star-rail.png',
+        color: '#A29BFE',
+        icon: '🚂'
     },
     // Razer Gold Colombia
     66524: {
-        logo: 'https://[PROJECT-ID].supabase.co/storage/v1/object/public/game-images/logos/razer-gold.png',
-        color: '#00D2D3'
+        logo: '/assets/games/razer-gold.png',
+        color: '#00D2D3',
+        icon: '💰'
     },
-    // Default para juegos sin imagen
+    // Default for games without image
     default: {
         logo: '/assets/game-default.png',
-        color: '#667eea'
+        color: '#667eea',
+        icon: '🎮'
     }
 };
 
 function getGameImage(gameId) {
     return GAME_IMAGES[gameId] || GAME_IMAGES.default;
+}
+
+// Export for Node.js
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = { GAME_IMAGES, getGameImage };
 }
