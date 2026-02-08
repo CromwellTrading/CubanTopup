@@ -8,46 +8,80 @@
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
+    <!-- Script de inicialización PRIMERO - SIN SCRIPT SRC ANTES -->
     <script>
-    // Verificar que tenemos el userId
-    const urlParams = new URLSearchParams(window.location.search);
-    let telegramUserId = urlParams.get('userId');
-    
-    // Si no está en la URL, buscar en localStorage
-    if (!telegramUserId) {
-        telegramUserId = localStorage.getItem('cromwell_telegram_id');
-    }
-    
-    // Si aún no tenemos ID, mostrar error
-    if (!telegramUserId) {
-        document.body.innerHTML = `
-            <div style="padding: 40px 20px; text-align: center; color: white; background: #0a0a1f; height: 100vh;">
-                <h2 style="color: #ef4444;">❌ Error de Acceso</h2>
-                <p>No se detectó tu ID de Telegram.</p>
-                <p>Por favor, abre la WebApp desde el bot de Telegram.</p>
-                <div style="margin-top: 30px;">
-                    <button onclick="window.location.href = '/webapp.html'" style="
-                        background: #4f46e5;
-                        color: white;
-                        border: none;
-                        padding: 12px 24px;
-                        border-radius: 8px;
-                        cursor: pointer;
-                    ">
-                        Volver a la pantalla de inicio
-                    </button>
+        (function() {
+            console.log('🔍 Iniciando verificación de usuario...');
+            console.log('🔍 URL completa:', window.location.href);
+            console.log('🔍 Parámetros URL:', window.location.search);
+            
+            // Verificar que tenemos el userId
+            const urlParams = new URLSearchParams(window.location.search);
+            let telegramUserId = urlParams.get('userId');
+            
+            // Si no está en la URL, buscar en localStorage
+            if (!telegramUserId) {
+                telegramUserId = localStorage.getItem('cromwell_telegram_id');
+                console.log('🔍 ID desde localStorage:', telegramUserId);
+            }
+            
+            // Si aún no tenemos ID, mostrar error
+            if (!telegramUserId) {
+                console.error('❌ No se encontró ID de usuario');
+                document.body.innerHTML = `
+                    <div style="padding: 40px 20px; text-align: center; color: white; background: #0a0a1f; height: 100vh; font-family: Arial, sans-serif;">
+                        <h2 style="color: #ef4444;">❌ Error de Acceso</h2>
+                        <p>No se detectó tu ID de Telegram.</p>
+                        <p>Por favor, abre la WebApp desde el bot de Telegram.</p>
+                        <div style="margin-top: 30px;">
+                            <button onclick="window.location.href = '/webapp.html'" style="
+                                background: #4f46e5;
+                                color: white;
+                                border: none;
+                                padding: 12px 24px;
+                                border-radius: 8px;
+                                cursor: pointer;
+                            ">
+                                Volver a la pantalla de inicio
+                            </button>
+                        </div>
+                    </div>
+                `;
+                throw new Error('Telegram User ID not found');
+            }
+            
+            // Guardar para uso global INMEDIATAMENTE
+            window.TELEGRAM_USER_ID = telegramUserId.toString();
+            console.log('✅ User ID cargado:', telegramUserId);
+            
+            // También guardar en localStorage por si acaso
+            localStorage.setItem('cromwell_telegram_id', telegramUserId.toString());
+            
+            // Mostrar ID en pantalla mientras carga
+            document.body.innerHTML = `
+                <div style="padding: 40px 20px; text-align: center; color: white; background: #0a0a1f; height: 100vh; font-family: Arial, sans-serif;">
+                    <div class="logo" style="margin-bottom: 30px;">
+                        <div style="font-size: 4rem; margin-bottom: 10px;">🏪</div>
+                        <div style="font-size: 1.5rem; color: #a5b4fc;">Cromwell Store</div>
+                    </div>
+                    <div class="loading" style="margin: 30px 0;">
+                        <div style="border: 4px solid rgba(255, 255, 255, 0.1); border-top: 4px solid #4f46e5; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto 20px;"></div>
+                        <p>Inicializando aplicación...</p>
+                        <p style="font-size: 12px; margin-top: 10px; color: #a5b4fc;">ID: ${telegramUserId}</p>
+                    </div>
                 </div>
-            </div>
-        `;
-        throw new Error('Telegram User ID not found');
-    }
+                <style>
+                    @keyframes spin {
+                        0% { transform: rotate(0deg); }
+                        100% { transform: rotate(360deg); }
+                    }
+                </style>
+            `;
+        })();
+    </script>
     
-    // Guardar para uso global
-    window.TELEGRAM_USER_ID = telegramUserId;
-    console.log('✅ User ID cargado:', telegramUserId);
-</script>
-    <!-- Contenedor principal -->
-    <div id="app">
+    <!-- Contenedor principal - SE CARGARÁ DINÁMICAMENTE -->
+    <div id="app" style="display: none;">
         <!-- Cabecera -->
         <header class="app-header">
             <div class="header-content">
@@ -448,11 +482,96 @@
         </div>
     </div>
 
-    <!-- Scripts -->
-    <script src="/js/webapp.js"></script>
-    <script src="/js/components/wallet.js"></script>
-    <script src="/js/components/games.js"></script>
-    <script src="/js/components/etecsa.js"></script>
-    <script src="/js/components/transactions.js"></script>
+    <!-- Scripts - Cargar después de definir TELEGRAM_USER_ID -->
+    <script>
+        // Esperar a que se defina TELEGRAM_USER_ID
+        function waitForUserId() {
+            return new Promise((resolve) => {
+                const checkInterval = setInterval(() => {
+                    if (window.TELEGRAM_USER_ID) {
+                        clearInterval(checkInterval);
+                        console.log('✅ TELEGRAM_USER_ID encontrado:', window.TELEGRAM_USER_ID);
+                        resolve();
+                    }
+                }, 100);
+                
+                // Timeout después de 5 segundos
+                setTimeout(() => {
+                    clearInterval(checkInterval);
+                    console.error('❌ Timeout esperando TELEGRAM_USER_ID');
+                    resolve();
+                }, 5000);
+            });
+        }
+        
+        // Cargar scripts después de que el ID esté disponible
+        waitForUserId().then(() => {
+            // Cargar los scripts dinámicamente
+            const scripts = [
+                '/js/webapp.js',
+                '/js/components/wallet.js',
+                '/js/components/games.js',
+                '/js/components/etecsa.js',
+                '/js/components/transactions.js'
+            ];
+            
+            let loadedCount = 0;
+            
+            scripts.forEach(src => {
+                const script = document.createElement('script');
+                script.src = src;
+                script.onload = () => {
+                    loadedCount++;
+                    console.log(`✅ Script cargado: ${src}`);
+                    
+                    // Cuando todos los scripts estén cargados
+                    if (loadedCount === scripts.length) {
+                        console.log('🚀 Todos los scripts cargados, inicializando aplicación...');
+                        
+                        // Pequeño delay para asegurar
+                        setTimeout(() => {
+                            if (window.TELEGRAM_USER_ID) {
+                                // Mostrar la aplicación
+                                document.getElementById('app').style.display = 'block';
+                                // Quitar el loading screen
+                                document.body.innerHTML = document.getElementById('app').outerHTML;
+                                // Inicializar la aplicación
+                                document.addEventListener('DOMContentLoaded', () => {
+                                    if (typeof CromwellWebApp !== 'undefined') {
+                                        window.cromwellApp = new CromwellWebApp();
+                                    } else {
+                                        console.error('❌ CromwellWebApp no está definido');
+                                        document.body.innerHTML = `
+                                            <div style="padding: 40px 20px; text-align: center; font-family: Arial, sans-serif;">
+                                                <h2 style="color: #dc3545;">❌ Error de Carga</h2>
+                                                <p>No se pudo cargar la aplicación.</p>
+                                                <button onclick="location.reload()" style="
+                                                    background: #4f46e5;
+                                                    color: white;
+                                                    border: none;
+                                                    padding: 12px 24px;
+                                                    border-radius: 8px;
+                                                    cursor: pointer;
+                                                    font-size: 16px;
+                                                    margin-top: 20px;
+                                                ">
+                                                    Reintentar
+                                                </button>
+                                            </div>
+                                        `;
+                                    }
+                                });
+                            }
+                        }, 300);
+                    }
+                };
+                script.onerror = () => {
+                    console.error(`❌ Error cargando script: ${src}`);
+                    loadedCount++;
+                };
+                document.head.appendChild(script);
+            });
+        });
+    </script>
 </body>
 </html>
