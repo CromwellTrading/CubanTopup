@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Redirecting to Cromwell Store...</title>
+</head>
+<body>
+    <script>
+        // Obtener userId de la URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const userId = urlParams.get('userId');
+        
+        if (userId) {
+            // Redirigir a webapp-main.html con el userId
+            window.location.href = `/webapp-main.html?userId=${userId}`;
+        } else {
+            // Redirigir al botón principal
+            window.location.href = '/webapp.html';
+        }
+    </script>
+</body>
+</html>
