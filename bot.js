@@ -1820,7 +1820,6 @@ async function handleStartBack(chatId, messageId) {
 }
 
 async function handleOpenWebApp(chatId, messageId) {
-async function handleOpenWebApp(chatId, messageId) {
     // Obtener la URL base del servidor
     const webAppUrl = process.env.WEBAPP_URL || `http://localhost:${PORT || 3000}/webapp`;
     
