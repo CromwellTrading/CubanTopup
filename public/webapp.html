@@ -3,221 +3,126 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cromwell Store - WebApp</title>
+    <title>Cromwell Store - Iniciando...</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        /* VARIABLES Y RESET */
-        :root {
-            --primary: #0a0a1f;
-            --secondary: #121230;
-            --accent: #4f46e5;
-            --accent-light: #6366f1;
-            --accent-glow: rgba(79, 70, 229, 0.4);
-            --text: #ffffff;
-            --text-secondary: #a5b4fc;
-            --success: #10b981;
-            --warning: #f59e0b;
-            --error: #ef4444;
-            --whatsapp: #25D366;
-            --whatsapp-dark: #128C7E;
-        }
-
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
         }
-
+        
         body {
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-            background-color: var(--primary);
-            color: var(--text);
-            min-height: 100vh;
+            font-family: Arial, sans-serif;
+            background: linear-gradient(135deg, #0a0a1f 0%, #121230 100%);
+            color: white;
+            height: 100vh;
             display: flex;
             justify-content: center;
             align-items: center;
             padding: 20px;
         }
-
-        /* CONTAINER */
+        
         .container {
-            max-width: 500px;
-            width: 100%;
             text-align: center;
+            max-width: 400px;
+            width: 100%;
         }
-
-        /* LOGO */
+        
         .logo {
             margin-bottom: 30px;
         }
-
+        
         .logo-icon {
             font-size: 4rem;
-            color: var(--accent);
-            margin-bottom: 15px;
-            filter: drop-shadow(0 0 20px var(--accent-glow));
-        }
-
-        .logo-text {
-            font-size: 3rem;
-            font-weight: 800;
-            background: linear-gradient(135deg, #a5b4fc 0%, var(--accent) 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
             margin-bottom: 10px;
         }
-
-        .logo-subtitle {
-            font-size: 1.1rem;
-            color: var(--text-secondary);
+        
+        .logo-text {
+            font-size: 1.5rem;
+            color: #a5b4fc;
         }
-
-        /* CARD */
-        .card {
-            background: rgba(18, 18, 48, 0.9);
-            border-radius: 20px;
-            padding: 40px;
-            border: 1px solid rgba(99, 102, 241, 0.2);
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-            backdrop-filter: blur(10px);
-            margin-bottom: 30px;
-        }
-
-        /* LOADING */
+        
         .loading {
-            text-align: center;
-            padding: 40px;
+            margin: 30px 0;
         }
-
-        .loading-spinner {
-            border: 3px solid rgba(255, 255, 255, 0.1);
-            border-top: 3px solid var(--accent);
+        
+        .spinner {
+            border: 4px solid rgba(255, 255, 255, 0.1);
+            border-top: 4px solid #4f46e5;
             border-radius: 50%;
             width: 40px;
             height: 40px;
             animation: spin 1s linear infinite;
             margin: 0 auto 20px;
         }
-
+        
         @keyframes spin {
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
-
-        /* ERROR */
+        
         .error {
-            color: var(--error);
-            text-align: center;
-            padding: 20px;
             background: rgba(239, 68, 68, 0.1);
-            border-radius: 12px;
             border: 1px solid rgba(239, 68, 68, 0.3);
-            margin-bottom: 20px;
+            border-radius: 10px;
+            padding: 20px;
+            margin: 20px 0;
+            text-align: left;
         }
-
-        /* BUTTONS */
-        .buttons {
-            display: flex;
-            flex-direction: column;
-            gap: 15px;
+        
+        .error-title {
+            color: #ef4444;
+            margin-bottom: 10px;
         }
-
+        
+        .debug-info {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 5px;
+            padding: 10px;
+            margin-top: 10px;
+            font-size: 12px;
+        }
+        
         .btn {
-            padding: 18px;
-            border-radius: 12px;
-            font-size: 1.1rem;
-            font-weight: 600;
-            text-decoration: none;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 12px;
-            transition: all 0.3s ease;
+            background: #4f46e5;
+            color: white;
             border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 16px;
             cursor: pointer;
+            margin-top: 20px;
             width: 100%;
         }
-
-        .btn-primary {
-            background: linear-gradient(135deg, var(--accent), var(--accent-light));
-            color: white;
-        }
-
-        .btn-primary:hover {
-            transform: translateY(-3px);
-            box-shadow: 0 10px 25px rgba(79, 70, 229, 0.3);
-        }
-
-        .btn-secondary {
-            background: rgba(255, 255, 255, 0.1);
-            color: var(--text);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-        }
-
-        .btn-secondary:hover {
-            background: rgba(255, 255, 255, 0.15);
-            transform: translateY(-3px);
-        }
-
-        /* RESPONSIVE */
-        @media (max-width: 600px) {
-            .container {
-                padding: 10px;
-            }
-            
-            .card {
-                padding: 30px 20px;
-            }
-            
-            .logo-text {
-                font-size: 2.5rem;
-            }
-            
-            .logo-icon {
-                font-size: 3rem;
-            }
+        
+        .btn:hover {
+            background: #6366f1;
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <!-- LOGO -->
         <div class="logo">
-            <div class="logo-icon">
-                <i class="fas fa-store"></i>
-            </div>
-            <h1 class="logo-text">CROMWELL STORE</h1>
-            <p class="logo-subtitle">Tu billetera digital para recargas</p>
+            <div class="logo-icon">🏪</div>
+            <div class="logo-text">Cromwell Store</div>
         </div>
-
-        <!-- CARD -->
-        <div class="card">
-            <!-- LOADING -->
-            <div id="loading" class="loading">
-                <div class="loading-spinner"></div>
-                <p>Detectando usuario...</p>
-            </div>
-
-            <!-- ERROR -->
-            <div id="error" class="error" style="display: none;">
-                <i class="fas fa-exclamation-triangle"></i>
-                <p id="errorText">No se pudo detectar el usuario. Por favor, abre esta página desde el bot de Telegram.</p>
-            </div>
-
-            <!-- BUTTONS -->
-            <div id="buttons" class="buttons" style="display: none;">
-                <button id="continueBtn" class="btn btn-primary">
-                    <i class="fas fa-arrow-right"></i>
-                    <span>Continuar a Cromwell WebApp</span>
-                </button>
-                
-                <button id="helpBtn" class="btn btn-secondary">
-                    <i class="fas fa-question-circle"></i>
-                    <span>Ayuda / Soporte</span>
-                </button>
-            </div>
+        
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <p>Detectando usuario...</p>
+        </div>
+        
+        <div class="error" id="error" style="display: none;">
+            <h3 class="error-title">❌ Error de Detección</h3>
+            <p id="error-message"></p>
+            <div class="debug-info" id="debug-info"></div>
+            <button class="btn" id="retry-btn">Reintentar</button>
+        </div>
+        
+        <div id="success" style="display: none;">
+            <p>✅ Usuario detectado correctamente</p>
+            <p>Redirigiendo a la aplicación...</p>
         </div>
     </div>
 
@@ -228,91 +133,123 @@
             return urlParams.get(name);
         }
 
-        // Función principal de inicialización
-        async function initializeApp() {
+        // Función principal de detección
+        function detectTelegramUser() {
             const tg = window.Telegram?.WebApp;
             
-            try {
-                if (tg) {
-                    tg.expand();
-                    tg.ready();
+            console.log('🔍 Iniciando detección de Telegram WebApp...');
+            console.log('🔍 window.Telegram:', window.Telegram);
+            console.log('🔍 window.Telegram.WebApp:', tg);
+            
+            let telegramUserId = null;
+            let detectedFrom = '';
+            
+            // Método 1: Parámetros de URL (EL MÁS IMPORTANTE)
+            telegramUserId = getUrlParameter('userId');
+            if (telegramUserId) {
+                detectedFrom = 'URL parameter (?userId=)';
+                console.log(`✅ ID detectado desde URL: ${telegramUserId}`);
+            }
+            
+            // Método 2: initDataUnsafe (secundario)
+            if (!telegramUserId && tg?.initDataUnsafe?.user) {
+                telegramUserId = tg.initDataUnsafe.user.id?.toString();
+                if (telegramUserId) {
+                    detectedFrom = 'Telegram WebApp (initDataUnsafe)';
+                    console.log(`✅ ID detectado desde initDataUnsafe: ${telegramUserId}`);
                 }
-
-                // Método 1: Buscar en parámetros de URL (MÁS CONFIABLE)
-                let telegramUserId = getUrlParameter('userId');
-                
-                // Método 2: Si no está en URL, buscar en initDataUnsafe
-                if (!telegramUserId && tg?.initDataUnsafe?.user) {
-                    telegramUserId = tg.initDataUnsafe.user.id.toString();
-                }
-                
-                // Método 3: Intentar parsear initData si está disponible
-                if (!telegramUserId && tg?.initData) {
-                    try {
-                        const params = new URLSearchParams(tg.initData);
-                        const userParam = params.get('user');
-                        if (userParam) {
-                            const userData = JSON.parse(decodeURIComponent(userParam));
-                            telegramUserId = userData.id;
+            }
+            
+            // Método 3: initData (tercero)
+            if (!telegramUserId && tg?.initData) {
+                try {
+                    const params = new URLSearchParams(tg.initData);
+                    const userParam = params.get('user');
+                    if (userParam) {
+                        const userData = JSON.parse(decodeURIComponent(userParam));
+                        telegramUserId = userData.id?.toString();
+                        if (telegramUserId) {
+                            detectedFrom = 'Telegram WebApp (initData)';
+                            console.log(`✅ ID detectado desde initData: ${telegramUserId}`);
                         }
-                    } catch (e) {
-                        console.error('Error parseando initData:', e);
                     }
+                } catch (e) {
+                    console.error('Error parseando initData:', e);
                 }
-                
-                console.log('🔍 Telegram User ID detectado:', telegramUserId);
-                console.log('🔍 initDataUnsafe:', tg?.initDataUnsafe);
-                console.log('🔍 initData:', tg?.initData);
-                
-                if (!telegramUserId) {
-                    document.getElementById('loading').style.display = 'none';
-                    document.getElementById('error').style.display = 'block';
-                    
-                    // Mostrar información de debug
-                    document.getElementById('errorText').innerHTML = `
-                        No se pudo detectar tu ID de Telegram.<br><br>
-                        <strong>Solución:</strong>
-                        <ol style="text-align: left; margin: 10px 0; padding-left: 20px;">
-                            <li>Cierra esta WebApp</li>
-                            <li>Vuelve al bot @CromwellStoreBot</li>
-                            <li>Haz clic en "🌐 Abrir WebApp"</li>
-                        </ol>
-                        <div style="background: rgba(255,255,255,0.1); padding: 10px; border-radius: 8px; margin-top: 10px;">
-                            <small>Para debug:</small><br>
-                            <small>initData: ${tg?.initData ? '✅ Presente' : '❌ Ausente'}</small><br>
-                            <small>initDataUnsafe: ${tg?.initDataUnsafe ? '✅ Presente' : '❌ Ausente'}</small>
-                        </div>
-                    `;
-                    return;
-                }
-
-                // Guardar el userId para la aplicación principal
-                window.TELEGRAM_USER_ID = telegramUserId;
-                
-                // Mostrar botones
+            }
+            
+            // Mostrar información de debug
+            const debugInfo = `
+                <strong>URL actual:</strong> ${window.location.href}<br>
+                <strong>Parámetros URL:</strong> ${window.location.search}<br>
+                <strong>Telegram WebApp disponible:</strong> ${tg ? '✅ Sí' : '❌ No'}<br>
+                <strong>initDataUnsafe:</strong> ${tg?.initDataUnsafe ? '✅ Presente' : '❌ Ausente'}<br>
+                <strong>initData:</strong> ${tg?.initData ? '✅ Presente' : '❌ Ausente'}<br>
+                <strong>User en initDataUnsafe:</strong> ${tg?.initDataUnsafe?.user ? '✅ Presente' : '❌ Ausente'}<br>
+                <strong>Método de detección:</strong> ${detectedFrom || 'Ninguno'}
+            `;
+            
+            document.getElementById('debug-info').innerHTML = debugInfo;
+            
+            if (telegramUserId) {
+                // ÉXITO: Redirigir a la aplicación principal
                 document.getElementById('loading').style.display = 'none';
-                document.getElementById('buttons').style.display = 'flex';
+                document.getElementById('success').style.display = 'block';
                 
-                // Configurar botones
-                document.getElementById('continueBtn').onclick = function() {
-                    // Redirigir a la aplicación principal con el userId
+                // Guardar el ID en localStorage para la aplicación principal
+                localStorage.setItem('cromwell_telegram_id', telegramUserId);
+                
+                // Redirigir después de 1 segundo
+                setTimeout(() => {
                     window.location.href = `/webapp-main.html?userId=${telegramUserId}`;
-                };
+                }, 1000);
                 
-                document.getElementById('helpBtn').onclick = function() {
-                    window.open('https://t.me/CromwellStoreBot', '_blank');
-                };
-                
-            } catch (error) {
-                console.error('Error inicializando:', error);
+            } else {
+                // ERROR: Mostrar mensaje
                 document.getElementById('loading').style.display = 'none';
                 document.getElementById('error').style.display = 'block';
-                document.getElementById('errorText').textContent = 'Error: ' + error.message;
+                
+                let errorMessage = 'No se pudo detectar tu ID de Telegram. ';
+                let solution = '';
+                
+                if (!window.location.search.includes('userId=')) {
+                    errorMessage += 'El enlace no contiene tu ID. ';
+                    solution = 'Por favor, abre la WebApp desde el botón "🌐 Abrir WebApp" en el bot de Telegram.';
+                } else if (!tg) {
+                    errorMessage += 'No se detectó el entorno de Telegram WebApp. ';
+                    solution = 'Asegúrate de abrir esta página desde la aplicación de Telegram (no desde el navegador).';
+                } else {
+                    errorMessage += 'No se pudo extraer tu información de Telegram. ';
+                    solution = 'Prueba cerrar y volver a abrir la WebApp desde el bot.';
+                }
+                
+                document.getElementById('error-message').textContent = errorMessage + solution;
             }
         }
 
         // Inicializar cuando se carga la página
-        document.addEventListener('DOMContentLoaded', initializeApp);
+        document.addEventListener('DOMContentLoaded', () => {
+            const tg = window.Telegram?.WebApp;
+            
+            if (tg) {
+                // Configurar Telegram WebApp
+                tg.expand();
+                tg.ready();
+                
+                // Esperar un momento para que Telegram se inicialice
+                setTimeout(detectTelegramUser, 500);
+            } else {
+                // Telegram WebApp no disponible
+                detectTelegramUser();
+            }
+        });
+
+        // Botón de reintentar
+        document.getElementById('retry-btn').addEventListener('click', () => {
+            document.getElementById('error').style.display = 'none';
+            document.getElementById('loading').style.display = 'block';
+            setTimeout(detectTelegramUser, 500);
+        });
     </script>
 </body>
 </html>
