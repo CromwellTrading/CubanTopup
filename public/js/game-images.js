@@ -78,6 +78,21 @@ function getGameImage(gameId) {
     return GAME_IMAGES[gameId] || GAME_IMAGES.default;
 }
 
+// ============================================
+// EXPORTAR VARIABLES NECESARIAS
+// ============================================
+
+module.exports = GameRechargeHandler;
+
+// Exportar también el objeto GAMES para la WebApp
+module.exports.GAMES = GAMES;
+
+// Exportar funciones necesarias
+module.exports.getLioGamesPrice = getLioGamesPrice;
+module.exports.createOrder = createOrder;
+module.exports.checkOrderStatus = checkOrderStatus;
+module.exports.calculateAllPrices = calculateAllPrices;
+
 // Export for Node.js
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = { GAME_IMAGES, getGameImage };
