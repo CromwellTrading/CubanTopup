@@ -1690,9 +1690,8 @@ bot.onText(/\/webapp/, async (msg) => {
     if (!user) {
         return bot.sendMessage(chatId, '❌ No estás registrado. Usa /start primero.');
     }
-    
-    // En bot.js, en la función handleOpenWebApp
-const webAppUrl = `https://cubantopup.onrender.com/webapp?userId=${chatId}`;
+       // Obtener la URL base del servidor
+    const webAppUrl = process.env.WEBAPP_URL || `http://localhost:${PORT || 3000}/webapp`;
     
     const message = `🌐 *WebApp Cromwell Store*\n\n` +
         `Accede a nuestra WebApp para una mejor experiencia:\n\n` +
@@ -1829,8 +1828,8 @@ async function handleStartBack(chatId, messageId) {
 }
 
 async function handleOpenWebApp(chatId, messageId) {
-    // Obtener la URL base del servidor
-    const webAppUrl = process.env.WEBAPP_URL || `http://localhost:${PORT || 3000}/webapp`;
+    // Usar la ruta correcta - APUNTA A webapp.html (no webapp-main.html)
+    const webAppUrl = process.env.WEBAPP_URL || `http://localhost:${PORT || 3000}/webapp.html?userId=${chatId}`;
     
     const message = `🌐 *Abrir WebApp Cromwell Store*\n\n` +
         `Haz clic en el botón de abajo para abrir la WebApp:\n\n` +
