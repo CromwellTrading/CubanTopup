@@ -1685,29 +1685,16 @@ bot.onText(/\/start/, async (msg) => {
 // Command /webapp
 bot.onText(/\/webapp/, async (msg) => {
     const chatId = msg.chat.id;
-    const user = await getUser(chatId);
-    
-    if (!user) {
-        return bot.sendMessage(chatId, '❌ No estás registrado. Usa /start primero.');
-    }
-       // Obtener la URL base del servidor
-    const webAppUrl = process.env.WEBAPP_URL || `http://localhost:${PORT || 3000}/webapp`;
+    const baseUrl = process.env.WEBAPP_URL || `http://localhost:${PORT || 3000}`;
+    const webAppUrl = `${baseUrl}/webapp.html?userId=${chatId}`;
     
     const message = `🌐 *WebApp Cromwell Store*\n\n` +
         `Accede a nuestra WebApp para una mejor experiencia:\n\n` +
         `✅ Interfaz más amigable\n` +
         `✅ Navegación más rápida\n` +
         `✅ Todas las funciones disponibles\n\n` +
-        `⚠️ *Tu ID de Telegram:* \`${chatId}\`\n` +
-        `Necesitarás este ID para iniciar sesión en la WebApp.\n\n` +
-        `Características de la WebApp:\n` +
-        `• Ver saldos en tiempo real\n` +
-        `• Recargar billetera (CUP/Saldo)\n` +
-        `• Recargar juegos directamente\n` +
-        `• Recargas ETECSA\n` +
-        `• Historial de transacciones\n` +
-        `• Cambiar teléfono vinculado\n` +
-        `• Reclamar pagos pendientes`;
+        `⚠️ *Tu ID de Telegram:* \`${chatId}\`\n\n` +
+        `Haz clic en el botón de abajo para abrir:`;
     
     await bot.sendMessage(chatId, message, { 
         parse_mode: 'Markdown',
@@ -1828,13 +1815,18 @@ async function handleStartBack(chatId, messageId) {
 }
 
 async function handleOpenWebApp(chatId, messageId) {
-    // Usar la ruta correcta - APUNTA A webapp.html (no webapp-main.html)
-    const webAppUrl = process.env.WEBAPP_URL || `http://localhost:${PORT || 3000}/webapp.html?userId=${chatId}`;
+    // Obtener URL base del servidor
+    const baseUrl = process.env.WEBAPP_URL || `http://localhost:${PORT || 3000}`;
+    
+    // Crear URL con el userId como parámetro
+    const webAppUrl = `${baseUrl}/webapp.html?userId=${chatId}`;
+    
+    console.log(`🔗 WebApp URL generada para ${chatId}: ${webAppUrl}`);
     
     const message = `🌐 *Abrir WebApp Cromwell Store*\n\n` +
         `Haz clic en el botón de abajo para abrir la WebApp:\n\n` +
         `⚠️ *Tu ID de Telegram:* \`${chatId}\`\n` +
-        `Necesitarás este ID para iniciar sesión.`;
+        `Guarda este ID por si necesitas contactar soporte.`;
     
     await bot.editMessageText(message, {
         chat_id: chatId,
