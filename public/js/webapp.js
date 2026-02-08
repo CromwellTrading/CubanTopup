@@ -1,27 +1,25 @@
 // webapp.js - WebApp principal para Cromwell Store
 class CromwellWebApp {
     constructor() {
-        // Verificar que estamos en un entorno de Telegram WebApp
-        if (typeof window.Telegram === 'undefined' || !window.Telegram.WebApp) {
-            console.error('❌ No se detecta Telegram WebApp. La WebApp debe abrirse desde el bot de Telegram.');
-            this.showTelegramError();
+        // Obtener userId de la URL (ya detectado en webapp.html)
+        const urlParams = new URLSearchParams(window.location.search);
+        this.userId = urlParams.get('userId') || window.TELEGRAM_USER_ID;
+        
+        if (!this.userId) {
+            console.error('❌ No se encontró userId en la URL');
+            this.showErrorScreen('No se detectó usuario. Por favor, abre la WebApp desde el bot.');
             return;
         }
         
-        this.telegram = window.Telegram.WebApp;
+        console.log('✅ User ID:', this.userId);
+        
+        this.telegram = window.Telegram?.WebApp;
         this.userData = null;
         this.currentScreen = 'dashboard';
         this.currentAction = null;
         this.selectedGame = null;
         this.selectedVariation = null;
         this.selectedOffer = null;
-        
-        console.log('🔍 Datos de inicialización de Telegram:', {
-            initData: this.telegram.initData,
-            initDataUnsafe: this.telegram.initDataUnsafe,
-            platform: this.telegram.platform,
-            version: this.telegram.version
-        });
         
         this.init();
     }
@@ -30,11 +28,13 @@ class CromwellWebApp {
         console.log('🚀 Inicializando Cromwell WebApp...');
         
         try {
-            // Configurar Telegram WebApp
-            this.telegram.expand();
-            this.telegram.enableClosingConfirmation();
-            this.telegram.setHeaderColor('#667eea');
-            this.telegram.setBackgroundColor('#f8f9fa');
+            // Configurar Telegram WebApp si está disponible
+            if (this.telegram) {
+                this.telegram.expand();
+                this.telegram.enableClosingConfirmation();
+                this.telegram.setHeaderColor('#667eea');
+                this.telegram.setBackgroundColor('#f8f9fa');
+            }
             
             // Inicializar eventos
             this.initEvents();
@@ -45,6 +45,9 @@ class CromwellWebApp {
             // Configurar navegación
             this.setupNavigation();
             
+            // Cargar configuración
+            await this.loadConfig();
+            
             console.log('✅ WebApp inicializada correctamente');
         } catch (error) {
             console.error('❌ Error inicializando WebApp:', error);
@@ -52,30 +55,49 @@ class CromwellWebApp {
         }
     }
 
-    showTelegramError() {
+    showErrorScreen(message) {
         document.body.innerHTML = `
-            <div style="padding: 20px; text-align: center; font-family: Arial, sans-serif;">
-                <h2 style="color: #dc3545;">❌ Error de Telegram WebApp</h2>
-                <p>Esta aplicación debe abrirse desde el bot de Telegram.</p>
-                <p>Por favor:</p>
-                <ol style="text-align: left; max-width: 400px; margin: 20px auto;">
-                    <li>Abre el bot <strong>@CromwellStoreBot</strong> en Telegram</li>
-                    <li>Usa el comando <code>/webapp</code></li>
-                    <li>O haz clic en el botón "🌐 Abrir WebApp"</li>
-                </ol>
-                <p style="margin-top: 30px;">
-                    <strong>Tu ID de Telegram:</strong><br>
-                    <code id="telegram-id-placeholder">No detectado</code>
-                </p>
-                <div style="margin-top: 30px; padding: 15px; background: #f8f9fa; border-radius: 8px;">
-                    <p><strong>Para desarrolladores:</strong></p>
-                    <p style="font-size: 12px; color: #666;">
-                        Esta WebApp utiliza la API de Telegram WebApp.<br>
-                        Solo funciona dentro del cliente de Telegram.
-                    </p>
+            <div style="padding: 40px 20px; text-align: center; font-family: Arial, sans-serif;">
+                <h2 style="color: #dc3545;">❌ Error</h2>
+                <p>${message}</p>
+                <div style="margin-top: 30px;">
+                    <button onclick="location.reload()" style="
+                        background: #4f46e5;
+                        color: white;
+                        border: none;
+                        padding: 12px 24px;
+                        border-radius: 8px;
+                        cursor: pointer;
+                        font-size: 16px;
+                    ">
+                        Reintentar
+                    </button>
                 </div>
             </div>
         `;
+    }
+
+    async loadConfig() {
+        try {
+            const response = await fetch('/api/webapp-config');
+            if (response.ok) {
+                const data = await response.json();
+                if (data.success) {
+                    window.PAGO_CUP_TARJETA = data.config.pago_cup_tarjeta || '';
+                    window.PAGO_SALDO_MOVIL = data.config.pago_saldo_movil || '';
+                    window.MINIMO_CUP = data.config.minimo_cup || 1000;
+                    window.MINIMO_SALDO = data.config.minimo_saldo || 500;
+                    window.MAXIMO_CUP = data.config.maximo_cup || 50000;
+                    window.USDT_RATE_0_30 = data.config.usdt_rate_0_30 || 650;
+                    window.USDT_RATE_30_PLUS = data.config.usdt_rate_30_plus || 680;
+                    window.SALDO_MOVIL_RATE = data.config.saldo_movil_rate || 2.1;
+                    window.MIN_CWS_USE = data.config.min_cws_use || 100;
+                    window.CWS_PER_100_SALDO = data.config.cws_per_100_saldo || 10;
+                }
+            }
+        } catch (error) {
+            console.error('Error cargando configuración:', error);
+        }
     }
 
     initEvents() {
@@ -193,152 +215,57 @@ class CromwellWebApp {
             });
         });
     }
-async loadUserData() {
-    try {
-        this.showLoading('Cargando información...');
-        
-        // Obtener ID de Telegram del usuario
-        let userId = null;
-        
-        // Método 1: Desde initDataUnsafe (recomendado)
-        if (this.telegram.initDataUnsafe && this.telegram.initDataUnsafe.user) {
-            userId = this.telegram.initDataUnsafe.user.id;
-            console.log('✅ ID obtenido de initDataUnsafe:', userId);
-        }
-        
-        // Método 2: Desde parámetros de URL (fallback)
-        if (!userId) {
-            const urlParams = new URLSearchParams(window.location.search);
-            userId = urlParams.get('user_id') || urlParams.get('id') || urlParams.get('userId');
-            console.log('✅ ID obtenido de URL params:', userId);
-        }
-        
-        // Método 3: Intentar parsear initData si está disponible
-        if (!userId && this.telegram.initData) {
-            try {
-                const params = new URLSearchParams(this.telegram.initData);
-                const userParam = params.get('user');
-                if (userParam) {
-                    const userData = JSON.parse(decodeURIComponent(userParam));
-                    userId = userData.id;
-                    console.log('✅ ID obtenido de initData parseado:', userId);
-                }
-            } catch (e) {
-                console.error('❌ Error parseando initData:', e);
-            }
-        }
-        
-        if (!userId) {
-            console.error('❌ No se pudo obtener el ID de usuario de ninguna fuente');
-            console.log('initDataUnsafe:', this.telegram.initDataUnsafe);
-            console.log('initData:', this.telegram.initData);
+
+    async loadUserData() {
+        try {
+            this.showLoading('Cargando información...');
             
-            // Mostrar mensaje de error específico para Telegram WebApp
-            const errorHtml = `
-                <div style="padding: 20px; text-align: center;">
-                    <h3 style="color: #dc3545;">❌ Error de Autenticación</h3>
-                    <p>No se pudo obtener tu ID de Telegram.</p>
-                    <p><strong>Posibles soluciones:</strong></p>
-                    <ol style="text-align: left; max-width: 400px; margin: 0 auto;">
-                        <li>Cierra y vuelve a abrir la WebApp desde el bot</li>
-                        <li>Asegúrate de usar la última versión de Telegram</li>
-                        <li>Contacta al administrador</li>
-                    </ol>
-                    <p style="margin-top: 20px;">
-                        <strong>Para debug:</strong><br>
-                        <small>initData: ${this.telegram.initData ? 'Presente' : 'Ausente'}<br>
-                        initDataUnsafe: ${this.telegram.initDataUnsafe ? 'Presente' : 'Ausente'}</small>
-                    </p>
-                </div>
-            `;
+            console.log('🔍 Enviando telegram_id:', this.userId);
             
-            document.getElementById('screen-dashboard').innerHTML = errorHtml;
-            this.hideLoading();
-            return;
-        }
-
-        // Obtener datos del usuario desde la API SIN token (Telegram WebApp)
-        const response = await fetch('/api/user-data', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ 
-                telegram_id: userId
-                // NO enviar auth_token para WebApp
-            })
-        });
-
-        if (!response.ok) {
-            throw new Error(`Error HTTP: ${response.status}`);
-        }
-
-        const data = await response.json();
-
-        if (data.success) {
-            this.userData = data.user;
-            this.updateUI();
-            this.showToast('✅ Datos cargados correctamente', 'success');
-            console.log('✅ Datos del usuario cargados:', this.userData);
-        } else {
-            this.showToast('❌ Error al cargar datos: ' + (data.error || 'Desconocido'), 'error');
-        }
-    } catch (error) {
-        console.error('❌ Error cargando datos:', error);
-        this.showToast('❌ Error de conexión', 'error');
-    } finally {
-        this.hideLoading();
-    }
-}
-    
-            
-            // Método 3: Desde parámetros de URL (fallback)
-            if (!userId) {
-                const urlParams = new URLSearchParams(window.location.search);
-                userId = urlParams.get('user_id') || urlParams.get('id');
-                console.log('✅ ID obtenido de URL params:', userId);
-            }
-            
-            if (!userId) {
-                this.showToast('❌ No se pudo obtener tu ID de Telegram. Asegúrate de abrir la WebApp desde el bot.', 'error');
-                console.error('❌ No se pudo obtener el ID de usuario de ninguna fuente');
-                return;
-            }
-
-            // Obtener datos del usuario desde la API
             const response = await fetch('/api/user-data', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({ 
-                    telegram_id: userId,
-                    auth_token: window.WEBHOOK_SECRET_KEY || ''
+                    telegram_id: this.userId
                 })
             });
 
+            console.log('🔍 Respuesta HTTP:', response.status, response.statusText);
+            
             if (!response.ok) {
-                throw new Error(`Error HTTP: ${response.status}`);
+                const errorText = await response.text();
+                console.error('❌ Error de respuesta:', errorText);
+                throw new Error(`Error HTTP: ${response.status} - ${response.statusText}`);
             }
 
             const data = await response.json();
+            console.log('🔍 Datos recibidos:', data);
 
             if (data.success) {
                 this.userData = data.user;
                 this.updateUI();
                 this.showToast('✅ Datos actualizados', 'success');
-                console.log('✅ Datos del usuario cargados:', this.userData);
             } else {
-                this.showToast('❌ Error al cargar datos: ' + (data.error || 'Desconocido'), 'error');
+                throw new Error(data.error || 'Error desconocido al cargar datos');
             }
         } catch (error) {
             console.error('❌ Error cargando datos:', error);
-            this.showToast('❌ Error de conexión: ' + error.message, 'error');
+            this.showToast(`❌ Error: ${error.message}`, 'error');
             
-            // Mostrar ID obtenido para debugging
-            const userIdDisplay = document.getElementById('telegram-id-placeholder');
-            if (userIdDisplay) {
-                userIdDisplay.textContent = this.telegram.initDataUnsafe?.user?.id || 'No disponible';
+            // Mostrar información de debug
+            const debugInfo = `
+                <div style="margin-top: 20px; padding: 10px; background: rgba(255,0,0,0.1); border-radius: 5px;">
+                    <small><strong>Debug info:</strong></small><br>
+                    <small>User ID: ${this.userId}</small><br>
+                    <small>Error: ${error.message}</small>
+                </div>
+            `;
+            
+            const errorContainer = document.getElementById('error-container');
+            if (errorContainer) {
+                errorContainer.innerHTML = debugInfo;
             }
         } finally {
             this.hideLoading();
@@ -352,23 +279,27 @@ async loadUserData() {
         const welcomeTitle = document.getElementById('welcome-title');
         const welcomeSubtitle = document.getElementById('welcome-subtitle');
         
-        if (welcomeTitle) welcomeTitle.textContent = `¡Hola, ${this.userData.first_name || 'Usuario'}!`;
-        if (welcomeSubtitle) welcomeSubtitle.textContent = 'Bienvenido a Cromwell Store';
+        if (welcomeTitle) {
+            welcomeTitle.textContent = `¡Hola, ${this.userData.first_name || 'Usuario'}!`;
+        }
+        if (welcomeSubtitle) {
+            welcomeSubtitle.textContent = 'Bienvenido a Cromwell Store';
+        }
         
         // Actualizar saldos
         const updateElement = (id, value, prefix = '') => {
             const element = document.getElementById(id);
-            if (element) element.textContent = prefix + value;
+            if (element) element.textContent = prefix + (value || 0);
         };
         
-        updateElement('dashboard-cup', this.userData.balance_cup || 0, '$');
-        updateElement('dashboard-saldo', this.userData.balance_saldo || 0, '$');
-        updateElement('dashboard-cws', this.userData.tokens_cws || 0);
+        updateElement('dashboard-cup', this.userData.balance_cup, '$');
+        updateElement('dashboard-saldo', this.userData.balance_saldo, '$');
+        updateElement('dashboard-cws', this.userData.tokens_cws);
         
-        updateElement('balance-cup', this.userData.balance_cup || 0, '$');
-        updateElement('wallet-cup', this.userData.balance_cup || 0, '$');
-        updateElement('wallet-saldo', this.userData.balance_saldo || 0, '$');
-        updateElement('wallet-cws', this.userData.tokens_cws || 0);
+        updateElement('balance-cup', this.userData.balance_cup, '$');
+        updateElement('wallet-cup', this.userData.balance_cup, '$');
+        updateElement('wallet-saldo', this.userData.balance_saldo, '$');
+        updateElement('wallet-cws', this.userData.tokens_cws);
         
         // Actualizar información de usuario
         updateElement('user-telegram-id', this.userData.telegram_id || 'No disponible');
@@ -399,7 +330,7 @@ async loadUserData() {
                 this.userData.first_name.charAt(0).toUpperCase() : '👤';
         }
         
-        // Mostrar ID de Telegram en la pantalla principal
+        // Mostrar ID de Telegram
         const telegramIdDisplay = document.getElementById('telegram-id-display');
         if (telegramIdDisplay) {
             telegramIdDisplay.textContent = `ID: ${this.userData.telegram_id}`;
@@ -524,14 +455,14 @@ async loadUserData() {
             if (method === 'cup') {
                 paymentInfo.innerHTML = `
                     <p><strong>💳 Tarjeta destino:</strong> <code>${window.PAGO_CUP_TARJETA || '[NO CONFIGURADO]'}</code></p>
-                    <p><strong>📞 Teléfono para pagos:</strong> +53 ${this.userData?.phone_number?.substring(2) || 'No vinculado'}</p>
+                    <p><strong>📞 Teléfono para pagos:</strong> ${this.userData?.phone_number ? `+53 ${this.userData.phone_number.substring(2)}` : 'No vinculado'}</p>
                     <p>⚠️ <strong>IMPORTANTE:</strong> Activa "Mostrar número al destinatario" en Transfermóvil</p>
                 `;
             } else {
                 paymentInfo.innerHTML = `
                     <p><strong>📱 Número destino:</strong> <code>${window.PAGO_SALDO_MOVIL || '[NO CONFIGURADO]'}</code></p>
-                    <p><strong>📞 Tu teléfono:</strong> +53 ${this.userData?.phone_number?.substring(2) || 'No vinculado'}</p>
-                    <p>🎫 <strong>Ganas tokens:</strong> 10 CWS por cada 100 de saldo</p>
+                    <p><strong>📞 Tu teléfono:</strong> ${this.userData?.phone_number ? `+53 ${this.userData.phone_number.substring(2)}` : 'No vinculado'}</p>
+                    <p>🎫 <strong>Ganas tokens:</strong> ${window.CWS_PER_100_SALDO || 10} CWS por cada 100 de saldo</p>
                 `;
             }
         }
@@ -609,16 +540,16 @@ async loadUserData() {
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
-                    telegram_id: this.userData.telegram_id,
+                    telegram_id: this.userId,
                     method: method,
                     amount: amountNum,
-                    phone: this.userData.phone_number,
-                    auth_token: window.WEBHOOK_SECRET_KEY || ''
+                    phone: this.userData.phone_number
                 })
             });
 
             if (!response.ok) {
-                throw new Error(`Error HTTP: ${response.status}`);
+                const errorText = await response.text();
+                throw new Error(`Error HTTP: ${response.status} - ${errorText}`);
             }
 
             const data = await response.json();
@@ -648,11 +579,7 @@ async loadUserData() {
 
     async loadGames() {
         try {
-            const response = await fetch('/api/games', {
-                headers: {
-                    'X-Auth-Token': window.WEBHOOK_SECRET_KEY || ''
-                }
-            });
+            const response = await fetch('/api/games');
             
             if (!response.ok) {
                 throw new Error(`Error HTTP: ${response.status}`);
@@ -776,8 +703,7 @@ async loadUserData() {
                 },
                 body: JSON.stringify({
                     game_id: this.selectedGame.id,
-                    variation_id: variationId,
-                    auth_token: window.WEBHOOK_SECRET_KEY || ''
+                    variation_id: variationId
                 })
             });
 
@@ -847,7 +773,7 @@ async loadUserData() {
                         <select id="game-payment-method">
                             <option value="cup">💳 Pagar con CUP - $${variation.prices.cup || 0}</option>
                             <option value="saldo">📱 Pagar con Saldo Móvil - $${variation.prices.saldo || 0}</option>
-                            ${(variation.prices.cws || 0) >= 100 ? 
+                            ${(variation.prices.cws || 0) >= (window.MIN_CWS_USE || 100) ? 
                                 `<option value="cws">🎫 Pagar con CWS - ${variation.prices.cws || 0} tokens</option>` : ''}
                         </select>
                     </div>
@@ -972,13 +898,12 @@ async loadUserData() {
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
-                    telegram_id: this.userData.telegram_id,
+                    telegram_id: this.userId,
                     game_id: this.selectedGame.id,
                     variation_id: variation.id,
                     payment_method: method,
                     user_data: formData,
-                    amount: variation.prices[method] || 0,
-                    auth_token: window.WEBHOOK_SECRET_KEY || ''
+                    amount: variation.prices[method] || 0
                 })
             });
 
@@ -1013,11 +938,7 @@ async loadUserData() {
 
     async loadEtecsaOffers() {
         try {
-            const response = await fetch('/api/etecsa-offers', {
-                headers: {
-                    'X-Auth-Token': window.WEBHOOK_SECRET_KEY || ''
-                }
-            });
+            const response = await fetch('/api/etecsa-offers');
             
             if (!response.ok) {
                 throw new Error(`Error HTTP: ${response.status}`);
@@ -1200,13 +1121,12 @@ async loadUserData() {
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
-                    telegram_id: this.userData.telegram_id,
+                    telegram_id: this.userId,
                     offer_id: this.selectedOffer.offer.id,
                     price_id: this.selectedOffer.priceId,
                     phone: cleanPhone,
                     email: email,
-                    amount: priceCup,
-                    auth_token: window.WEBHOOK_SECRET_KEY || ''
+                    amount: priceCup
                 })
             });
 
@@ -1241,7 +1161,7 @@ async loadUserData() {
 
     async loadHistory() {
         try {
-            const response = await fetch(`/api/user-history?telegram_id=${this.userData?.telegram_id}&auth_token=${window.WEBHOOK_SECRET_KEY || ''}`);
+            const response = await fetch(`/api/user-history?telegram_id=${this.userId}`);
             
             if (!response.ok) {
                 throw new Error(`Error HTTP: ${response.status}`);
@@ -1391,9 +1311,8 @@ async loadUserData() {
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
-                    telegram_id: this.userData.telegram_id,
-                    phone: newPhone,
-                    auth_token: window.WEBHOOK_SECRET_KEY || ''
+                    telegram_id: this.userId,
+                    phone: newPhone
                 })
             });
 
@@ -1436,9 +1355,8 @@ async loadUserData() {
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
-                    telegram_id: this.userData.telegram_id,
-                    tx_id: txId,
-                    auth_token: window.WEBHOOK_SECRET_KEY || ''
+                    telegram_id: this.userId,
+                    tx_id: txId
                 })
             });
 
@@ -1574,13 +1492,13 @@ document.addEventListener('DOMContentLoaded', () => {
     window.MINIMO_CUP = window.MINIMO_CUP || 1000;
     window.MINIMO_SALDO = window.MINIMO_SALDO || 500;
     window.MAXIMO_CUP = window.MAXIMO_CUP || 50000;
+    window.USDT_RATE_0_30 = window.USDT_RATE_0_30 || 650;
+    window.USDT_RATE_30_PLUS = window.USDT_RATE_30_PLUS || 680;
+    window.SALDO_MOVIL_RATE = window.SALDO_MOVIL_RATE || 2.1;
+    window.MIN_CWS_USE = window.MIN_CWS_USE || 100;
+    window.CWS_PER_100_SALDO = window.CWS_PER_100_SALDO || 10;
     window.WEBHOOK_SECRET_KEY = window.WEBHOOK_SECRET_KEY || '';
     
     // Inicializar la aplicación
     window.cromwellApp = new CromwellWebApp();
-    
-    // Exponer el objeto para debugging
-    if (typeof window !== 'undefined') {
-        window.debugCromwellApp = window.cromwellApp;
-    }
 });
