@@ -1,18 +1,35 @@
 // webapp.js - WebApp principal para Cromwell Store
 class CromwellWebApp {
     constructor() {
-    // Obtener userId de variable global o URL
-    this.userId = window.TELEGRAM_USER_ID || 
-                  new URLSearchParams(window.location.search).get('userId');
-    
-    if (!this.userId) {
-        console.error('❌ No se encontró userId');
-        this.showErrorScreen('No se detectó usuario. Por favor, abre la WebApp desde el bot.');
-        return;
-    }
-    
-    console.log('✅ User ID:', this.userId);
-}
+        console.log('🔄 Constructor CromwellWebApp llamado');
+        console.log('🔍 window.TELEGRAM_USER_ID:', window.TELEGRAM_USER_ID);
+        console.log('🔍 window.location:', window.location.href);
+        
+        // Obtener userId de variable global
+        this.userId = window.TELEGRAM_USER_ID;
+        
+        // Si no está en window, buscar en URL como fallback
+        if (!this.userId) {
+            const urlParams = new URLSearchParams(window.location.search);
+            this.userId = urlParams.get('userId');
+            console.log('🔍 ID desde URL params:', this.userId);
+        }
+        
+        // Si aún no tenemos ID, buscar en localStorage
+        if (!this.userId) {
+            this.userId = localStorage.getItem('cromwell_telegram_id');
+            console.log('🔍 ID desde localStorage:', this.userId);
+        }
+        
+        if (!this.userId) {
+            console.error('❌ No se encontró userId de ninguna fuente');
+            this.showErrorScreen('No se detectó usuario. Por favor, abre la WebApp desde el bot.');
+            return;
+        }
+        
+        // Asegurar que sea string
+        this.userId = this.userId.toString();
+        console.log('✅ User ID final (string):', this.userId);
         
         this.telegram = window.Telegram?.WebApp;
         this.userData = null;
@@ -31,10 +48,13 @@ class CromwellWebApp {
         try {
             // Configurar Telegram WebApp si está disponible
             if (this.telegram) {
+                console.log('📱 Telegram WebApp disponible');
                 this.telegram.expand();
                 this.telegram.enableClosingConfirmation();
                 this.telegram.setHeaderColor('#667eea');
                 this.telegram.setBackgroundColor('#f8f9fa');
+            } else {
+                console.log('⚠️ Telegram WebApp no disponible (probablemente navegador normal)');
             }
             
             // Inicializar eventos
@@ -80,7 +100,10 @@ class CromwellWebApp {
 
     async loadConfig() {
         try {
+            console.log('🔧 Cargando configuración...');
             const response = await fetch('/api/webapp-config');
+            console.log('🔧 Respuesta configuración:', response.status);
+            
             if (response.ok) {
                 const data = await response.json();
                 if (data.success) {
@@ -94,6 +117,11 @@ class CromwellWebApp {
                     window.SALDO_MOVIL_RATE = data.config.saldo_movil_rate || 2.1;
                     window.MIN_CWS_USE = data.config.min_cws_use || 100;
                     window.CWS_PER_100_SALDO = data.config.cws_per_100_saldo || 10;
+                    
+                    console.log('✅ Configuración cargada:', {
+                        MINIMO_CUP: window.MINIMO_CUP,
+                        MINIMO_SALDO: window.MINIMO_SALDO
+                    });
                 }
             }
         } catch (error) {
@@ -102,6 +130,8 @@ class CromwellWebApp {
     }
 
     initEvents() {
+        console.log('🎮 Inicializando eventos...');
+        
         // Eventos de navegación
         document.querySelectorAll('.nav-item').forEach(item => {
             item.addEventListener('click', (e) => {
@@ -204,6 +234,8 @@ class CromwellWebApp {
                 this.showScreen('claim');
             });
         }
+        
+        console.log('✅ Eventos inicializados');
     }
 
     setupNavigation() {
@@ -222,6 +254,7 @@ class CromwellWebApp {
             this.showLoading('Cargando información...');
             
             console.log('🔍 Enviando telegram_id:', this.userId);
+            console.log('🔍 URL de API:', '/api/user-data');
             
             const response = await fetch('/api/user-data', {
                 method: 'POST',
@@ -234,11 +267,19 @@ class CromwellWebApp {
             });
 
             console.log('🔍 Respuesta HTTP:', response.status, response.statusText);
+            console.log('🔍 Headers:', response.headers);
             
             if (!response.ok) {
                 const errorText = await response.text();
                 console.error('❌ Error de respuesta:', errorText);
-                throw new Error(`Error HTTP: ${response.status} - ${response.statusText}`);
+                
+                // Intentar parsear como JSON si es posible
+                try {
+                    const errorData = JSON.parse(errorText);
+                    throw new Error(errorData.error || `Error HTTP: ${response.status} - ${response.statusText}`);
+                } catch (e) {
+                    throw new Error(`Error HTTP: ${response.status} - ${response.statusText}. Detalles: ${errorText}`);
+                }
             }
 
             const data = await response.json();
@@ -246,51 +287,107 @@ class CromwellWebApp {
 
             if (data.success) {
                 this.userData = data.user;
+                console.log('✅ Datos de usuario cargados:', {
+                    id: this.userData.id,
+                    telegram_id: this.userData.telegram_id,
+                    balance_cup: this.userData.balance_cup,
+                    balance_saldo: this.userData.balance_saldo
+                });
                 this.updateUI();
                 this.showToast('✅ Datos actualizados', 'success');
             } else {
+                console.error('❌ Error en respuesta API:', data);
                 throw new Error(data.error || 'Error desconocido al cargar datos');
             }
         } catch (error) {
-            console.error('❌ Error cargando datos:', error);
+            console.error('❌ Error completo cargando datos:', error);
+            console.error('❌ Stack trace:', error.stack);
+            
+            // Mostrar error en la interfaz
+            const welcomeTitle = document.getElementById('welcome-title');
+            const welcomeSubtitle = document.getElementById('welcome-subtitle');
+            
+            if (welcomeTitle) {
+                welcomeTitle.textContent = '❌ Error';
+                welcomeTitle.style.color = '#ef4444';
+            }
+            if (welcomeSubtitle) {
+                welcomeSubtitle.textContent = error.message.length > 50 ? 
+                    error.message.substring(0, 50) + '...' : error.message;
+                welcomeSubtitle.style.color = '#ef4444';
+            }
+            
             this.showToast(`❌ Error: ${error.message}`, 'error');
             
-            // Mostrar información de debug
-            const debugInfo = `
-                <div style="margin-top: 20px; padding: 10px; background: rgba(255,0,0,0.1); border-radius: 5px;">
-                    <small><strong>Debug info:</strong></small><br>
-                    <small>User ID: ${this.userId}</small><br>
-                    <small>Error: ${error.message}</small>
-                </div>
-            `;
-            
-            const errorContainer = document.getElementById('error-container');
-            if (errorContainer) {
-                errorContainer.innerHTML = debugInfo;
+            // Crear elemento de debug si no existe
+            let debugContainer = document.getElementById('debug-container');
+            if (!debugContainer) {
+                debugContainer = document.createElement('div');
+                debugContainer.id = 'debug-container';
+                debugContainer.style.cssText = `
+                    margin: 20px;
+                    padding: 10px;
+                    background: rgba(255,0,0,0.1);
+                    border-radius: 5px;
+                    font-size: 12px;
+                    color: #ff6b6b;
+                `;
+                document.querySelector('.info-section').appendChild(debugContainer);
             }
+            
+            debugContainer.innerHTML = `
+                <small><strong>Debug info:</strong></small><br>
+                <small>User ID: ${this.userId}</small><br>
+                <small>Error: ${error.message}</small><br>
+                <small>Time: ${new Date().toLocaleTimeString()}</small><br>
+                <button onclick="window.cromwellApp.loadUserData()" style="
+                    background: #4f46e5;
+                    color: white;
+                    border: none;
+                    padding: 5px 10px;
+                    border-radius: 3px;
+                    cursor: pointer;
+                    font-size: 11px;
+                    margin-top: 5px;
+                ">
+                    Reintentar
+                </button>
+            `;
         } finally {
             this.hideLoading();
         }
     }
 
     updateUI() {
-        if (!this.userData) return;
+        if (!this.userData) {
+            console.error('❌ No hay userData para actualizar UI');
+            return;
+        }
 
+        console.log('🎨 Actualizando UI con datos:', this.userData);
+        
         // Actualizar dashboard
         const welcomeTitle = document.getElementById('welcome-title');
         const welcomeSubtitle = document.getElementById('welcome-subtitle');
         
         if (welcomeTitle) {
             welcomeTitle.textContent = `¡Hola, ${this.userData.first_name || 'Usuario'}!`;
+            welcomeTitle.style.color = '';
         }
         if (welcomeSubtitle) {
             welcomeSubtitle.textContent = 'Bienvenido a Cromwell Store';
+            welcomeSubtitle.style.color = '';
         }
         
         // Actualizar saldos
         const updateElement = (id, value, prefix = '') => {
             const element = document.getElementById(id);
-            if (element) element.textContent = prefix + (value || 0);
+            if (element) {
+                element.textContent = prefix + (value || 0);
+                console.log(`📊 Actualizado ${id}: ${prefix}${value}`);
+            } else {
+                console.warn(`⚠️ Elemento ${id} no encontrado`);
+            }
         };
         
         updateElement('dashboard-cup', this.userData.balance_cup, '$');
@@ -322,6 +419,8 @@ class CromwellWebApp {
                 minute: '2-digit'
             });
             updateElement('last-activity', formattedDate);
+        } else {
+            updateElement('last-activity', 'No disponible');
         }
 
         // Actualizar avatar en header
@@ -331,14 +430,18 @@ class CromwellWebApp {
                 this.userData.first_name.charAt(0).toUpperCase() : '👤';
         }
         
-        // Mostrar ID de Telegram
-        const telegramIdDisplay = document.getElementById('telegram-id-display');
-        if (telegramIdDisplay) {
-            telegramIdDisplay.textContent = `ID: ${this.userData.telegram_id}`;
+        // Ocultar debug container si existe
+        const debugContainer = document.getElementById('debug-container');
+        if (debugContainer) {
+            debugContainer.style.display = 'none';
         }
+        
+        console.log('✅ UI actualizada correctamente');
     }
 
     switchScreen(screenName) {
+        console.log(`🔄 Cambiando a pantalla: ${screenName}`);
+        
         // Ocultar todas las pantallas
         document.querySelectorAll('.screen').forEach(screen => {
             screen.classList.remove('active');
@@ -362,10 +465,14 @@ class CromwellWebApp {
                     this.loadHistory();
                     break;
             }
+        } else {
+            console.error(`❌ Pantalla no encontrada: screen-${screenName}`);
         }
     }
 
     showScreen(screenName) {
+        console.log(`📱 Mostrando pantalla: ${screenName}`);
+        
         // Actualizar navegación
         document.querySelectorAll('.nav-item').forEach(item => {
             item.classList.remove('active');
@@ -379,6 +486,8 @@ class CromwellWebApp {
     }
 
     handleQuickAction(action) {
+        console.log(`⚡ Acción rápida: ${action}`);
+        
         switch(action) {
             case 'deposit-cup':
                 this.selectPaymentMethod('cup');
@@ -400,10 +509,14 @@ class CromwellWebApp {
             case 'history':
                 this.showScreen('history');
                 break;
+            default:
+                console.warn(`⚠️ Acción desconocida: ${action}`);
         }
     }
 
     selectPaymentMethod(method) {
+        console.log(`💰 Seleccionando método: ${method}`);
+        
         // Remover selección anterior
         document.querySelectorAll('.method-card').forEach(card => {
             card.classList.remove('selected');
@@ -448,6 +561,7 @@ class CromwellWebApp {
             amountInput.min = minAmounts[method];
             amountInput.max = maxAmounts[method];
             amountInput.placeholder = `Ej: ${minAmounts[method]}`;
+            amountInput.value = '';
         }
 
         // Configurar información de pago
@@ -489,6 +603,9 @@ class CromwellWebApp {
             method: method,
             hasBonus: hasBonus
         };
+        
+        // Calcular bono inicial
+        this.calculateBonus(amountInput?.value || '');
     }
 
     calculateBonus(amount) {
@@ -497,7 +614,7 @@ class CromwellWebApp {
         const amountNum = parseFloat(amount) || 0;
         let totalWithBonus = amountNum;
 
-        if (this.currentAction.hasBonus) {
+        if (this.currentAction.hasBonus && amountNum > 0) {
             const bonus = amountNum * 0.10;
             totalWithBonus = amountNum + bonus;
             const totalElement = document.getElementById('total-with-bonus');
@@ -1487,6 +1604,8 @@ class CromwellWebApp {
 
 // Inicializar la WebApp cuando el DOM esté listo
 document.addEventListener('DOMContentLoaded', () => {
+    console.log('📱 webapp.js: DOM cargado');
+    
     // Configurar variables globales desde el entorno
     window.PAGO_CUP_TARJETA = window.PAGO_CUP_TARJETA || '';
     window.PAGO_SALDO_MOVIL = window.PAGO_SALDO_MOVIL || '';
@@ -1500,6 +1619,32 @@ document.addEventListener('DOMContentLoaded', () => {
     window.CWS_PER_100_SALDO = window.CWS_PER_100_SALDO || 10;
     window.WEBHOOK_SECRET_KEY = window.WEBHOOK_SECRET_KEY || '';
     
-    // Inicializar la aplicación
-    window.cromwellApp = new CromwellWebApp();
+    console.log('📱 webapp.js: Variables globales configuradas');
+    console.log('📱 webapp.js: TELEGRAM_USER_ID actual:', window.TELEGRAM_USER_ID);
+    
+    // Inicializar la aplicación solo si tenemos userId
+    if (window.TELEGRAM_USER_ID) {
+        console.log('🚀 webapp.js: Inicializando CromwellWebApp...');
+        window.cromwellApp = new CromwellWebApp();
+    } else {
+        console.error('❌ webapp.js: No hay TELEGRAM_USER_ID disponible');
+        document.body.innerHTML = `
+            <div style="padding: 40px 20px; text-align: center; font-family: Arial, sans-serif;">
+                <h2 style="color: #dc3545;">❌ Error de Inicialización</h2>
+                <p>No se detectó el ID del usuario.</p>
+                <button onclick="location.reload()" style="
+                    background: #4f46e5;
+                    color: white;
+                    border: none;
+                    padding: 12px 24px;
+                    border-radius: 8px;
+                    cursor: pointer;
+                    font-size: 16px;
+                    margin-top: 20px;
+                ">
+                    Reintentar
+                </button>
+            </div>
+        `;
+    }
 });
