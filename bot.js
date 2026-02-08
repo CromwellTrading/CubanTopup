@@ -1691,8 +1691,8 @@ bot.onText(/\/webapp/, async (msg) => {
         return bot.sendMessage(chatId, '❌ No estás registrado. Usa /start primero.');
     }
     
-    // Obtener la URL base del servidor
-    const webAppUrl = process.env.WEBAPP_URL || `http://localhost:${PORT || 3000}/webapp`;
+    // En bot.js, en la función handleOpenWebApp
+const webAppUrl = `https://cubantopup.onrender.com/webapp?userId=${chatId}`;
     
     const message = `🌐 *WebApp Cromwell Store*\n\n` +
         `Accede a nuestra WebApp para una mejor experiencia:\n\n` +
