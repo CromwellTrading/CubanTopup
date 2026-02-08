@@ -193,34 +193,104 @@ class CromwellWebApp {
             });
         });
     }
-
-    async loadUserData() {
-        try {
-            this.showLoading('Cargando información...');
-            
-            // Obtener ID de Telegram del usuario
-            let userId = null;
-            
-            // Método 1: Desde initDataUnsafe (recomendado)
-            if (this.telegram.initDataUnsafe && this.telegram.initDataUnsafe.user) {
-                userId = this.telegram.initDataUnsafe.user.id;
-                console.log('✅ ID obtenido de initDataUnsafe:', userId);
-            }
-            
-            // Método 2: Parsear initData si está disponible
-            if (!userId && this.telegram.initData) {
-                const urlParams = new URLSearchParams(this.telegram.initData);
-                const userParam = urlParams.get('user');
+async loadUserData() {
+    try {
+        this.showLoading('Cargando información...');
+        
+        // Obtener ID de Telegram del usuario
+        let userId = null;
+        
+        // Método 1: Desde initDataUnsafe (recomendado)
+        if (this.telegram.initDataUnsafe && this.telegram.initDataUnsafe.user) {
+            userId = this.telegram.initDataUnsafe.user.id;
+            console.log('✅ ID obtenido de initDataUnsafe:', userId);
+        }
+        
+        // Método 2: Desde parámetros de URL (fallback)
+        if (!userId) {
+            const urlParams = new URLSearchParams(window.location.search);
+            userId = urlParams.get('user_id') || urlParams.get('id') || urlParams.get('userId');
+            console.log('✅ ID obtenido de URL params:', userId);
+        }
+        
+        // Método 3: Intentar parsear initData si está disponible
+        if (!userId && this.telegram.initData) {
+            try {
+                const params = new URLSearchParams(this.telegram.initData);
+                const userParam = params.get('user');
                 if (userParam) {
-                    try {
-                        const userData = JSON.parse(userParam);
-                        userId = userData.id;
-                        console.log('✅ ID obtenido de initData:', userId);
-                    } catch (e) {
-                        console.error('❌ Error parseando user de initData:', e);
-                    }
+                    const userData = JSON.parse(decodeURIComponent(userParam));
+                    userId = userData.id;
+                    console.log('✅ ID obtenido de initData parseado:', userId);
                 }
+            } catch (e) {
+                console.error('❌ Error parseando initData:', e);
             }
+        }
+        
+        if (!userId) {
+            console.error('❌ No se pudo obtener el ID de usuario de ninguna fuente');
+            console.log('initDataUnsafe:', this.telegram.initDataUnsafe);
+            console.log('initData:', this.telegram.initData);
+            
+            // Mostrar mensaje de error específico para Telegram WebApp
+            const errorHtml = `
+                <div style="padding: 20px; text-align: center;">
+                    <h3 style="color: #dc3545;">❌ Error de Autenticación</h3>
+                    <p>No se pudo obtener tu ID de Telegram.</p>
+                    <p><strong>Posibles soluciones:</strong></p>
+                    <ol style="text-align: left; max-width: 400px; margin: 0 auto;">
+                        <li>Cierra y vuelve a abrir la WebApp desde el bot</li>
+                        <li>Asegúrate de usar la última versión de Telegram</li>
+                        <li>Contacta al administrador</li>
+                    </ol>
+                    <p style="margin-top: 20px;">
+                        <strong>Para debug:</strong><br>
+                        <small>initData: ${this.telegram.initData ? 'Presente' : 'Ausente'}<br>
+                        initDataUnsafe: ${this.telegram.initDataUnsafe ? 'Presente' : 'Ausente'}</small>
+                    </p>
+                </div>
+            `;
+            
+            document.getElementById('screen-dashboard').innerHTML = errorHtml;
+            this.hideLoading();
+            return;
+        }
+
+        // Obtener datos del usuario desde la API SIN token (Telegram WebApp)
+        const response = await fetch('/api/user-data', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ 
+                telegram_id: userId
+                // NO enviar auth_token para WebApp
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error(`Error HTTP: ${response.status}`);
+        }
+
+        const data = await response.json();
+
+        if (data.success) {
+            this.userData = data.user;
+            this.updateUI();
+            this.showToast('✅ Datos cargados correctamente', 'success');
+            console.log('✅ Datos del usuario cargados:', this.userData);
+        } else {
+            this.showToast('❌ Error al cargar datos: ' + (data.error || 'Desconocido'), 'error');
+        }
+    } catch (error) {
+        console.error('❌ Error cargando datos:', error);
+        this.showToast('❌ Error de conexión', 'error');
+    } finally {
+        this.hideLoading();
+    }
+}
+    
             
             // Método 3: Desde parámetros de URL (fallback)
             if (!userId) {
