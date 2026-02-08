@@ -138,8 +138,7 @@
             const tg = window.Telegram?.WebApp;
             
             console.log('🔍 Iniciando detección de Telegram WebApp...');
-            console.log('🔍 window.Telegram:', window.Telegram);
-            console.log('🔍 window.Telegram.WebApp:', tg);
+            console.log('🔍 URL actual:', window.location.href);
             
             let telegramUserId = null;
             let detectedFrom = '';
@@ -199,10 +198,16 @@
                 // Guardar el ID en localStorage para la aplicación principal
                 localStorage.setItem('cromwell_telegram_id', telegramUserId);
                 
-                // Redirigir después de 1 segundo
-                setTimeout(() => {
-                    window.location.href = `/webapp-main.html?userId=${telegramUserId}`;
-                }, 1000);
+                // Obtener la ruta base del servidor
+                const currentPath = window.location.pathname;
+                const basePath = currentPath.substring(0, currentPath.lastIndexOf('/')) || '';
+                
+                // CORRECCIÓN: Usar ruta absoluta para redirección
+                const redirectUrl = `${basePath}/webapp-main.html?userId=${telegramUserId}`;
+                console.log(`🔄 Redirigiendo a: ${redirectUrl}`);
+                
+                // Redirigir inmediatamente
+                window.location.href = redirectUrl;
                 
             } else {
                 // ERROR: Mostrar mensaje
@@ -237,7 +242,7 @@
                 tg.ready();
                 
                 // Esperar un momento para que Telegram se inicialice
-                setTimeout(detectTelegramUser, 500);
+                setTimeout(detectTelegramUser, 100);
             } else {
                 // Telegram WebApp no disponible
                 detectTelegramUser();
@@ -248,7 +253,7 @@
         document.getElementById('retry-btn').addEventListener('click', () => {
             document.getElementById('error').style.display = 'none';
             document.getElementById('loading').style.display = 'block';
-            setTimeout(detectTelegramUser, 500);
+            setTimeout(detectTelegramUser, 100);
         });
     </script>
 </body>
