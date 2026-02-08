@@ -143,6 +143,15 @@ const activeSessions = {};
 
 // Middleware to verify webhook token
 const verifyWebhookToken = (req, res, next) => {
+    // Permitir solicitudes desde Telegram WebApp sin token
+    const telegramWebApp = req.headers['user-agent']?.includes('Telegram') || 
+                          req.headers['origin']?.includes('telegram.org');
+    
+    if (telegramWebApp) {
+        console.log('✅ Solicitud de Telegram WebApp, permitiendo sin token');
+        return next();
+    }
+    
     if (!WEBHOOK_SECRET_KEY) {
         console.log('⚠️ WEBHOOK_SECRET_KEY not configured, accepting all requests');
         return next();
@@ -949,9 +958,8 @@ app.post('/payment-notification', verifyWebhookToken, async (req, res) => {
 // ============================================
 // WEBAPP API ENDPOINTS
 // ============================================
-
 // Get user data for WebApp
-app.post('/api/user-data', verifyWebhookToken, async (req, res) => {
+app.post('/api/user-data', async (req, res) => {  // Quitar verifyWebhookToken
     try {
         const { telegram_id } = req.body;
         
@@ -964,6 +972,7 @@ app.post('/api/user-data', verifyWebhookToken, async (req, res) => {
             return res.status(404).json({ error: 'Usuario no encontrado' });
         }
         
+        // No devolver información sensible
         res.json({
             success: true,
             user: {
