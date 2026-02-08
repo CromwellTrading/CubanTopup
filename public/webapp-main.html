@@ -8,6 +8,44 @@
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
+    <script>
+    // Verificar que tenemos el userId
+    const urlParams = new URLSearchParams(window.location.search);
+    let telegramUserId = urlParams.get('userId');
+    
+    // Si no está en la URL, buscar en localStorage
+    if (!telegramUserId) {
+        telegramUserId = localStorage.getItem('cromwell_telegram_id');
+    }
+    
+    // Si aún no tenemos ID, mostrar error
+    if (!telegramUserId) {
+        document.body.innerHTML = `
+            <div style="padding: 40px 20px; text-align: center; color: white; background: #0a0a1f; height: 100vh;">
+                <h2 style="color: #ef4444;">❌ Error de Acceso</h2>
+                <p>No se detectó tu ID de Telegram.</p>
+                <p>Por favor, abre la WebApp desde el bot de Telegram.</p>
+                <div style="margin-top: 30px;">
+                    <button onclick="window.location.href = '/webapp.html'" style="
+                        background: #4f46e5;
+                        color: white;
+                        border: none;
+                        padding: 12px 24px;
+                        border-radius: 8px;
+                        cursor: pointer;
+                    ">
+                        Volver a la pantalla de inicio
+                    </button>
+                </div>
+            </div>
+        `;
+        throw new Error('Telegram User ID not found');
+    }
+    
+    // Guardar para uso global
+    window.TELEGRAM_USER_ID = telegramUserId;
+    console.log('✅ User ID cargado:', telegramUserId);
+</script>
     <!-- Contenedor principal -->
     <div id="app">
         <!-- Cabecera -->
