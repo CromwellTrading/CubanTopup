@@ -1,17 +1,18 @@
 // webapp.js - WebApp principal para Cromwell Store
 class CromwellWebApp {
     constructor() {
-        // Obtener userId de la URL (ya detectado en webapp.html)
-        const urlParams = new URLSearchParams(window.location.search);
-        this.userId = urlParams.get('userId') || window.TELEGRAM_USER_ID;
-        
-        if (!this.userId) {
-            console.error('❌ No se encontró userId en la URL');
-            this.showErrorScreen('No se detectó usuario. Por favor, abre la WebApp desde el bot.');
-            return;
-        }
-        
-        console.log('✅ User ID:', this.userId);
+    // Obtener userId de variable global o URL
+    this.userId = window.TELEGRAM_USER_ID || 
+                  new URLSearchParams(window.location.search).get('userId');
+    
+    if (!this.userId) {
+        console.error('❌ No se encontró userId');
+        this.showErrorScreen('No se detectó usuario. Por favor, abre la WebApp desde el bot.');
+        return;
+    }
+    
+    console.log('✅ User ID:', this.userId);
+}
         
         this.telegram = window.Telegram?.WebApp;
         this.userData = null;
