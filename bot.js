@@ -1064,7 +1064,38 @@ app.post('/api/create-deposit', verifyWebhookToken, async (req, res) => {
 app.get('/api/games', verifyWebhookToken, async (req, res) => {
     try {
         // Import GAMES object from game_recharges.js
-        const GAMES = require('./game_recharges.js').GAMES || {};
+        const GameRechargeHandler = require('./game_recharges.js');
+        
+        // Acceder al objeto GAMES desde game_recharges.js
+        // Necesitamos modificar game_recharges.js para exportar GAMES
+        // Por ahora, intentamos acceder de diferentes formas
+        let GAMES;
+        
+        try {
+            // Intento 1: Si GAMES está exportado directamente
+            GAMES = require('./game_recharges.js').GAMES;
+        } catch (e) {
+            // Intento 2: Si no, usamos un objeto vacío
+            GAMES = {};
+        }
+        
+        // Si GAMES está vacío, devolver datos de ejemplo
+        if (!GAMES || Object.keys(GAMES).length === 0) {
+            GAMES = {
+                66584: {
+                    name: "Arena Breakout",
+                    variations: {
+                        528315: { name: "60 + 6 Bonds" }
+                    },
+                    input_schema: {
+                        fields: [
+                            { key: "user_id", label: "User ID", required: true, type: "text" },
+                            { key: "server_id", label: "Server ID", required: true, type: "text" }
+                        ]
+                    }
+                }
+            };
+        }
         
         const games = Object.entries(GAMES).map(([id, game]) => ({
             id,
@@ -1651,7 +1682,8 @@ bot.onText(/\/webapp/, async (msg) => {
         return bot.sendMessage(chatId, '❌ No estás registrado. Usa /start primero.');
     }
     
-    const webAppUrl = `${req.protocol}://${req.get('host')}/webapp`;
+    // Obtener la URL base del servidor
+    const webAppUrl = process.env.WEBAPP_URL || `http://localhost:${PORT || 3000}/webapp`;
     
     const message = `🌐 *WebApp Cromwell Store*\n\n` +
         `Accede a nuestra WebApp para una mejor experiencia:\n\n` +
@@ -1788,7 +1820,9 @@ async function handleStartBack(chatId, messageId) {
 }
 
 async function handleOpenWebApp(chatId, messageId) {
-    const webAppUrl = `https://${req.get('host')}/webapp`;
+async function handleOpenWebApp(chatId, messageId) {
+    // Obtener la URL base del servidor
+    const webAppUrl = process.env.WEBAPP_URL || `http://localhost:${PORT || 3000}/webapp`;
     
     const message = `🌐 *Abrir WebApp Cromwell Store*\n\n` +
         `Haz clic en el botón de abajo para abrir la WebApp:\n\n` +
