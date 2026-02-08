@@ -1,46 +1,34 @@
 {
-  "name": "cromwell-store",
-  "version": "1.0.0",
-  "description": "Sistema completo Cromwell Store - Bot Telegram + Web + API",
+  "name": "cromwell-store-bot",
+  "version": "2.0.0",
+  "description": "Bot de Telegram para Cromwell Store con WebApp integrada",
   "main": "bot.js",
   "scripts": {
     "start": "node bot.js",
     "dev": "nodemon bot.js",
-    "web": "node server.js",
-    "dev:web": "nodemon server.js",
-    "bot": "node bot.js",
-    "dev:bot": "nodemon bot.js",
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "setup": "npm install && echo \"Setup completado\""
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [
-    "cromwell",
-    "store",
-    "wallet",
     "telegram",
     "bot",
-    "crypto",
-    "payments"
+    "cryptocurrency",
+    "wallet",
+    "webapp",
+    "games",
+    "recharge"
   ],
   "author": "Cromwell Store",
-  "license": "MIT",
+  "license": "ISC",
   "dependencies": {
-    "node-telegram-bot-api": "^0.61.0",
+    "axios": "^1.6.0",
+    "bcryptjs": "^2.4.3",
+    "body-parser": "^1.20.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
     "express": "^4.18.2",
     "express-session": "^1.17.3",
-    "bcryptjs": "^2.4.3",
-    "jsonwebtoken": "^9.0.2",
-    "axios": "^1.5.0",
-    "web3": "^1.9.0",
-    "chart.js": "^4.4.0",
-    "dotenv": "^16.3.1",
-    "@supabase/supabase-js": "^2.38.0",
-    "cors": "^2.8.5",
-    "helmet": "^7.0.0",
-    "morgan": "^1.10.0",
-    "compression": "^1.7.4",
-    "rate-limiter-flexible": "^2.4.2",
-    "node-cron": "^3.0.2"
+    "node-telegram-bot-api": "^0.63.0",
+    "@supabase/supabase-js": "^2.38.0"
   },
   "devDependencies": {
     "nodemon": "^3.0.1"
@@ -48,5 +36,13 @@
   "engines": {
     "node": ">=16.0.0",
     "npm": ">=8.0.0"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tu-usuario/cromwell-store.git"
+  },
+  "bugs": {
+    "url": "https://github.com/tu-usuario/cromwell-store/issues"
+  },
+  "homepage": "https://github.com/tu-usuario/cromwell-store#readme"
 }
