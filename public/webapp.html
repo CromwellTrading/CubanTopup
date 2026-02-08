@@ -198,12 +198,28 @@
                 // Guardar el ID en localStorage para la aplicación principal
                 localStorage.setItem('cromwell_telegram_id', telegramUserId);
                 
-                // Obtener la ruta base del servidor
+                // Obtener la ruta base del servidor CORRECTAMENTE
                 const currentPath = window.location.pathname;
-                const basePath = currentPath.substring(0, currentPath.lastIndexOf('/')) || '';
+                let basePath = '';
                 
-                // CORRECCIÓN: Usar ruta absoluta para redirección
-                const redirectUrl = `${basePath}/webapp-main.html?userId=${telegramUserId}`;
+                // Extraer el directorio base
+                const pathParts = currentPath.split('/');
+                if (pathParts.length > 1) {
+                    pathParts.pop(); // Eliminar el archivo actual
+                    basePath = pathParts.join('/');
+                }
+                
+                console.log('📍 Ruta base:', basePath);
+                console.log('📍 Pathname completo:', currentPath);
+                
+                // Construir URL de redirección - USAR RUTA RELATIVA
+                let redirectUrl;
+                if (basePath) {
+                    redirectUrl = `${basePath}/webapp-main.html?userId=${telegramUserId}`;
+                } else {
+                    redirectUrl = `/webapp-main.html?userId=${telegramUserId}`;
+                }
+                
                 console.log(`🔄 Redirigiendo a: ${redirectUrl}`);
                 
                 // Redirigir inmediatamente
