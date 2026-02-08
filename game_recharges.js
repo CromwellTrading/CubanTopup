@@ -1231,7 +1231,16 @@ class GameRechargeHandler {
 }
 
 // ============================================
-// EXPORTAR HANDLER
+// EXPORTAR VARIABLES NECESARIAS
 // ============================================
 
 module.exports = GameRechargeHandler;
+
+// Exportar también el objeto GAMES para la WebApp
+module.exports.GAMES = GAMES;
+
+// Exportar funciones necesarias
+module.exports.getLioGamesPrice = getLioGamesPrice;
+module.exports.createOrder = createOrder;
+module.exports.checkOrderStatus = checkOrderStatus;
+module.exports.calculateAllPrices = calculateAllPrices;
