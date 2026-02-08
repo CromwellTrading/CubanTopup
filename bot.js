@@ -2747,12 +2747,3 @@ app.listen(PORT, () => {
     console.log(`   • POST /status-webhook - Genérico`);
     console.log(`\n🚀 Bot listo para recibir mensajes...`);
 });
-
-// Global error handling
-process.on('uncaughtException', (error) => {
-    console.error('❌ Error no capturado:', error);
-});
-
-process.on('unhandledRejection', (reason, promise) => {
-    console.error('❌ Promesa rechazada no manejada:', reason);
-});
