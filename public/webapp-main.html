@@ -4,574 +4,144 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Cromwell Store - WebApp</title>
-    <link rel="stylesheet" href="/css/webapp.css">
-    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <link rel="stylesheet" href="css/webapp.css" onerror="this.href='webapp.css'"> <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        /* Estilos críticos inline para asegurar que se vea algo */
+        body { margin: 0; font-family: sans-serif; background: #0a0a1f; color: white; }
+        .hidden { display: none !important; }
+        .screen { display: none; padding-bottom: 80px; }
+        .screen.active { display: block; }
+        /* Toast styles basicos */
+        .toast-container { position: fixed; top: 20px; right: 20px; z-index: 1000; }
+        .toast { background: #333; padding: 10px 20px; margin-bottom: 10px; border-radius: 4px; }
+        /* Nav styles basicos por si falla el CSS */
+        .main-nav { position: fixed; bottom: 0; width: 100%; background: #1a1a2e; display: flex; justify-content: space-around; padding: 10px 0; }
+        .nav-item { background: none; border: none; color: #666; font-size: 24px; }
+        .nav-item.active { color: #4f46e5; }
+    </style>
 </head>
 <body>
-    <!-- Script de inicialización PRIMERO - SIN SCRIPT SRC ANTES -->
     <script>
         (function() {
-            console.log('🔍 Iniciando verificación de usuario...');
-            console.log('🔍 URL completa:', window.location.href);
-            console.log('🔍 Parámetros URL:', window.location.search);
-            
-            // Verificar que tenemos el userId
             const urlParams = new URLSearchParams(window.location.search);
-            let telegramUserId = urlParams.get('userId');
+            // Intentar obtener ID de varias fuentes
+            let id = urlParams.get('userId') || localStorage.getItem('cromwell_telegram_id');
             
-            // Si no está en la URL, buscar en localStorage
-            if (!telegramUserId) {
-                telegramUserId = localStorage.getItem('cromwell_telegram_id');
-                console.log('🔍 ID desde localStorage:', telegramUserId);
+            // ID de respaldo para pruebas si no hay nada (SOLO DESARROLLO)
+            if (!id && window.location.hostname === 'localhost') {
+                id = '123456789'; 
+                console.warn('⚠️ Usando ID de prueba localhost');
             }
-            
-            // Si aún no tenemos ID, mostrar error
-            if (!telegramUserId) {
-                console.error('❌ No se encontró ID de usuario');
-                document.body.innerHTML = `
-                    <div style="padding: 40px 20px; text-align: center; color: white; background: #0a0a1f; height: 100vh; font-family: Arial, sans-serif;">
-                        <h2 style="color: #ef4444;">❌ Error de Acceso</h2>
-                        <p>No se detectó tu ID de Telegram.</p>
-                        <p>Por favor, abre la WebApp desde el bot de Telegram.</p>
-                        <div style="margin-top: 30px;">
-                            <button onclick="window.location.href = '/webapp.html'" style="
-                                background: #4f46e5;
-                                color: white;
-                                border: none;
-                                padding: 12px 24px;
-                                border-radius: 8px;
-                                cursor: pointer;
-                            ">
-                                Volver a la pantalla de inicio
-                            </button>
-                        </div>
-                    </div>
-                `;
-                throw new Error('Telegram User ID not found');
+
+            if (id) {
+                window.TELEGRAM_USER_ID = id;
+                localStorage.setItem('cromwell_telegram_id', id);
+                console.log('✅ ID Configurado:', window.TELEGRAM_USER_ID);
+            } else {
+                alert('Error: No User ID found. Abre desde Telegram.');
             }
-            
-            // Guardar para uso global INMEDIATAMENTE
-            window.TELEGRAM_USER_ID = telegramUserId.toString();
-            console.log('✅ User ID cargado:', telegramUserId);
-            
-            // También guardar en localStorage por si acaso
-            localStorage.setItem('cromwell_telegram_id', telegramUserId.toString());
-            
-            // Mostrar ID en pantalla mientras carga
-            document.body.innerHTML = `
-                <div style="padding: 40px 20px; text-align: center; color: white; background: #0a0a1f; height: 100vh; font-family: Arial, sans-serif;">
-                    <div class="logo" style="margin-bottom: 30px;">
-                        <div style="font-size: 4rem; margin-bottom: 10px;">🏪</div>
-                        <div style="font-size: 1.5rem; color: #a5b4fc;">Cromwell Store</div>
-                    </div>
-                    <div class="loading" style="margin: 30px 0;">
-                        <div style="border: 4px solid rgba(255, 255, 255, 0.1); border-top: 4px solid #4f46e5; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto 20px;"></div>
-                        <p>Inicializando aplicación...</p>
-                        <p style="font-size: 12px; margin-top: 10px; color: #a5b4fc;">ID: ${telegramUserId}</p>
-                    </div>
-                </div>
-                <style>
-                    @keyframes spin {
-                        0% { transform: rotate(0deg); }
-                        100% { transform: rotate(360deg); }
-                    }
-                </style>
-            `;
         })();
     </script>
-    
-    <!-- Contenedor principal - SE CARGARÁ DINÁMICAMENTE -->
-    <div id="app" style="display: none;">
-        <!-- Cabecera -->
-        <header class="app-header">
-            <div class="header-content">
-                <div class="logo">
-                    <span class="logo-icon">🏪</span>
-                    <span class="logo-text">Cromwell Store</span>
-                </div>
-                <div class="user-info" id="user-info">
-                    <span class="user-balance" id="balance-cup">$0</span>
-                    <span class="user-avatar" id="user-avatar">👤</span>
-                </div>
-            </div>
-            <div class="header-notification" id="header-notification" style="display: none;">
-                <span id="notification-text"></span>
-            </div>
+
+    <div id="app">
+        <header style="padding: 20px; background: #1a1a2e; display: flex; justify-content: space-between;">
+            <div>🏪 Cromwell Store</div>
+            <div id="balance-cup">$0</div>
         </header>
 
-        <!-- Navegación principal -->
-        <nav class="main-nav">
-            <div class="nav-grid">
-                <button class="nav-item active" data-screen="dashboard">
-                    <span class="nav-icon">🏠</span>
-                    <span class="nav-label">Inicio</span>
-                </button>
-                <button class="nav-item" data-screen="wallet">
-                    <span class="nav-icon">👛</span>
-                    <span class="nav-label">Billetera</span>
-                </button>
-                <button class="nav-item" data-screen="recharge">
-                    <span class="nav-icon">💰</span>
-                    <span class="nav-label">Recargar</span>
-                </button>
-                <button class="nav-item" data-screen="games">
-                    <span class="nav-icon">🎮</span>
-                    <span class="nav-label">Juegos</span>
-                </button>
-                <button class="nav-item" data-screen="etecsa">
-                    <span class="nav-icon">📱</span>
-                    <span class="nav-label">ETECSA</span>
-                </button>
-                <button class="nav-item" data-screen="history">
-                    <span class="nav-icon">📜</span>
-                    <span class="nav-label">Historial</span>
-                </button>
-            </div>
-        </nav>
-
-        <!-- Contenido principal -->
-        <main class="app-content">
-            <!-- Pantalla: Dashboard -->
+        <main style="padding: 20px;">
             <div id="screen-dashboard" class="screen active">
-                <div class="welcome-card">
-                    <h1 id="welcome-title">¡Bienvenido!</h1>
-                    <p id="welcome-subtitle">Cargando información...</p>
+                <h1 id="welcome-title">Cargando...</h1>
+                <p id="welcome-subtitle">Espere un momento</p>
+                
+                <div style="background: #2d2d44; padding: 15px; border-radius: 10px; margin-top: 20px;">
+                    <h3>Saldos</h3>
+                    <p>CUP: <strong id="dashboard-cup">---</strong></p>
+                    <p>Saldo: <strong id="dashboard-saldo">---</strong></p>
+                    <p>CWS: <strong id="dashboard-cws">---</strong></p>
                 </div>
 
-                <div class="balance-cards">
-                    <div class="balance-card cup">
-                        <div class="balance-icon">💳</div>
-                        <div class="balance-info">
-                            <span class="balance-label">CUP</span>
-                            <span class="balance-amount" id="dashboard-cup">$0</span>
-                        </div>
-                    </div>
-                    <div class="balance-card saldo">
-                        <div class="balance-icon">📱</div>
-                        <div class="balance-info">
-                            <span class="balance-label">Saldo Móvil</span>
-                            <span class="balance-amount" id="dashboard-saldo">$0</span>
-                        </div>
-                    </div>
-                    <div class="balance-card cws">
-                        <div class="balance-icon">🎫</div>
-                        <div class="balance-info">
-                            <span class="balance-label">CWS</span>
-                            <span class="balance-amount" id="dashboard-cws">0</span>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="quick-actions">
-                    <h3>Acciones Rápidas</h3>
-                    <div class="action-grid">
-                        <button class="action-btn" data-action="deposit-cup">
-                            <span class="action-icon">💳</span>
-                            <span>Recargar CUP</span>
-                        </button>
-                        <button class="action-btn" data-action="deposit-saldo">
-                            <span class="action-icon">📱</span>
-                            <span>Recargar Saldo</span>
-                        </button>
-                        <button class="action-btn" data-action="show-games">
-                            <span class="action-icon">🎮</span>
-                            <span>Recargar Juegos</span>
-                        </button>
-                        <button class="action-btn" data-action="show-etecsa">
-                            <span class="action-icon">📶</span>
-                            <span>Recarga ETECSA</span>
-                        </button>
-                        <button class="action-btn" data-action="claim-payment">
-                            <span class="action-icon">🎁</span>
-                            <span>Reclamar Pago</span>
-                        </button>
-                        <button class="action-btn" data-action="history">
-                            <span class="action-icon">📊</span>
-                            <span>Ver Historial</span>
-                        </button>
-                    </div>
-                </div>
-
-                <div class="info-section">
-                    <h3>Información Importante</h3>
-                    <div class="info-card">
-                        <p><strong>🆔 Tu ID de Telegram:</strong> <code id="user-telegram-id">-</code></p>
-                        <p><strong>📞 Teléfono vinculado:</strong> <span id="user-phone">-</span></p>
-                        <p><strong>📝 Última actividad:</strong> <span id="last-activity">-</span></p>
-                    </div>
+                <div style="margin-top: 20px;">
+                    <p>ID: <code id="user-telegram-id">...</code></p>
+                    <p>Tel: <span id="user-phone">...</span></p>
                 </div>
             </div>
 
-            <!-- Pantalla: Billetera -->
             <div id="screen-wallet" class="screen">
-                <div class="screen-header">
-                    <h2>👛 Mi Billetera</h2>
-                    <button class="refresh-btn" id="refresh-wallet">🔄</button>
-                </div>
-
-                <div class="wallet-details">
-                    <div class="wallet-section">
-                        <h3>📊 Saldos Disponibles</h3>
-                        <div class="balance-detail">
-                            <div class="balance-row">
-                                <span class="balance-label">💳 CUP</span>
-                                <span class="balance-value" id="wallet-cup">$0</span>
-                            </div>
-                            <div class="balance-row">
-                                <span class="balance-label">📱 Saldo Móvil</span>
-                                <span class="balance-value" id="wallet-saldo">$0</span>
-                            </div>
-                            <div class="balance-row">
-                                <span class="balance-label">🎫 CWS (Tokens)</span>
-                                <span class="balance-value" id="wallet-cws">0</span>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="wallet-section">
-                        <h3>📞 Información de Contacto</h3>
-                        <div class="contact-info">
-                            <p><strong>Teléfono vinculado:</strong> <span id="wallet-phone">-</span></p>
-                            <button class="btn-secondary" id="change-phone">📞 Cambiar Teléfono</button>
-                        </div>
-                    </div>
-
-                    <div class="wallet-section">
-                        <h3>💡 Información Útil</h3>
-                        <div class="info-tips">
-                            <div class="tip">
-                                <span class="tip-icon">🎮</span>
-                                <span>Usa CWS para descuentos en recargas de juegos</span>
-                            </div>
-                            <div class="tip">
-                                <span class="tip-icon">📱</span>
-                                <span>Recargas ETECSA se pagan con saldo CUP</span>
-                            </div>
-                            <div class="tip">
-                                <span class="tip-icon">⚠️</span>
-                                <span>Mínimo para usar CWS: 100 tokens</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+                <h2>Billetera</h2>
+                <h1 id="wallet-cup">$0.00</h1>
+                <p>Saldo Móvil: <span id="wallet-saldo">$0</span></p>
+                <p>Tokens: <span id="wallet-cws">0</span></p>
             </div>
-
-            <!-- Pantalla: Recargar Billetera -->
-            <div id="screen-recharge" class="screen">
-                <div class="screen-header">
-                    <h2>💰 Recargar Billetera</h2>
-                </div>
-
-                <div class="recharge-options">
-                    <h3>Selecciona Método de Pago</h3>
-                    <div class="method-cards">
-                        <div class="method-card" data-method="cup">
-                            <div class="method-icon">💳</div>
-                            <div class="method-info">
-                                <h4>CUP (Tarjeta)</h4>
-                                <p>Depósito desde tarjeta bancaria</p>
-                                <p class="method-min">Mínimo: $<span id="min-cup">1000</span></p>
-                            </div>
-                        </div>
-                        <div class="method-card" data-method="saldo">
-                            <div class="method-icon">📱</div>
-                            <div class="method-info">
-                                <h4>Saldo Móvil</h4>
-                                <p>Depósito desde Transfermóvil</p>
-                                <p class="method-min">Mínimo: $<span id="min-saldo">500</span></p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="recharge-form hidden" id="recharge-form">
-                    <h3 id="recharge-title">Recargar <span id="recharge-method"></span></h3>
-                    
-                    <div class="form-group">
-                        <label for="amount">Monto a depositar</label>
-                        <input type="number" id="amount" min="0" step="100" placeholder="Ej: 1000">
-                        <div class="input-hint">
-                            <span>Mínimo: $<span id="min-amount">1000</span></span>
-                            <span>Máximo: $<span id="max-amount">50000</span></span>
-                        </div>
-                    </div>
-
-                    <div class="bonus-info" id="bonus-info">
-                        <h4>🎁 Bono Disponible</h4>
-                        <p>Primer depósito: <span id="bonus-percent">10%</span> de bono</p>
-                        <p>Total a recibir: <span id="total-with-bonus">$0</span></p>
-                    </div>
-
-                    <div class="payment-info" id="payment-info">
-                        <h4>📋 Instrucciones de Pago</h4>
-                        <div id="payment-instructions">
-                            <!-- Instrucciones dinámicas -->
-                        </div>
-                    </div>
-
-                    <div class="form-actions">
-                        <button class="btn-primary" id="confirm-deposit">✅ Confirmar Depósito</button>
-                        <button class="btn-secondary" id="cancel-deposit">❌ Cancelar</button>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Pantalla: Recargar Juegos -->
-            <div id="screen-games" class="screen">
-                <div class="screen-header">
-                    <h2>🎮 Recargar Juegos</h2>
-                    <button class="refresh-btn" id="refresh-games">🔄</button>
-                </div>
-
-                <div class="games-list" id="games-list">
-                    <!-- Lista de juegos se carga dinámicamente -->
-                    <div class="loading">
-                        <div class="spinner"></div>
-                        <p>Cargando juegos...</p>
-                    </div>
-                </div>
-
-                <div class="game-details hidden" id="game-details">
-                    <!-- Detalles del juego seleccionado -->
-                </div>
-
-                <div class="game-payment hidden" id="game-payment">
-                    <!-- Formulario de pago para juego -->
-                </div>
-            </div>
-
-            <!-- Pantalla: Recargas ETECSA -->
-            <div id="screen-etecsa" class="screen">
-                <div class="screen-header">
-                    <h2>📱 Recargas ETECSA</h2>
-                    <button class="refresh-btn" id="refresh-etecsa">🔄</button>
-                </div>
-
-                <div class="etecsa-offers" id="etecsa-offers">
-                    <div class="loading">
-                        <div class="spinner"></div>
-                        <p>Cargando ofertas...</p>
-                    </div>
-                </div>
-
-                <div class="etecsa-form hidden" id="etecsa-form">
-                    <!-- Formulario de recarga ETECSA -->
-                </div>
-            </div>
-
-            <!-- Pantalla: Historial -->
-            <div id="screen-history" class="screen">
-                <div class="screen-header">
-                    <h2>📜 Historial de Transacciones</h2>
-                    <button class="refresh-btn" id="refresh-history">🔄</button>
-                </div>
-
-                <div class="history-filters">
-                    <select id="filter-type">
-                        <option value="all">Todas las transacciones</option>
-                        <option value="DEPOSIT">Depósitos</option>
-                        <option value="GAME_RECHARGE">Recargas Juegos</option>
-                        <option value="ETECSA_RECHARGE">Recargas ETECSA</option>
-                    </select>
-                    <select id="filter-status">
-                        <option value="all">Todos los estados</option>
-                        <option value="completed">Completadas</option>
-                        <option value="pending">Pendientes</option>
-                        <option value="failed">Fallidas</option>
-                    </select>
-                </div>
-
-                <div class="history-list" id="history-list">
-                    <!-- Historial se carga dinámicamente -->
-                </div>
-            </div>
-
-            <!-- Pantalla: Reclamar Pago -->
-            <div id="screen-claim" class="screen">
-                <div class="screen-header">
-                    <h2>🎁 Reclamar Pago</h2>
-                </div>
-
-                <div class="claim-options">
-                    <p>Para pagos que no fueron detectados automáticamente:</p>
-                    <div class="option-cards">
-                        <div class="option-card" data-option="search">
-                            <div class="option-icon">🔍</div>
-                            <div class="option-info">
-                                <h4>Buscar por ID</h4>
-                                <p>Usa el ID de la transacción de Transfermóvil</p>
-                            </div>
-                        </div>
-                        <div class="option-card" data-option="pending">
-                            <div class="option-icon">📋</div>
-                            <div class="option-info">
-                                <h4>Ver Pendientes</h4>
-                                <p>Pagos pendientes de reclamar</p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="claim-form hidden" id="claim-search">
-                    <h3>🔍 Buscar por ID de Transacción</h3>
-                    <div class="form-group">
-                        <label for="tx-id">ID de Transacción</label>
-                        <input type="text" id="tx-id" placeholder="Ej: TMW162915233">
-                        <p class="form-hint">Encuentra el ID en tu SMS de Transfermóvil</p>
-                    </div>
-                    <div class="form-actions">
-                        <button class="btn-primary" id="search-payment">🔍 Buscar</button>
-                        <button class="btn-secondary" id="cancel-search">Cancelar</button>
-                    </div>
-                </div>
-
-                <div class="pending-list hidden" id="pending-list">
-                    <!-- Lista de pagos pendientes -->
-                </div>
-            </div>
+            
+            <div id="screen-recharge" class="screen"><h2>Recargar</h2></div>
+            <div id="screen-games" class="screen"><h2>Juegos</h2></div>
+            <div id="screen-etecsa" class="screen"><h2>ETECSA</h2></div>
+            <div id="screen-history" class="screen"><h2>Historial</h2></div>
         </main>
 
-        <!-- Modal para cambios de teléfono -->
-        <div class="modal hidden" id="phone-modal">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h3>📞 Cambiar Teléfono Vinculado</h3>
-                    <button class="modal-close" id="close-phone-modal">×</button>
-                </div>
-                <div class="modal-body">
-                    <div class="form-group">
-                        <label for="new-phone">Nuevo número de teléfono</label>
-                        <input type="tel" id="new-phone" placeholder="5351234567" maxlength="10">
-                        <p class="form-hint">Formato: 10 dígitos, comenzando con 53</p>
-                    </div>
-                    <div class="current-phone">
-                        <p><strong>Teléfono actual:</strong> <span id="current-phone-display">-</span></p>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button class="btn-primary" id="save-phone">💾 Guardar</button>
-                    <button class="btn-secondary" id="cancel-phone">Cancelar</button>
-                </div>
+        <nav class="main-nav">
+            <button class="nav-item active" data-screen="dashboard">🏠</button>
+            <button class="nav-item" data-screen="wallet">👛</button>
+            <button class="nav-item" data-screen="recharge">💰</button>
+            <button class="nav-item" data-screen="games">🎮</button>
+        </nav>
+        
+        <div id="loading-overlay" class="hidden" style="position: fixed; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.8); display: flex; justify-content: center; align-items: center; z-index: 2000;">
+            <div style="text-align: center;">
+                <div style="font-size: 40px;">⌛</div>
+                <p id="loading-text">Cargando...</p>
             </div>
         </div>
-
-        <!-- Modal de confirmación -->
-        <div class="modal hidden" id="confirm-modal">
-            <div class="modal-content">
-                <div class="modal-body">
-                    <div class="modal-icon" id="modal-icon">⚠️</div>
-                    <h3 id="modal-title">Confirmar Acción</h3>
-                    <p id="modal-message">¿Estás seguro de realizar esta acción?</p>
-                </div>
-                <div class="modal-footer">
-                    <button class="btn-primary" id="modal-confirm">✅ Confirmar</button>
-                    <button class="btn-secondary" id="modal-cancel">❌ Cancelar</button>
-                </div>
-            </div>
-        </div>
-
-        <!-- Notificaciones toast -->
-        <div class="toast-container" id="toast-container"></div>
-
-        <!-- Cargando overlay -->
-        <div class="loading-overlay hidden" id="loading-overlay">
-            <div class="loading-content">
-                <div class="spinner large"></div>
-                <p id="loading-text">Procesando...</p>
-            </div>
-        </div>
+        
+        <div id="toast-container" class="toast-container"></div>
     </div>
 
-    <!-- Scripts - Cargar después de definir TELEGRAM_USER_ID -->
     <script>
-        // Esperar a que se defina TELEGRAM_USER_ID
-        function waitForUserId() {
-            return new Promise((resolve) => {
-                const checkInterval = setInterval(() => {
-                    if (window.TELEGRAM_USER_ID) {
-                        clearInterval(checkInterval);
-                        console.log('✅ TELEGRAM_USER_ID encontrado:', window.TELEGRAM_USER_ID);
-                        resolve();
-                    }
-                }, 100);
-                
-                // Timeout después de 5 segundos
-                setTimeout(() => {
-                    clearInterval(checkInterval);
-                    console.error('❌ Timeout esperando TELEGRAM_USER_ID');
-                    resolve();
-                }, 5000);
-            });
-        }
-        
-        // Cargar scripts después de que el ID esté disponible
-        waitForUserId().then(() => {
-            // Cargar los scripts dinámicamente
-            const scripts = [
-                '/js/webapp.js',
-                '/js/components/wallet.js',
-                '/js/components/games.js',
-                '/js/components/etecsa.js',
-                '/js/components/transactions.js'
-            ];
-            
-            let loadedCount = 0;
-            
-            scripts.forEach(src => {
+        // Función para cargar script asincronamente
+        function loadScript(src) {
+            return new Promise((resolve, reject) => {
                 const script = document.createElement('script');
                 script.src = src;
-                script.onload = () => {
-                    loadedCount++;
-                    console.log(`✅ Script cargado: ${src}`);
-                    
-                    // Cuando todos los scripts estén cargados
-                    if (loadedCount === scripts.length) {
-                        console.log('🚀 Todos los scripts cargados, inicializando aplicación...');
-                        
-                        // Pequeño delay para asegurar
-                        setTimeout(() => {
-                            if (window.TELEGRAM_USER_ID) {
-                                // Mostrar la aplicación
-                                document.getElementById('app').style.display = 'block';
-                                // Quitar el loading screen
-                                document.body.innerHTML = document.getElementById('app').outerHTML;
-                                // Inicializar la aplicación
-                                document.addEventListener('DOMContentLoaded', () => {
-                                    if (typeof CromwellWebApp !== 'undefined') {
-                                        window.cromwellApp = new CromwellWebApp();
-                                    } else {
-                                        console.error('❌ CromwellWebApp no está definido');
-                                        document.body.innerHTML = `
-                                            <div style="padding: 40px 20px; text-align: center; font-family: Arial, sans-serif;">
-                                                <h2 style="color: #dc3545;">❌ Error de Carga</h2>
-                                                <p>No se pudo cargar la aplicación.</p>
-                                                <button onclick="location.reload()" style="
-                                                    background: #4f46e5;
-                                                    color: white;
-                                                    border: none;
-                                                    padding: 12px 24px;
-                                                    border-radius: 8px;
-                                                    cursor: pointer;
-                                                    font-size: 16px;
-                                                    margin-top: 20px;
-                                                ">
-                                                    Reintentar
-                                                </button>
-                                            </div>
-                                        `;
-                                    }
-                                });
-                            }
-                        }, 300);
-                    }
-                };
+                script.onload = resolve;
                 script.onerror = () => {
-                    console.error(`❌ Error cargando script: ${src}`);
-                    loadedCount++;
+                    // Intenta cargar sin /js/ si falla (por si está en raiz)
+                    if (src.includes('/js/')) {
+                        console.log('Reintentando cargar script desde raíz...');
+                        const retryScript = document.createElement('script');
+                        retryScript.src = src.replace('/js/', ''); // Quitar prefijo carpeta
+                        retryScript.onload = resolve;
+                        retryScript.onerror = reject;
+                        document.head.appendChild(retryScript);
+                    } else {
+                        reject();
+                    }
                 };
                 document.head.appendChild(script);
             });
-        });
+        }
+
+        // Iniciar
+        if (window.TELEGRAM_USER_ID) {
+            // Intenta cargar webapp.js (ajusta la ruta si es necesario)
+            // Primero prueba /js/webapp.js, si falla probará webapp.js
+            loadScript('js/webapp.js') 
+                .then(() => {
+                    console.log('📜 Script cargado. Iniciando App...');
+                    // Pequeña pausa para asegurar DOM
+                    setTimeout(() => {
+                        if (typeof CromwellWebApp !== 'undefined') {
+                            window.cromwellApp = new CromwellWebApp();
+                        } else {
+                            alert('Error: Clase CromwellWebApp no encontrada en el script.');
+                        }
+                    }, 100);
+                })
+                .catch((e) => {
+                    console.error(e);
+                    document.body.innerHTML = '<h2 style="color:red; text-align:center; margin-top:50px">Error: No se encontró webapp.js<br><small>Verifica que el archivo esté en la carpeta correcta.</small></h2>';
+                });
+        }
     </script>
 </body>
 </html>
