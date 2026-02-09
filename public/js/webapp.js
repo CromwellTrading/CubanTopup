@@ -1,4 +1,4 @@
-// webapp.js - WebApp principal para Cromwell Store (VERSIÓN REAL)
+// webapp.js - WebApp principal para Cromwell Store (VERSIÓN MEJORADA)
 class CromwellWebApp {
     constructor() {
         console.log('🔄 Constructor CromwellWebApp llamado');
@@ -30,6 +30,12 @@ class CromwellWebApp {
         this.selectedVariation = null;
         this.selectedOffer = null;
         
+        // Componentes
+        this.gamesComponent = null;
+        this.walletComponent = null;
+        this.etecsaComponent = null;
+        this.transactionsComponent = null;
+        
         // Variables globales de configuración
         window.PAGO_CUP_TARJETA = '';
         window.PAGO_SALDO_MOVIL = '';
@@ -55,7 +61,7 @@ class CromwellWebApp {
                 this.telegram.expand();
                 this.telegram.enableClosingConfirmation();
                 this.telegram.setHeaderColor('#667eea');
-                this.telegram.setBackgroundColor('#f8f9fa');
+                this.telegram.setBackgroundColor('#0a0a1f');
             } else {
                 console.log('⚠️ Telegram WebApp no disponible (probablemente navegador normal)');
             }
@@ -72,6 +78,12 @@ class CromwellWebApp {
             // Configurar navegación
             this.setupNavigation();
             
+            // Inicializar componentes
+            this.initComponents();
+            
+            // Crear partículas para efecto futurista
+            this.createParticles();
+            
             console.log('✅ WebApp inicializada correctamente');
         } catch (error) {
             console.error('❌ Error inicializando WebApp:', error);
@@ -79,26 +91,153 @@ class CromwellWebApp {
         }
     }
 
+    initComponents() {
+        // Inicializar componentes si están disponibles
+        if (typeof GamesComponent !== 'undefined') {
+            this.gamesComponent = new GamesComponent(this);
+        }
+        if (typeof WalletComponent !== 'undefined') {
+            this.walletComponent = new WalletComponent(this);
+        }
+        if (typeof EtecsaComponent !== 'undefined') {
+            this.etecsaComponent = new EtecsaComponent(this);
+        }
+        if (typeof TransactionsComponent !== 'undefined') {
+            this.transactionsComponent = new TransactionsComponent(this);
+        }
+    }
+
+    createParticles() {
+        const particleCount = 15;
+        const container = document.createElement('div');
+        container.className = 'particles-container';
+        container.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: -1;
+            overflow: hidden;
+        `;
+        
+        for (let i = 0; i < particleCount; i++) {
+            const particle = document.createElement('div');
+            particle.className = 'particle';
+            particle.style.cssText = `
+                position: absolute;
+                width: ${Math.random() * 3 + 1}px;
+                height: ${Math.random() * 3 + 1}px;
+                background: linear-gradient(135deg, 
+                    rgba(102, 126, 234, ${Math.random() * 0.5 + 0.2}), 
+                    rgba(118, 75, 162, ${Math.random() * 0.5 + 0.2})
+                );
+                border-radius: 50%;
+                filter: blur(${Math.random() * 2 + 1}px);
+                animation: particleFloat ${Math.random() * 20 + 10}s linear infinite;
+                animation-delay: ${Math.random() * 5}s;
+            `;
+            
+            // Posición inicial aleatoria
+            particle.style.left = `${Math.random() * 100}%`;
+            particle.style.top = `${Math.random() * 100}%`;
+            
+            container.appendChild(particle);
+        }
+        
+        document.body.appendChild(container);
+        
+        // Añadir estilos de animación
+        const style = document.createElement('style');
+        style.textContent = `
+            @keyframes particleFloat {
+                0% {
+                    transform: translateY(0) translateX(0) rotate(0deg);
+                    opacity: 0;
+                }
+                10% {
+                    opacity: ${Math.random() * 0.5 + 0.2};
+                }
+                90% {
+                    opacity: ${Math.random() * 0.5 + 0.2};
+                }
+                100% {
+                    transform: translateY(-100vh) translateX(${Math.random() * 100 - 50}px) rotate(${Math.random() * 360}deg);
+                    opacity: 0;
+                }
+            }
+            
+            @keyframes glow {
+                0%, 100% { filter: drop-shadow(0 0 5px rgba(102, 126, 234, 0.5)); }
+                50% { filter: drop-shadow(0 0 20px rgba(102, 126, 234, 0.8)); }
+            }
+            
+            @keyframes pulse {
+                0%, 100% { transform: scale(1); opacity: 0.7; }
+                50% { transform: scale(1.05); opacity: 1; }
+            }
+        `;
+        document.head.appendChild(style);
+    }
+
     showErrorScreen(message) {
         document.body.innerHTML = `
-            <div style="padding: 40px 20px; text-align: center; font-family: Arial, sans-serif;">
-                <h2 style="color: #dc3545;">❌ Error</h2>
+            <div class="error-screen">
+                <div class="error-icon">🚫</div>
+                <h2>Error</h2>
                 <p>${message}</p>
-                <div style="margin-top: 30px;">
-                    <button onclick="location.reload()" style="
-                        background: #4f46e5;
-                        color: white;
-                        border: none;
-                        padding: 12px 24px;
-                        border-radius: 8px;
-                        cursor: pointer;
-                        font-size: 16px;
-                    ">
+                <div class="error-actions">
+                    <button onclick="location.reload()" class="btn-primary">
                         Reintentar
                     </button>
                 </div>
             </div>
         `;
+        
+        // Añadir estilos
+        const style = document.createElement('style');
+        style.textContent = `
+            .error-screen {
+                padding: 40px 20px;
+                text-align: center;
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                background: linear-gradient(135deg, #0a0a1f 0%, #121230 100%);
+                min-height: 100vh;
+                display: flex;
+                flex-direction: column;
+                justify-content: center;
+                align-items: center;
+                color: white;
+            }
+            
+            .error-icon {
+                font-size: 4rem;
+                margin-bottom: 20px;
+                color: #ff4757;
+                filter: drop-shadow(0 0 20px rgba(255, 71, 87, 0.5));
+                animation: pulse 2s ease-in-out infinite;
+            }
+            
+            .error-screen h2 {
+                color: #ff4757;
+                margin-bottom: 15px;
+                font-size: 2rem;
+            }
+            
+            .error-screen p {
+                margin-bottom: 25px;
+                color: #e5e7eb;
+                font-size: 1rem;
+                max-width: 400px;
+                line-height: 1.6;
+            }
+            
+            .error-actions {
+                margin-top: 20px;
+            }
+        `;
+        document.head.appendChild(style);
     }
 
     async loadConfig() {
@@ -312,12 +451,12 @@ class CromwellWebApp {
             
             if (welcomeTitle) {
                 welcomeTitle.textContent = '❌ Error';
-                welcomeTitle.style.color = '#ef4444';
+                welcomeTitle.style.color = '#ff4757';
             }
             if (welcomeSubtitle) {
                 welcomeSubtitle.textContent = error.message.length > 50 ? 
                     error.message.substring(0, 50) + '...' : error.message;
-                welcomeSubtitle.style.color = '#ef4444';
+                welcomeSubtitle.style.color = '#ff4757';
             }
             
             this.showToast(`❌ Error: ${error.message}`, 'error');
@@ -330,7 +469,7 @@ class CromwellWebApp {
                 debugContainer.style.cssText = `
                     margin: 20px;
                     padding: 10px;
-                    background: rgba(255,0,0,0.1);
+                    background: rgba(255,71,87,0.1);
                     border-radius: 5px;
                     font-size: 12px;
                     color: #ff6b6b;
@@ -344,7 +483,7 @@ class CromwellWebApp {
                 <small>Error: ${error.message}</small><br>
                 <small>Time: ${new Date().toLocaleTimeString()}</small><br>
                 <button onclick="window.cromwellApp.loadUserData()" style="
-                    background: #4f46e5;
+                    background: #667eea;
                     color: white;
                     border: none;
                     padding: 5px 10px;
@@ -431,6 +570,11 @@ class CromwellWebApp {
         if (userAvatar) {
             userAvatar.textContent = this.userData.first_name ? 
                 this.userData.first_name.charAt(0).toUpperCase() : '👤';
+            // Añadir animación al avatar
+            userAvatar.style.animation = 'pulse 2s ease-in-out';
+            setTimeout(() => {
+                userAvatar.style.animation = '';
+            }, 2000);
         }
         
         // Actualizar configuración en pantalla
@@ -466,10 +610,20 @@ class CromwellWebApp {
             targetScreen.classList.add('active');
             this.currentScreen = screenName;
             
+            // Añadir efecto de transición
+            targetScreen.style.animation = 'none';
+            setTimeout(() => {
+                targetScreen.style.animation = 'screenEnter 0.5s cubic-bezier(0.4, 0, 0.2, 1)';
+            }, 10);
+            
             // Cargar datos específicos de la pantalla
             switch(screenName) {
                 case 'games':
-                    this.loadGames();
+                    if (this.gamesComponent) {
+                        this.gamesComponent.loadGames();
+                    } else {
+                        this.loadGames();
+                    }
                     break;
                 case 'etecsa':
                     this.loadEtecsaOffers();
@@ -542,12 +696,18 @@ class CromwellWebApp {
         const selectedCard = document.querySelector(`[data-method="${method}"]`);
         if (selectedCard) {
             selectedCard.classList.add('selected');
+            // Añadir animación
+            selectedCard.style.animation = 'pulse 0.5s ease';
+            setTimeout(() => {
+                selectedCard.style.animation = '';
+            }, 500);
         }
 
         // Mostrar formulario de recarga
         const form = document.getElementById('recharge-form');
         if (form) {
             form.classList.remove('hidden');
+            form.style.animation = 'screenEnter 0.3s ease';
         }
 
         // Configurar formulario según método
@@ -636,6 +796,11 @@ class CromwellWebApp {
             const totalElement = document.getElementById('total-with-bonus');
             if (totalElement) {
                 totalElement.textContent = `$${totalWithBonus.toFixed(2)}`;
+                // Animación del bono
+                totalElement.style.animation = 'pulse 0.5s ease';
+                setTimeout(() => {
+                    totalElement.style.animation = '';
+                }, 500);
             }
         }
     }
@@ -712,93 +877,107 @@ class CromwellWebApp {
     }
 
     async loadGames() {
-        try {
-            const gamesList = document.getElementById('games-list');
-            if (!gamesList) return;
-            
-            this.showLoading('Cargando juegos...');
-            
-            const response = await fetch('/api/games');
-            
-            if (!response.ok) {
-                throw new Error(`Error HTTP: ${response.status}`);
-            }
-            
-            const games = await response.json();
-            this.hideLoading();
-            
-            gamesList.innerHTML = '';
+        // Si tenemos el componente de juegos, usarlo
+        if (this.gamesComponent) {
+            await this.gamesComponent.loadGames();
+        } else {
+            // Fallback al método original
+            try {
+                const gamesList = document.getElementById('games-list');
+                if (!gamesList) return;
+                
+                this.showLoading('Cargando juegos...');
+                
+                const response = await fetch('/api/games');
+                
+                if (!response.ok) {
+                    throw new Error(`Error HTTP: ${response.status}`);
+                }
+                
+                const games = await response.json();
+                this.hideLoading();
+                
+                gamesList.innerHTML = '';
 
-            if (!games || games.length === 0) {
-                gamesList.innerHTML = '<div class="info-card"><p>No hay juegos disponibles en este momento.</p></div>';
-                return;
-            }
+                if (!games || games.length === 0) {
+                    gamesList.innerHTML = '<div class="info-card"><p>No hay juegos disponibles en este momento.</p></div>';
+                    return;
+                }
 
-            games.forEach(game => {
-                const gameCard = document.createElement('div');
-                gameCard.className = 'game-card';
-                gameCard.dataset.gameId = game.id;
-                gameCard.innerHTML = `
-                    <div class="game-icon">🎮</div>
-                    <div class="game-info">
-                        <h4>${game.name || 'Juego'}</h4>
-                        <p>${Object.keys(game.variations || {}).length} paquetes disponibles</p>
-                    </div>
-                `;
+                games.forEach(game => {
+                    const gameCard = document.createElement('div');
+                    gameCard.className = 'game-card';
+                    gameCard.dataset.gameId = game.id;
+                    gameCard.innerHTML = `
+                        <div class="game-icon">🎮</div>
+                        <div class="game-info">
+                            <h4>${game.name || 'Juego'}</h4>
+                            <p>${Object.keys(game.variations || {}).length} paquetes disponibles</p>
+                        </div>
+                    `;
 
-                gameCard.addEventListener('click', () => {
-                    this.showGameDetails(game);
+                    gameCard.addEventListener('click', () => {
+                        this.showGameDetails(game);
+                    });
+
+                    gamesList.appendChild(gameCard);
                 });
-
-                gamesList.appendChild(gameCard);
-            });
-        } catch (error) {
-            console.error('Error cargando juegos:', error);
-            this.hideLoading();
-            const gamesList = document.getElementById('games-list');
-            if (gamesList) {
-                gamesList.innerHTML = 
-                    '<div class="error-card"><p>Error cargando juegos</p></div>';
+            } catch (error) {
+                console.error('Error cargando juegos:', error);
+                this.hideLoading();
+                const gamesList = document.getElementById('games-list');
+                if (gamesList) {
+                    gamesList.innerHTML = 
+                        '<div class="error-card"><p>Error cargando juegos</p></div>';
+                }
+                this.showToast('❌ Error cargando juegos', 'error');
             }
-            this.showToast('❌ Error cargando juegos', 'error');
         }
     }
 
     showGameDetails(game) {
-        this.selectedGame = game;
-        
-        const gamesList = document.getElementById('games-list');
-        const gameDetails = document.getElementById('game-details');
-        
-        if (gamesList) gamesList.classList.add('hidden');
-        if (gameDetails) {
-            gameDetails.classList.remove('hidden');
+        // Si tenemos el componente, delegamos a él
+        if (this.gamesComponent) {
+            this.gamesComponent.selectedGame = game;
+            this.gamesComponent.showGameDetails();
+        } else {
+            // Fallback al método original
+            this.selectedGame = game;
             
-            gameDetails.innerHTML = `
-                <div class="screen-header">
-                    <h2>${game.name || 'Juego'}</h2>
-                    <button class="btn-secondary" id="back-to-games">← Volver</button>
-                </div>
-                <div class="variations-list" id="variations-list">
-                    ${this.generateVariationsList(game)}
-                </div>
-            `;
+            const gamesList = document.getElementById('games-list');
+            const gameDetails = document.getElementById('game-details');
+            
+            if (gamesList) gamesList.classList.add('hidden');
+            if (gameDetails) {
+                gameDetails.classList.remove('hidden');
+                gameDetails.style.animation = 'screenEnter 0.3s ease';
+                
+                gameDetails.innerHTML = `
+                    <div class="screen-header">
+                        <h2>${game.name || 'Juego'}</h2>
+                        <button class="btn-secondary" id="back-to-games">← Volver</button>
+                    </div>
+                    <div class="variations-list" id="variations-list">
+                        ${this.generateVariationsList(game)}
+                    </div>
+                `;
 
-            const backButton = document.getElementById('back-to-games');
-            if (backButton) {
-                backButton.addEventListener('click', () => {
-                    if (gamesList) gamesList.classList.remove('hidden');
-                    gameDetails.classList.add('hidden');
+                const backButton = document.getElementById('back-to-games');
+                if (backButton) {
+                    backButton.addEventListener('click', () => {
+                        if (gamesList) gamesList.classList.remove('hidden');
+                        gameDetails.classList.add('hidden');
+                    });
+                }
+
+                // Configurar eventos para variaciones
+                document.querySelectorAll('.variation-card').forEach(card => {
+                    card.addEventListener('click', (e) => {
+                        const varId = e.currentTarget.dataset.varId;
+                        this.selectGameVariation(varId);
+                    });
                 });
             }
-
-            // Configurar eventos para variaciones
-            document.querySelectorAll('.variation-card').forEach(card => {
-                card.addEventListener('click', (e) => {
-                    const varId = e.currentTarget.dataset.varId;
-                    this.selectGameVariation(varId);
-                });
-            });
         }
     }
 
@@ -877,6 +1056,7 @@ class CromwellWebApp {
         if (gameDetails) gameDetails.classList.add('hidden');
         if (gamePayment) {
             gamePayment.classList.remove('hidden');
+            gamePayment.style.animation = 'screenEnter 0.3s ease';
             
             const variation = this.selectedVariation;
             
@@ -1150,6 +1330,7 @@ class CromwellWebApp {
         if (offersContainer) offersContainer.classList.add('hidden');
         if (etecsaForm) {
             etecsaForm.classList.remove('hidden');
+            etecsaForm.style.animation = 'screenEnter 0.3s ease';
             
             const price = (this.selectedOffer.offer.prices || []).find(p => p.id === this.selectedOffer.priceId);
             
@@ -1730,6 +1911,7 @@ class CromwellWebApp {
             const modal = document.getElementById(options);
             if (modal) {
                 modal.classList.remove('hidden');
+                modal.style.animation = 'fadeIn 0.3s ease';
             }
         } else {
             // Mostrar modal de confirmación con opciones
@@ -1758,6 +1940,7 @@ class CromwellWebApp {
             const modal = document.getElementById('confirm-modal');
             if (modal) {
                 modal.classList.remove('hidden');
+                modal.style.animation = 'fadeIn 0.3s ease';
             }
         }
     }
@@ -1765,7 +1948,11 @@ class CromwellWebApp {
     hideModal(modalId) {
         const modal = document.getElementById(modalId);
         if (modal) {
-            modal.classList.add('hidden');
+            modal.style.animation = 'fadeOut 0.3s ease';
+            setTimeout(() => {
+                modal.classList.add('hidden');
+                modal.style.animation = '';
+            }, 300);
         }
     }
 
@@ -1782,10 +1969,12 @@ class CromwellWebApp {
         
         container.appendChild(toast);
         
+        // Añadir efecto de entrada
+        toast.style.animation = 'toastSlideUp 0.3s cubic-bezier(0.4, 0, 0.2, 1)';
+        
         // Auto-remover después de 5 segundos
         setTimeout(() => {
-            toast.style.opacity = '0';
-            toast.style.transform = 'translateY(20px)';
+            toast.style.animation = 'toastSlideOut 0.3s cubic-bezier(0.4, 0, 0.2, 1) forwards';
             setTimeout(() => {
                 if (container.contains(toast)) {
                     container.removeChild(toast);
@@ -1808,13 +1997,20 @@ class CromwellWebApp {
         const loadingOverlay = document.getElementById('loading-overlay');
         
         if (loadingText) loadingText.textContent = text;
-        if (loadingOverlay) loadingOverlay.classList.remove('hidden');
+        if (loadingOverlay) {
+            loadingOverlay.classList.remove('hidden');
+            loadingOverlay.style.animation = 'fadeIn 0.3s ease';
+        }
     }
 
     hideLoading() {
         const loadingOverlay = document.getElementById('loading-overlay');
         if (loadingOverlay) {
-            loadingOverlay.classList.add('hidden');
+            loadingOverlay.style.animation = 'fadeOut 0.3s ease';
+            setTimeout(() => {
+                loadingOverlay.classList.add('hidden');
+                loadingOverlay.style.animation = '';
+            }, 300);
         }
     }
 }
