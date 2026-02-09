@@ -30,12 +30,6 @@ class CromwellWebApp {
         this.selectedVariation = null;
         this.selectedOffer = null;
         
-        // Componentes
-        this.gamesComponent = null;
-        this.walletComponent = null;
-        this.etecsaComponent = null;
-        this.transactionsComponent = null;
-        
         // Variables globales de configuración
         window.PAGO_CUP_TARJETA = '';
         window.PAGO_SALDO_MOVIL = '';
@@ -47,6 +41,11 @@ class CromwellWebApp {
         window.SALDO_MOVIL_RATE = 2.1;
         window.MIN_CWS_USE = 100;
         window.CWS_PER_100_SALDO = 10;
+        
+        // Variables para juegos
+        this.games = [];
+        this.selectedGame = null;
+        this.selectedVariation = null;
         
         this.init();
     }
@@ -60,8 +59,8 @@ class CromwellWebApp {
                 console.log('📱 Telegram WebApp disponible');
                 this.telegram.expand();
                 this.telegram.enableClosingConfirmation();
-                this.telegram.setHeaderColor('#667eea');
-                this.telegram.setBackgroundColor('#0a0a1f');
+                this.telegram.setHeaderColor('#00d4ff');
+                this.telegram.setBackgroundColor('#0a0a16');
             } else {
                 console.log('⚠️ Telegram WebApp no disponible (probablemente navegador normal)');
             }
@@ -72,14 +71,11 @@ class CromwellWebApp {
             // Cargar configuración
             await this.loadConfig();
             
-            // Cargar datos del usuario (¡ESTO ES CRÍTICO!)
+            // Cargar datos del usuario
             await this.loadUserData();
             
             // Configurar navegación
             this.setupNavigation();
-            
-            // Inicializar componentes
-            this.initComponents();
             
             // Crear partículas para efecto futurista
             this.createParticles();
@@ -88,22 +84,6 @@ class CromwellWebApp {
         } catch (error) {
             console.error('❌ Error inicializando WebApp:', error);
             this.showToast('❌ Error inicializando la aplicación', 'error');
-        }
-    }
-
-    initComponents() {
-        // Inicializar componentes si están disponibles
-        if (typeof GamesComponent !== 'undefined') {
-            this.gamesComponent = new GamesComponent(this);
-        }
-        if (typeof WalletComponent !== 'undefined') {
-            this.walletComponent = new WalletComponent(this);
-        }
-        if (typeof EtecsaComponent !== 'undefined') {
-            this.etecsaComponent = new EtecsaComponent(this);
-        }
-        if (typeof TransactionsComponent !== 'undefined') {
-            this.transactionsComponent = new TransactionsComponent(this);
         }
     }
 
@@ -130,8 +110,8 @@ class CromwellWebApp {
                 width: ${Math.random() * 3 + 1}px;
                 height: ${Math.random() * 3 + 1}px;
                 background: linear-gradient(135deg, 
-                    rgba(102, 126, 234, ${Math.random() * 0.5 + 0.2}), 
-                    rgba(118, 75, 162, ${Math.random() * 0.5 + 0.2})
+                    rgba(0, 212, 255, ${Math.random() * 0.5 + 0.2}), 
+                    rgba(157, 0, 255, ${Math.random() * 0.5 + 0.2})
                 );
                 border-radius: 50%;
                 filter: blur(${Math.random() * 2 + 1}px);
@@ -167,16 +147,6 @@ class CromwellWebApp {
                     opacity: 0;
                 }
             }
-            
-            @keyframes glow {
-                0%, 100% { filter: drop-shadow(0 0 5px rgba(102, 126, 234, 0.5)); }
-                50% { filter: drop-shadow(0 0 20px rgba(102, 126, 234, 0.8)); }
-            }
-            
-            @keyframes pulse {
-                0%, 100% { transform: scale(1); opacity: 0.7; }
-                50% { transform: scale(1.05); opacity: 1; }
-            }
         `;
         document.head.appendChild(style);
     }
@@ -202,7 +172,7 @@ class CromwellWebApp {
                 padding: 40px 20px;
                 text-align: center;
                 font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-                background: linear-gradient(135deg, #0a0a1f 0%, #121230 100%);
+                background: linear-gradient(135deg, #0a0a16 0%, #121230 100%);
                 min-height: 100vh;
                 display: flex;
                 flex-direction: column;
@@ -375,6 +345,14 @@ class CromwellWebApp {
         if (cancelSearch) {
             cancelSearch.addEventListener('click', () => {
                 this.showScreen('claim');
+            });
+        }
+        
+        // Eventos específicos de juegos
+        const refreshGames = document.getElementById('refresh-games');
+        if (refreshGames) {
+            refreshGames.addEventListener('click', () => {
+                this.loadGames(true);
             });
         }
         
@@ -619,11 +597,7 @@ class CromwellWebApp {
             // Cargar datos específicos de la pantalla
             switch(screenName) {
                 case 'games':
-                    if (this.gamesComponent) {
-                        this.gamesComponent.loadGames();
-                    } else {
-                        this.loadGames();
-                    }
+                    this.loadGames();
                     break;
                 case 'etecsa':
                     this.loadEtecsaOffers();
@@ -876,138 +850,149 @@ class CromwellWebApp {
         }
     }
 
-    async loadGames() {
-        // Si tenemos el componente de juegos, usarlo
-        if (this.gamesComponent) {
-            await this.gamesComponent.loadGames();
-        } else {
-            // Fallback al método original
-            try {
-                const gamesList = document.getElementById('games-list');
-                if (!gamesList) return;
-                
-                this.showLoading('Cargando juegos...');
-                
-                const response = await fetch('/api/games');
-                
-                if (!response.ok) {
-                    throw new Error(`Error HTTP: ${response.status}`);
-                }
-                
-                const games = await response.json();
-                this.hideLoading();
-                
-                gamesList.innerHTML = '';
-
-                if (!games || games.length === 0) {
-                    gamesList.innerHTML = '<div class="info-card"><p>No hay juegos disponibles en este momento.</p></div>';
-                    return;
-                }
-
-                games.forEach(game => {
-                    const gameCard = document.createElement('div');
-                    gameCard.className = 'game-card';
-                    gameCard.dataset.gameId = game.id;
-                    gameCard.innerHTML = `
-                        <div class="game-icon">🎮</div>
-                        <div class="game-info">
-                            <h4>${game.name || 'Juego'}</h4>
-                            <p>${Object.keys(game.variations || {}).length} paquetes disponibles</p>
-                        </div>
-                    `;
-
-                    gameCard.addEventListener('click', () => {
-                        this.showGameDetails(game);
-                    });
-
-                    gamesList.appendChild(gameCard);
-                });
-            } catch (error) {
-                console.error('Error cargando juegos:', error);
-                this.hideLoading();
-                const gamesList = document.getElementById('games-list');
-                if (gamesList) {
-                    gamesList.innerHTML = 
-                        '<div class="error-card"><p>Error cargando juegos</p></div>';
-                }
-                this.showToast('❌ Error cargando juegos', 'error');
-            }
-        }
-    }
-
-    showGameDetails(game) {
-        // Si tenemos el componente, delegamos a él
-        if (this.gamesComponent) {
-            this.gamesComponent.selectedGame = game;
-            this.gamesComponent.showGameDetails();
-        } else {
-            // Fallback al método original
-            this.selectedGame = game;
-            
+    // ===== FUNCIONALIDAD DE JUEGOS =====
+    async loadGames(forceRefresh = false) {
+        try {
             const gamesList = document.getElementById('games-list');
-            const gameDetails = document.getElementById('game-details');
+            if (!gamesList) return;
             
-            if (gamesList) gamesList.classList.add('hidden');
-            if (gameDetails) {
-                gameDetails.classList.remove('hidden');
-                gameDetails.style.animation = 'screenEnter 0.3s ease';
-                
-                gameDetails.innerHTML = `
-                    <div class="screen-header">
-                        <h2>${game.name || 'Juego'}</h2>
-                        <button class="btn-secondary" id="back-to-games">← Volver</button>
-                    </div>
-                    <div class="variations-list" id="variations-list">
-                        ${this.generateVariationsList(game)}
+            // Mostrar loading solo si no hay datos o si es refresco forzado
+            if (forceRefresh || this.games.length === 0) {
+                gamesList.innerHTML = `
+                    <div class="loading">
+                        <div class="spinner"></div>
+                        <p>Cargando juegos...</p>
                     </div>
                 `;
-
-                const backButton = document.getElementById('back-to-games');
-                if (backButton) {
-                    backButton.addEventListener('click', () => {
-                        if (gamesList) gamesList.classList.remove('hidden');
-                        gameDetails.classList.add('hidden');
-                    });
-                }
-
-                // Configurar eventos para variaciones
-                document.querySelectorAll('.variation-card').forEach(card => {
-                    card.addEventListener('click', (e) => {
-                        const varId = e.currentTarget.dataset.varId;
-                        this.selectGameVariation(varId);
-                    });
-                });
             }
+
+            const response = await fetch('/api/games');
+            
+            if (!response.ok) {
+                throw new Error(`Error HTTP: ${response.status}`);
+            }
+            
+            const games = await response.json();
+            this.games = games;
+            
+            this.renderGamesList();
+        } catch (error) {
+            console.error('Error cargando juegos:', error);
+            const gamesList = document.getElementById('games-list');
+            if (gamesList) {
+                gamesList.innerHTML = 
+                    '<div class="error-message"><p>❌ Error cargando juegos</p><button class="btn-secondary" onclick="window.cromwellApp.loadGames(true)">🔄 Reintentar</button></div>';
+            }
+            this.showToast('❌ Error cargando juegos', 'error');
         }
     }
 
-    generateVariationsList(game) {
-        let html = '';
-        const variations = game.variations || {};
+    renderGamesList() {
+        const gamesList = document.getElementById('games-list');
+        if (!gamesList) return;
         
-        Object.entries(variations).forEach(([id, variation]) => {
+        if (!this.games || this.games.length === 0) {
+            gamesList.innerHTML = `
+                <div class="info-card">
+                    <p>No hay juegos disponibles en este momento.</p>
+                </div>
+            `;
+            return;
+        }
+
+        let html = '';
+        this.games.forEach(game => {
             html += `
-                <div class="variation-card" data-var-id="${id}">
-                    <div class="variation-name">${variation.name || 'Paquete'}</div>
-                    <div class="variation-prices">
-                        <div class="price-item">
-                            <span class="price-label">CUP</span>
-                            <span class="price-value" id="price-cup-${id}">...</span>
-                        </div>
-                        <div class="price-item">
-                            <span class="price-label">Saldo</span>
-                            <span class="price-value" id="price-saldo-${id}">...</span>
-                        </div>
-                        <div class="price-item">
-                            <span class="price-label">CWS</span>
-                            <span class="price-value" id="price-cws-${id}">...</span>
-                        </div>
+                <div class="game-card" data-game-id="${game.id}">
+                    <div class="game-icon">🎮</div>
+                    <div class="game-info">
+                        <h4>${game.name}</h4>
+                        <p>${Object.keys(game.variations || {}).length} paquetes disponibles</p>
                     </div>
                 </div>
             `;
         });
-        
-        return html;
+
+        gamesList.innerHTML = html;
+
+        // Agregar event listeners
+        document.querySelectorAll('.game-card').forEach(card => {
+            card.addEventListener('click', (e) => {
+                const gameId = e.currentTarget.dataset.gameId;
+                this.selectGame(gameId);
+            });
+        });
+    }
+
+    selectGame(gameId) {
+        this.selectedGame = this.games.find(g => g.id == gameId);
+        if (!this.selectedGame) return;
+
+        this.showGameDetails();
+    }
+
+    showGameDetails() {
+        const gamesList = document.getElementById('games-list');
+        const gameDetails = document.getElementById('game-details');
+
+        if (gamesList) gamesList.classList.add('hidden');
+        if (gameDetails) {
+            gameDetails.classList.remove('hidden');
+            
+            // Renderizar variaciones con precios por cargar
+            let variationsHtml = '';
+            const variations = this.selectedGame.variations || {};
+            
+            Object.entries(variations).forEach(([id, variation]) => {
+                variationsHtml += `
+                    <div class="variation-card" data-var-id="${id}">
+                        <div class="variation-name">${variation.name || 'Paquete'}</div>
+                        <div class="variation-prices">
+                            <div class="price-item">
+                                <span class="price-label">CUP</span>
+                                <span class="price-value" id="price-cup-${id}">...</span>
+                            </div>
+                            <div class="price-item">
+                                <span class="price-label">Saldo</span>
+                                <span class="price-value" id="price-saldo-${id}">...</span>
+                            </div>
+                            <div class="price-item">
+                                <span class="price-label">CWS</span>
+                                <span class="price-value" id="price-cws-${id}">...</span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+
+            gameDetails.innerHTML = `
+                <div class="screen-header">
+                    <div class="header-left">
+                        <button class="btn-icon" id="back-to-games">
+                            <span class="icon">←</span>
+                        </button>
+                        <h2>${this.selectedGame.name}</h2>
+                    </div>
+                </div>
+                <div class="variations-list">
+                    ${variationsHtml}
+                </div>
+            `;
+
+            // Event listeners
+            document.getElementById('back-to-games').addEventListener('click', () => {
+                if (gameDetails) gameDetails.classList.add('hidden');
+                if (gamesList) gamesList.classList.remove('hidden');
+            });
+
+            // Configurar eventos para variaciones
+            document.querySelectorAll('.variation-card').forEach(card => {
+                card.addEventListener('click', (e) => {
+                    const varId = e.currentTarget.dataset.varId;
+                    this.selectGameVariation(varId);
+                });
+            });
+        }
     }
 
     async selectGameVariation(variationId) {
@@ -1037,6 +1022,8 @@ class CromwellWebApp {
                     name: this.selectedGame.variations[variationId]?.name || 'Paquete',
                     prices: data.prices || {}
                 };
+                // Actualizar los precios en la UI
+                this.updateVariationPricesUI(variationId, data.prices);
                 this.showGamePaymentForm();
             } else {
                 this.showToast(`❌ ${data.error || 'Error desconocido'}`, 'error');
@@ -1047,6 +1034,17 @@ class CromwellWebApp {
         } finally {
             this.hideLoading();
         }
+    }
+
+    updateVariationPricesUI(variationId, prices) {
+        // Actualizar solo los precios en la UI de variaciones
+        const cupEl = document.getElementById(`price-cup-${variationId}`);
+        const saldoEl = document.getElementById(`price-saldo-${variationId}`);
+        const cwsEl = document.getElementById(`price-cws-${variationId}`);
+        
+        if (cupEl) cupEl.textContent = `$${prices.cup || '...'}`;
+        if (saldoEl) saldoEl.textContent = `$${prices.saldo || '...'}`;
+        if (cwsEl) cwsEl.textContent = `${prices.cws || '...'} tokens`;
     }
 
     showGamePaymentForm() {
@@ -1062,17 +1060,17 @@ class CromwellWebApp {
             
             gamePayment.innerHTML = `
                 <div class="screen-header">
-                    <h2>${this.selectedGame.name || 'Juego'}</h2>
-                    <button class="btn-secondary" id="back-to-variations">← Atrás</button>
+                    <div class="header-left">
+                        <button class="btn-icon" id="back-to-variations">
+                            <span class="icon">←</span>
+                        </button>
+                        <h2>${this.selectedGame.name}</h2>
+                    </div>
                 </div>
                 <div class="recharge-form">
                     <h3>${variation.name}</h3>
                     
                     <div class="price-summary">
-                        <div class="price-row">
-                            <span>Precio en USDT:</span>
-                            <span class="price-value">$${variation.prices.usdt || 0}</span>
-                        </div>
                         <div class="price-row">
                             <span>CUP:</span>
                             <span class="price-value">$${variation.prices.cup || 0}</span>
@@ -1350,12 +1348,6 @@ class CromwellWebApp {
                             <span>Precio:</span>
                             <span class="price-value">$${price?.cup_price || 0} CUP</span>
                         </div>
-                        ${price?.original_usdt ? `
-                            <div class="price-row">
-                                <span>Original:</span>
-                                <span class="price-value">$${price.original_usdt} USDT</span>
-                            </div>
-                        ` : ''}
                     </div>
                     
                     <div class="form-group">
