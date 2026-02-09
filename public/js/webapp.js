@@ -602,8 +602,14 @@ class CromwellWebApp {
                     this.loadGames();
                     break;
                 case 'etecsa':
-                    this.loadEtecsaOffers();
-                    break;
+    if (this.etecsa) {
+        this.etecsa.loadOffers();
+    } else {
+        // Si no está inicializado el componente, inicialízalo primero
+        this.etecsa = new EtecsaComponent(this);
+        this.etecsa.loadOffers();
+    }
+    break;
                 case 'history':
                     this.loadHistory();
                     break;
