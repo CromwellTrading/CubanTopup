@@ -1,4 +1,4 @@
-/* webapp.css - DISEÑO FUTURISTA GAMER PROFESIONAL */
+/* webapp.css - DISEÑO FUTURISTA GAMER PROFESIONAL - OPTIMIZADO */
 
 /* ===== RESET Y BASE FUTURISTA ===== */
 * {
@@ -100,7 +100,7 @@ body {
     position: relative;
 }
 
-/* Efecto de partículas en el fondo */
+/* Efecto de partículas en el fondo - OPTIMIZADO */
 body::before {
     content: '';
     position: fixed;
@@ -109,25 +109,34 @@ body::before {
     width: 100%;
     height: 100%;
     background: 
-        radial-gradient(circle at 20% 30%, rgba(0, 212, 255, 0.1) 0%, transparent 50%),
-        radial-gradient(circle at 80% 70%, rgba(157, 0, 255, 0.1) 0%, transparent 50%),
-        radial-gradient(circle at 40% 80%, rgba(255, 0, 255, 0.1) 0%, transparent 50%);
+        radial-gradient(circle at 20% 30%, rgba(0, 212, 255, 0.05) 0%, transparent 50%),
+        radial-gradient(circle at 80% 70%, rgba(157, 0, 255, 0.05) 0%, transparent 50%),
+        radial-gradient(circle at 40% 80%, rgba(255, 0, 255, 0.05) 0%, transparent 50%);
     z-index: -2;
-    animation: gradientShift 20s ease infinite alternate;
+    opacity: 0.3;
+    /* Cambiado: animación más suave sin cambios de opacidad bruscos */
+    animation: gradientShift 30s ease-in-out infinite alternate;
 }
 
 @keyframes gradientShift {
-    0%, 100% {
-        opacity: 0.3;
-        transform: scale(1);
+    0% {
+        transform: translate(-10px, -10px) scale(1);
+    }
+    25% {
+        transform: translate(10px, 0) scale(1.02);
     }
     50% {
-        opacity: 0.6;
-        transform: scale(1.1);
+        transform: translate(0, 10px) scale(1);
+    }
+    75% {
+        transform: translate(-5px, -5px) scale(1.01);
+    }
+    100% {
+        transform: translate(10px, -10px) scale(1.02);
     }
 }
 
-/* Líneas de grid futuristas */
+/* Líneas de grid futuristas - OPTIMIZADO */
 body::after {
     content: '';
     position: fixed;
@@ -136,12 +145,13 @@ body::after {
     width: 100%;
     height: 100%;
     background-image: 
-        linear-gradient(rgba(0, 212, 255, 0.03) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(0, 212, 255, 0.03) 1px, transparent 1px);
+        linear-gradient(rgba(0, 212, 255, 0.02) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0, 212, 255, 0.02) 1px, transparent 1px);
     background-size: 50px 50px;
     z-index: -1;
-    opacity: 0.3;
-    animation: gridMove 30s linear infinite;
+    opacity: 0.2;
+    /* Cambiado: animación más lenta para reducir parpadeo */
+    animation: gridMove 40s linear infinite;
 }
 
 @keyframes gridMove {
@@ -168,7 +178,7 @@ body::after {
     overflow: hidden;
 }
 
-/* Borde neón alrededor de la app */
+/* Borde neón alrededor de la app - OPTIMIZADO */
 #app::before {
     content: '';
     position: absolute;
@@ -180,21 +190,28 @@ body::after {
     border-image: linear-gradient(135deg, var(--primary), var(--secondary), var(--accent)) 1;
     pointer-events: none;
     z-index: 1;
-    animation: borderGlow 3s ease-in-out infinite alternate;
+    /* Cambiado: animación más lenta sin cambios bruscos de opacidad */
+    animation: borderGlow 8s ease-in-out infinite;
 }
 
 @keyframes borderGlow {
-    0% {
-        opacity: 0.3;
+    0%, 100% {
+        opacity: 0.4;
         box-shadow: 
-            0 0 10px var(--primary-glow),
-            inset 0 0 10px var(--primary-glow);
+            0 0 15px var(--primary-glow),
+            inset 0 0 15px var(--primary-glow);
     }
-    100% {
-        opacity: 0.8;
+    33% {
+        opacity: 0.6;
         box-shadow: 
             0 0 20px var(--secondary-glow),
             inset 0 0 20px var(--secondary-glow);
+    }
+    66% {
+        opacity: 0.5;
+        box-shadow: 
+            0 0 18px var(--accent-glow),
+            inset 0 0 18px var(--accent-glow);
     }
 }
 
@@ -245,7 +262,8 @@ body::after {
     top: 0;
     z-index: 100;
     box-shadow: var(--shadow-md);
-    animation: headerGlow 4s ease-in-out infinite alternate;
+    /* Cambiado: animación más sutil */
+    animation: headerGlow 6s ease-in-out infinite;
 }
 
 @keyframes headerGlow {
@@ -256,7 +274,7 @@ body::after {
     }
     50% {
         box-shadow: 
-            var(--shadow-lg),
+            var(--shadow-md),
             0 2px 0 var(--secondary-glow);
     }
 }
@@ -306,15 +324,15 @@ body::after {
 
 .logo:hover::before {
     opacity: 1;
-    animation: logoPulse 1s ease-in-out infinite alternate;
+    animation: logoPulse 2s ease-in-out infinite;
 }
 
 @keyframes logoPulse {
-    0% {
+    0%, 100% {
         box-shadow: 0 0 5px var(--primary);
     }
-    100% {
-        box-shadow: 0 0 15px var(--secondary);
+    50% {
+        box-shadow: 0 0 10px var(--secondary);
     }
 }
 
@@ -325,7 +343,7 @@ body::after {
     background-clip: text;
     color: transparent;
     filter: drop-shadow(0 0 8px var(--primary-glow));
-    animation: iconFloat 3s ease-in-out infinite;
+    animation: iconFloat 6s ease-in-out infinite;
 }
 
 @keyframes iconFloat {
@@ -333,7 +351,7 @@ body::after {
         transform: translateY(0) rotate(0deg);
     }
     50% {
-        transform: translateY(-4px) rotate(5deg);
+        transform: translateY(-3px) rotate(2deg);
     }
 }
 
@@ -363,16 +381,17 @@ body::after {
     -webkit-background-clip: text;
     background-clip: text;
     color: transparent;
-    animation: betaBlink 2s ease-in-out infinite;
+    /* Cambiado: animación más lenta */
+    animation: betaBlink 4s ease-in-out infinite;
 }
 
 @keyframes betaBlink {
-    0%, 100% {
-        opacity: 0.7;
+    0%, 70%, 100% {
+        opacity: 0.6;
     }
-    50% {
+    35% {
         opacity: 1;
-        text-shadow: 0 0 8px var(--accent-glow);
+        text-shadow: 0 0 6px var(--accent-glow);
     }
 }
 
@@ -471,7 +490,7 @@ body::after {
 
 .user-avatar:hover::before {
     opacity: 1;
-    animation: avatarRotate 2s linear infinite;
+    animation: avatarRotate 4s linear infinite;
 }
 
 @keyframes avatarRotate {
@@ -582,15 +601,16 @@ body::after {
     box-shadow: 
         0 0 10px var(--accent-glow),
         0 0 20px var(--accent-glow);
-    animation: navPulse 1.5s ease-in-out infinite alternate;
+    /* Cambiado: animación más lenta */
+    animation: navPulse 3s ease-in-out infinite;
 }
 
 @keyframes navPulse {
-    0% {
-        opacity: 0.5;
-        transform: translateX(-50%) scale(0.8);
+    0%, 100% {
+        opacity: 0.7;
+        transform: translateX(-50%) scale(1);
     }
-    100% {
+    50% {
         opacity: 1;
         transform: translateX(-50%) scale(1.2);
     }
@@ -608,7 +628,8 @@ body::after {
 }
 
 .nav-item.active .nav-icon {
-    animation: iconBounce 2s ease-in-out infinite;
+    /* Cambiado: animación más suave */
+    animation: iconBounce 3s ease-in-out infinite;
 }
 
 @keyframes iconBounce {
@@ -616,7 +637,7 @@ body::after {
         transform: translateY(0);
     }
     50% {
-        transform: translateY(-4px);
+        transform: translateY(-3px);
     }
 }
 
@@ -724,7 +745,8 @@ button:active,
     box-shadow: 
         var(--shadow-lg),
         inset 0 0 30px rgba(0, 212, 255, 0.1);
-    animation: cardGlow 4s ease-in-out infinite alternate;
+    /* Cambiado: animación más suave */
+    animation: cardGlow 8s ease-in-out infinite;
 }
 
 @keyframes cardGlow {
@@ -753,7 +775,8 @@ button:active,
         var(--secondary), 
         var(--accent), 
         transparent);
-    animation: scanLine 3s linear infinite;
+    /* Cambiado: animación más lenta */
+    animation: scanLine 6s linear infinite;
 }
 
 @keyframes scanLine {
@@ -791,19 +814,20 @@ button:active,
         transparent, 
         var(--primary), 
         transparent);
-    animation: titleUnderline 3s ease-in-out infinite alternate;
+    /* Cambiado: animación más lenta */
+    animation: titleUnderline 6s ease-in-out infinite;
 }
 
 @keyframes titleUnderline {
     0%, 100% {
-        opacity: 0.5;
-        width: 50%;
-        left: 25%;
+        opacity: 0.4;
+        width: 30%;
+        left: 35%;
     }
     50% {
-        opacity: 1;
-        width: 100%;
-        left: 0;
+        opacity: 0.8;
+        width: 80%;
+        left: 10%;
     }
 }
 
@@ -1004,17 +1028,18 @@ button:active,
     -webkit-background-clip: text;
     background-clip: text;
     color: transparent;
-    animation: lightning 2s ease-in-out infinite;
+    /* Cambiado: animación más lenta */
+    animation: lightning 3s ease-in-out infinite;
 }
 
 @keyframes lightning {
     0%, 100% {
-        opacity: 0.5;
+        opacity: 0.7;
         transform: scale(1);
     }
     50% {
         opacity: 1;
-        transform: scale(1.3);
+        transform: scale(1.2);
     }
 }
 
@@ -1063,7 +1088,8 @@ button:active,
 
 .action-btn:hover::before {
     opacity: 1;
-    animation: actionGlow 2s linear infinite;
+    /* Cambiado: animación más lenta */
+    animation: actionGlow 4s linear infinite;
 }
 
 @keyframes actionGlow {
@@ -1177,15 +1203,16 @@ button:active,
 
 .info-card:hover::before {
     opacity: 1;
-    animation: infoGlow 2s ease-in-out infinite alternate;
+    /* Cambiado: animación más lenta */
+    animation: infoGlow 4s ease-in-out infinite;
 }
 
 @keyframes infoGlow {
-    0% {
-        box-shadow: 0 0 10px var(--primary);
+    0%, 100% {
+        box-shadow: 0 0 8px var(--primary);
     }
-    100% {
-        box-shadow: 0 0 20px var(--secondary);
+    50% {
+        box-shadow: 0 0 15px var(--secondary);
     }
 }
 
@@ -1207,16 +1234,17 @@ button:active,
     left: 0;
     color: var(--primary);
     font-size: 12px;
-    animation: bulletBlink 2s ease-in-out infinite;
+    /* Cambiado: animación más lenta */
+    animation: bulletBlink 3s ease-in-out infinite;
 }
 
 @keyframes bulletBlink {
     0%, 100% {
-        opacity: 0.5;
+        opacity: 0.6;
     }
     50% {
         opacity: 1;
-        text-shadow: 0 0 8px var(--primary-glow);
+        text-shadow: 0 0 6px var(--primary-glow);
     }
 }
 
@@ -1266,7 +1294,8 @@ button:active,
     width: 100px;
     height: 2px;
     background: linear-gradient(90deg, var(--primary), transparent);
-    animation: headerScan 3s ease-in-out infinite alternate;
+    /* Cambiado: animación más lenta */
+    animation: headerScan 6s ease-in-out infinite;
 }
 
 @keyframes headerScan {
@@ -1274,8 +1303,14 @@ button:active,
         left: 0;
         opacity: 0;
     }
+    25% {
+        opacity: 0.5;
+    }
     50% {
         opacity: 1;
+    }
+    75% {
+        opacity: 0.5;
     }
     100% {
         left: calc(100% - 100px);
@@ -1300,16 +1335,17 @@ button:active,
     content: '▶';
     font-size: 16px;
     color: var(--primary);
-    animation: playBlink 1.5s ease-in-out infinite;
+    /* Cambiado: animación más lenta */
+    animation: playBlink 3s ease-in-out infinite;
 }
 
 @keyframes playBlink {
-    0%, 100% {
-        opacity: 0.5;
+    0%, 70%, 100% {
+        opacity: 0.6;
     }
-    50% {
+    35% {
         opacity: 1;
-        text-shadow: 0 0 10px var(--primary-glow);
+        text-shadow: 0 0 8px var(--primary-glow);
     }
 }
 
@@ -1350,7 +1386,7 @@ button:active,
 
 .refresh-btn:hover::before {
     opacity: 1;
-    animation: refreshRotate 2s linear infinite;
+    animation: refreshRotate 4s linear infinite;
 }
 
 @keyframes refreshRotate {
@@ -1409,17 +1445,18 @@ button:active,
     height: 20px;
     background: linear-gradient(to bottom, var(--primary), var(--secondary));
     border-radius: var(--radius-full);
-    animation: sectionPulse 2s ease-in-out infinite alternate;
+    /* Cambiado: animación más lenta */
+    animation: sectionPulse 4s ease-in-out infinite;
 }
 
 @keyframes sectionPulse {
-    0% {
-        opacity: 0.5;
+    0%, 100% {
+        opacity: 0.7;
         box-shadow: 0 0 5px var(--primary);
     }
-    100% {
+    50% {
         opacity: 1;
-        box-shadow: 0 0 15px var(--secondary);
+        box-shadow: 0 0 12px var(--secondary);
     }
 }
 
@@ -1442,7 +1479,8 @@ button:active,
         transparent, 
         var(--primary), 
         transparent);
-    animation: detailScan 4s linear infinite;
+    /* Cambiado: animación más lenta */
+    animation: detailScan 8s linear infinite;
 }
 
 @keyframes detailScan {
@@ -1896,15 +1934,15 @@ button:active,
     box-shadow: 
         0 0 25px var(--primary-glow),
         inset 0 0 15px rgba(255, 255, 255, 0.2);
-    animation: gameIconPulse 1s ease-in-out infinite alternate;
+    animation: gameIconPulse 2s ease-in-out infinite;
 }
 
 @keyframes gameIconPulse {
-    0% {
+    0%, 100% {
         filter: brightness(1);
     }
-    100% {
-        filter: brightness(1.3);
+    50% {
+        filter: brightness(1.2);
     }
 }
 
@@ -1931,14 +1969,15 @@ button:active,
     color: var(--primary);
     font-family: var(--font-mono);
     text-shadow: 0 0 10px var(--primary-glow);
-    animation: cacheBlink 2s ease-in-out infinite;
+    /* Cambiado: animación más lenta */
+    animation: cacheBlink 4s ease-in-out infinite;
 }
 
 @keyframes cacheBlink {
-    0%, 100% {
-        opacity: 0.5;
+    0%, 70%, 100% {
+        opacity: 0.6;
     }
-    50% {
+    35% {
         opacity: 1;
     }
 }
@@ -1991,7 +2030,17 @@ button:active,
 
 .variation-card:hover::before {
     opacity: 1;
-    animation: variationGlow 2s ease-in-out infinite alternate;
+    /* Cambiado: animación más lenta */
+    animation: variationGlow 4s ease-in-out infinite;
+}
+
+@keyframes variationGlow {
+    0%, 100% {
+        box-shadow: 0 0 8px var(--primary);
+    }
+    50% {
+        box-shadow: 0 0 15px var(--secondary);
+    }
 }
 
 .variation-header {
@@ -2019,7 +2068,8 @@ button:active,
     height: 2px;
     background: var(--primary);
     border-radius: var(--radius-full);
-    animation: variationLine 3s ease-in-out infinite alternate;
+    /* Cambiado: animación más lenta */
+    animation: variationLine 6s ease-in-out infinite;
 }
 
 @keyframes variationLine {
@@ -2029,7 +2079,7 @@ button:active,
     }
     50% {
         width: 100%;
-        opacity: 1;
+        opacity: 0.8;
     }
 }
 
@@ -2040,18 +2090,18 @@ button:active,
 }
 
 .cache-indicator.loading-dot {
-    animation: loadingDot 1.5s ease-in-out infinite;
+    animation: loadingDot 2s ease-in-out infinite;
 }
 
 @keyframes loadingDot {
     0%, 100% {
-        opacity: 0.3;
-        transform: scale(0.8);
+        opacity: 0.4;
+        transform: scale(0.9);
     }
     50% {
-        opacity: 1;
-        transform: scale(1.2);
-        text-shadow: 0 0 10px var(--primary-glow);
+        opacity: 0.8;
+        transform: scale(1.1);
+        text-shadow: 0 0 8px var(--primary-glow);
     }
 }
 
@@ -2220,7 +2270,7 @@ html {
     border-radius: var(--radius-lg);
     z-index: -1;
     opacity: 0.5;
-    animation: modalBorderGlow 3s linear infinite;
+    animation: modalBorderGlow 6s linear infinite;
 }
 
 @keyframes modalBorderGlow {
@@ -2307,7 +2357,7 @@ html {
     background-clip: text;
     color: transparent;
     filter: drop-shadow(0 0 20px var(--primary-glow));
-    animation: modalIconFloat 3s ease-in-out infinite;
+    animation: modalIconFloat 6s ease-in-out infinite;
 }
 
 @keyframes modalIconFloat {
@@ -2315,7 +2365,7 @@ html {
         transform: translateY(0) scale(1);
     }
     50% {
-        transform: translateY(-10px) scale(1.1);
+        transform: translateY(-8px) scale(1.05);
     }
 }
 
@@ -2426,7 +2476,7 @@ html {
     justify-content: center;
     border-radius: 50%;
     background: rgba(255, 255, 255, 0.1);
-    animation: toastIconPulse 2s ease-in-out infinite;
+    animation: toastIconPulse 3s ease-in-out infinite;
 }
 
 @keyframes toastIconPulse {
@@ -2434,7 +2484,7 @@ html {
         transform: scale(1);
     }
     50% {
-        transform: scale(1.1);
+        transform: scale(1.05);
     }
 }
 
@@ -2466,17 +2516,17 @@ html {
     letter-spacing: 4px;
     text-transform: uppercase;
     opacity: 0.3;
-    animation: loadingText 3s ease-in-out infinite alternate;
+    animation: loadingText 6s ease-in-out infinite;
 }
 
 @keyframes loadingText {
-    0% {
+    0%, 100% {
         opacity: 0.1;
         letter-spacing: 2px;
     }
-    100% {
+    50% {
         opacity: 0.3;
-        letter-spacing: 6px;
+        letter-spacing: 5px;
     }
 }
 
@@ -2488,7 +2538,7 @@ html {
     border-right: 3px solid var(--secondary);
     border-bottom: 3px solid var(--accent);
     border-radius: 50%;
-    animation: spin 1.5s linear infinite, spinnerColor 3s ease-in-out infinite alternate;
+    animation: spin 1.5s linear infinite, spinnerColor 6s ease-in-out infinite;
     margin: 0 auto var(--space-6);
     position: relative;
     z-index: 1;
@@ -2575,19 +2625,19 @@ html {
     box-shadow: 
         var(--shadow-xl),
         0 0 50px var(--primary-glow);
-    animation: loadingContentPulse 2s ease-in-out infinite alternate;
+    animation: loadingContentPulse 4s ease-in-out infinite;
 }
 
 @keyframes loadingContentPulse {
-    0% {
+    0%, 100% {
         box-shadow: 
             var(--shadow-xl),
             0 0 30px var(--primary-glow);
     }
-    100% {
+    50% {
         box-shadow: 
             var(--shadow-xl),
-            0 0 50px var(--secondary-glow);
+            0 0 40px var(--secondary-glow);
     }
 }
 
@@ -2599,17 +2649,17 @@ html {
     letter-spacing: 2px;
     text-transform: uppercase;
     margin-top: var(--space-6);
-    animation: loadingTextPulse 2s ease-in-out infinite alternate;
+    animation: loadingTextPulse 4s ease-in-out infinite;
 }
 
 @keyframes loadingTextPulse {
-    0% {
+    0%, 100% {
         opacity: 0.7;
         letter-spacing: 1px;
     }
-    100% {
-        opacity: 1;
-        letter-spacing: 3px;
+    50% {
+        opacity: 0.9;
+        letter-spacing: 2px;
     }
 }
 
@@ -2750,6 +2800,226 @@ html {
 .screen.active .history-list,
 .screen.active .claim-options {
     animation: floatIn 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+/* ===== OPTIMIZACIONES DE RENDIMIENTO ===== */
+/* Evitar parpadeo en animaciones de fondo */
+body::before,
+body::after,
+#app::before {
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+    transform: translateZ(0);
+}
+
+/* Reducir animaciones en dispositivos móviles para mejor rendimiento */
+@media (max-width: 768px) {
+    body::before {
+        animation: gradientShift 40s ease-in-out infinite alternate;
+    }
+    
+    body::after {
+        animation: gridMove 60s linear infinite;
+    }
+    
+    .logo-icon {
+        animation: iconFloat 8s ease-in-out infinite;
+    }
+}
+
+/* Estilos para ofertas ETECSA */
+.offer-card {
+    background: linear-gradient(135deg, rgba(26, 26, 46, 0.8) 0%, rgba(19, 19, 42, 0.9) 100%);
+    border-radius: 15px;
+    padding: 20px;
+    margin-bottom: 20px;
+    border: 1px solid rgba(0, 212, 255, 0.2);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    backdrop-filter: blur(10px);
+}
+
+.offer-header {
+    display: flex;
+    align-items: center;
+    margin-bottom: 15px;
+}
+
+.offer-icon {
+    font-size: 2.5rem;
+    margin-right: 15px;
+    background: linear-gradient(135deg, #00d4ff, #9d00ff);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    filter: drop-shadow(0 0 10px rgba(0, 212, 255, 0.5));
+}
+
+.offer-info h3 {
+    margin: 0;
+    color: #00d4ff;
+    font-size: 1.2rem;
+}
+
+.offer-info p {
+    margin: 5px 0 0 0;
+    color: #a0a0c0;
+    font-size: 0.9rem;
+}
+
+.offer-prices {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    gap: 15px;
+    margin-top: 15px;
+}
+
+.price-option {
+    background: rgba(0, 212, 255, 0.1);
+    border: 2px solid rgba(0, 212, 255, 0.2);
+    border-radius: 12px;
+    padding: 15px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+}
+
+.price-option:hover {
+    background: rgba(0, 212, 255, 0.15);
+    border-color: rgba(0, 212, 255, 0.4);
+    transform: translateY(-2px);
+    box-shadow: 0 5px 15px rgba(0, 212, 255, 0.2);
+}
+
+.price-option.selected {
+    background: rgba(0, 212, 255, 0.2);
+    border-color: #00d4ff;
+    box-shadow: 0 0 20px rgba(0, 212, 255, 0.3);
+}
+
+.price-main {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.price-label {
+    font-weight: 600;
+    color: #ffffff;
+    font-size: 1.1rem;
+}
+
+.price-value {
+    color: #00d4ff;
+    font-weight: bold;
+    font-size: 1.2rem;
+    text-shadow: 0 0 10px rgba(0, 212, 255, 0.5);
+}
+
+.price-details {
+    color: #a0a0c0;
+    font-size: 0.9rem;
+    margin-bottom: 10px;
+}
+
+.price-select-btn {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    color: #00d4ff;
+    font-size: 0.9rem;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.price-option:hover .price-select-btn {
+    opacity: 1;
+}
+
+.selected-offer-card {
+    background: linear-gradient(135deg, rgba(0, 212, 255, 0.1) 0%, rgba(157, 0, 255, 0.1) 100%);
+    border-radius: 12px;
+    padding: 15px;
+    margin-bottom: 20px;
+    border: 2px solid rgba(0, 212, 255, 0.3);
+}
+
+.selected-offer-header {
+    display: flex;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+.selected-offer-header .offer-icon {
+    font-size: 2rem;
+    margin-right: 10px;
+}
+
+.selected-offer-header .offer-name {
+    font-size: 1.3rem;
+    color: #00d4ff;
+    font-weight: bold;
+}
+
+.warning-note {
+    background: rgba(255, 165, 0, 0.1);
+    border-left: 4px solid #ffa500;
+    padding: 10px 15px;
+    margin-bottom: 20px;
+    border-radius: 4px;
+    color: #ffa500;
+}
+
+.balance-check {
+    background: rgba(26, 26, 46, 0.6);
+    border-radius: 10px;
+    padding: 15px;
+    margin-bottom: 20px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.balance-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.balance-row:last-child {
+    margin-bottom: 0;
+}
+
+.balance-row.total {
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    padding-top: 8px;
+    margin-top: 8px;
+    font-weight: bold;
+}
+
+.balance-value {
+    color: #00d4ff;
+    font-weight: 600;
+}
+
+.balance-value.negative {
+    color: #ff4757;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .offer-prices {
+        grid-template-columns: 1fr;
+    }
+    
+    .price-main {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 5px;
+    }
+    
+    .price-value {
+        align-self: flex-end;
+    }
 }
 
 /* ===== FIN DEL CSS ===== */
