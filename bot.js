@@ -18,6 +18,8 @@ const cors = require('cors');
 const GameRechargeHandler = require('./game_recharges.js');
 const SokyRecargasHandler = require('./sokyrecargas.js');
 const BolitaHandler = require('./BolitaHandler.js');
+// Nota: El handler de Apuestas Deportivas se agregará después
+// const ApuestasHandler = require('./ApuestasHandler.js');
 
 // ============================================
 // ENVIRONMENT VARIABLES (FROM .env)
@@ -135,6 +137,8 @@ const supabase = createClient(DB_URL, DB_KEY);
 const gameHandler = new GameRechargeHandler(bot, supabase);
 const sokyHandler = new SokyRecargasHandler(bot, supabase);
 const bolitaHandler = new BolitaHandler(bot, supabase);
+// Nota: Inicializar ApuestasHandler después
+// const apuestasHandler = new ApuestasHandler(bot, supabase);
 
 // Global variables
 const activeSessions = {};
@@ -766,6 +770,7 @@ const createMainKeyboard = () => ({
             { text: '🎱 La Bolita', callback_data: 'bolita_menu' }
         ],
         [
+            { text: '⚽ Apuestas', callback_data: 'apuestas_menu' },
             { text: '🔄 Actualizar', callback_data: 'refresh_wallet' }
         ]
     ]
@@ -783,14 +788,15 @@ const createWalletKeyboard = () => ({
             { text: '🎱 La Bolita', callback_data: 'bolita_menu' }
         ],
         [
-            { text: '📜 Historial', callback_data: 'history' },
-            { text: '📱 Cambiar Teléfono', callback_data: 'link_phone' }
+            { text: '⚽ Apuestas', callback_data: 'apuestas_menu' },
+            { text: '📜 Historial', callback_data: 'history' }
         ],
         [
-            { text: '📊 Saldo Pendiente', callback_data: 'view_pending' },
-            { text: '🌐 Abrir WebApp', callback_data: 'open_webapp' }
+            { text: '📱 Cambiar Teléfono', callback_data: 'link_phone' },
+            { text: '📊 Saldo Pendiente', callback_data: 'view_pending' }
         ],
         [
+            { text: '🌐 Abrir WebApp', callback_data: 'open_webapp' },
             { text: '❌ Cancelar Orden Pendiente', callback_data: 'cancel_pending_order' }
         ],
         [
@@ -1048,6 +1054,9 @@ bot.on('callback_query', async (query) => {
             case 'games_menu':
                 await gameHandler.showGamesList(chatId, messageId);
                 break;
+            case 'apuestas_menu':
+                await handleApuestasMenu(chatId, messageId);
+                break;
             case 'dep_init':
                 await handleDepositInit(chatId, messageId, param1);
                 break;
@@ -1203,6 +1212,19 @@ async function handleOpenWebApp(chatId, messageId) {
                 }
             ]]
         }
+    });
+}
+
+async function handleApuestasMenu(chatId, messageId) {
+    const message = `⚽ *Apuestas Deportivas*\n\n` +
+        `Próximamente disponible...\n\n` +
+        `Muy pronto podrás hacer apuestas deportivas con tus CWS.`;
+    
+    await bot.editMessageText(message, {
+        chat_id: chatId,
+        message_id: messageId,
+        parse_mode: 'Markdown',
+        reply_markup: createBackKeyboard('start_back')
     });
 }
 
@@ -1632,7 +1654,7 @@ async function handleTerms(chatId, messageId) {
         `   • Tu responsabilidad guardar los recibos\n\n` +
         `8. *REEMBOLSOS*:\n` +
         `   • Si envías dinero y no se acredita pero tienes captura válida\n` +
-        `   • Contacta al administrador dentro de 24 horas\n` +
+        `   • Contacta al administrador dentro de 24 horas\n    ` +
         `   • Se investigará y resolverá en 48 horas máximo\n\n` +
         `9. *PROHIBIDO*:\n` +
         `   • Uso fraudulento o múltiples cuentas\n` +
@@ -1977,7 +1999,7 @@ async function showUserHistory(chatId, messageId, userId) {
             .eq('user_id', userId)
             .order('created_at', { ascending: false })
             .limit(15);
-        
+    
         let message = `📜 *Historial de Transacciones*\n\n` +
             `👤 Usuario ID: ${userId}\n\n`;
         
@@ -2733,6 +2755,7 @@ app.listen(PORT, () => {
     console.log(`🎮 LioGames: ${LIOGAMES_MEMBER_CODE ? '✅ Configurado' : '❌ No configurado'}`);
     console.log(`📱 SokyRecargas: ${SOKY_API_TOKEN ? '✅ Configurado' : '❌ No configurado'}`);
     console.log(`🎱 La Bolita: ✅ Integrado`);
+    console.log(`⚽ Apuestas Deportivas: 🔜 Próximamente`);
     console.log(`👑 Admin ID: ${BOT_ADMIN_ID ? '✅ Configurado' : '❌ No configurado'}`);
     console.log(`💱 Tasas de cambio:`);
     console.log(`   • USDT 0-30: $${USDT_RATE_0_30} CUP`);
