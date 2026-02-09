@@ -5,6 +5,8 @@ class CromwellWebApp {
         
         // Obtener userId de variable global
         this.userId = window.TELEGRAM_USER_ID;
+        // En CromwellWebApp constructor:
+        this.etecsa = new EtecsaComponent(this);
         
         // Fallbacks
         if (!this.userId) {
