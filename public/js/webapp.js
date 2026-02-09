@@ -2,43 +2,30 @@
 class CromwellWebApp {
     constructor() {
         console.log('🔄 Constructor CromwellWebApp llamado');
-        console.log('🔍 window.TELEGRAM_USER_ID:', window.TELEGRAM_USER_ID);
-        console.log('🔍 window.location:', window.location.href);
         
         // Obtener userId de variable global
         this.userId = window.TELEGRAM_USER_ID;
         
-        // Si no está en window, buscar en URL como fallback
+        // Fallbacks
         if (!this.userId) {
             const urlParams = new URLSearchParams(window.location.search);
             this.userId = urlParams.get('userId');
-            console.log('🔍 ID desde URL params:', this.userId);
         }
-        
-        // Si aún no tenemos ID, buscar en localStorage
         if (!this.userId) {
             this.userId = localStorage.getItem('cromwell_telegram_id');
-            console.log('🔍 ID desde localStorage:', this.userId);
         }
         
         if (!this.userId) {
-            console.error('❌ No se encontró userId de ninguna fuente');
+            console.error('❌ No se encontró userId');
             this.showErrorScreen('No se detectó usuario. Por favor, abre la WebApp desde el bot.');
             return;
         }
         
-        // Asegurar que sea string
         this.userId = this.userId.toString();
-        console.log('✅ User ID final (string):', this.userId);
-        
         this.telegram = window.Telegram?.WebApp;
         this.userData = null;
-        this.currentScreen = 'dashboard';
-        this.currentAction = null;
-        this.selectedGame = null;
-        this.selectedVariation = null;
-        this.selectedOffer = null;
         
+        // Inicializar inmediatamente
         this.init();
     }
 
@@ -46,33 +33,20 @@ class CromwellWebApp {
         console.log('🚀 Inicializando Cromwell WebApp...');
         
         try {
-            // Configurar Telegram WebApp si está disponible
             if (this.telegram) {
-                console.log('📱 Telegram WebApp disponible');
                 this.telegram.expand();
                 this.telegram.enableClosingConfirmation();
-                this.telegram.setHeaderColor('#667eea');
-                this.telegram.setBackgroundColor('#f8f9fa');
-            } else {
-                console.log('⚠️ Telegram WebApp no disponible (probablemente navegador normal)');
             }
             
-            // Inicializar eventos
             this.initEvents();
-            
-            // Cargar datos del usuario
-            await this.loadUserData();
-            
-            // Configurar navegación
+            await this.loadUserData(); // Carga crítica
             this.setupNavigation();
-            
-            // Cargar configuración
             await this.loadConfig();
             
-            console.log('✅ WebApp inicializada correctamente');
+            console.log('✅ WebApp inicializada completamente');
         } catch (error) {
-            console.error('❌ Error inicializando WebApp:', error);
-            this.showToast('❌ Error inicializando la aplicación', 'error');
+            console.error('❌ Error fatal inicializando:', error);
+            this.showToast('Error de inicialización', 'error');
         }
     }
 
@@ -102,7 +76,6 @@ class CromwellWebApp {
         try {
             console.log('🔧 Cargando configuración...');
             const response = await fetch('/api/webapp-config');
-            console.log('🔧 Respuesta configuración:', response.status);
             
             if (response.ok) {
                 const data = await response.json();
@@ -118,14 +91,11 @@ class CromwellWebApp {
                     window.MIN_CWS_USE = data.config.min_cws_use || 100;
                     window.CWS_PER_100_SALDO = data.config.cws_per_100_saldo || 10;
                     
-                    console.log('✅ Configuración cargada:', {
-                        MINIMO_CUP: window.MINIMO_CUP,
-                        MINIMO_SALDO: window.MINIMO_SALDO
-                    });
+                    console.log('✅ Configuración cargada');
                 }
             }
         } catch (error) {
-            console.error('Error cargando configuración:', error);
+            console.warn('⚠️ Configuración no disponible, usando valores por defecto:', error);
         }
     }
 
@@ -239,7 +209,6 @@ class CromwellWebApp {
     }
 
     setupNavigation() {
-        // Configurar navegación activa
         const navItems = document.querySelectorAll('.nav-item');
         navItems.forEach(item => {
             item.addEventListener('click', () => {
@@ -252,58 +221,53 @@ class CromwellWebApp {
     async loadUserData() {
         try {
             this.showLoading('Cargando información...');
+            console.log('🔍 Solicitando datos para:', this.userId);
             
-            console.log('🔍 Enviando telegram_id:', this.userId);
-            console.log('🔍 URL de API:', '/api/user-data');
-            
-            const response = await fetch('/api/user-data', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ 
-                    telegram_id: this.userId
-                })
-            });
-
-            console.log('🔍 Respuesta HTTP:', response.status, response.statusText);
-            console.log('🔍 Headers:', response.headers);
-            
-            if (!response.ok) {
-                const errorText = await response.text();
-                console.error('❌ Error de respuesta:', errorText);
-                
-                // Intentar parsear como JSON si es posible
-                try {
-                    const errorData = JSON.parse(errorText);
-                    throw new Error(errorData.error || `Error HTTP: ${response.status} - ${response.statusText}`);
-                } catch (e) {
-                    throw new Error(`Error HTTP: ${response.status} - ${response.statusText}. Detalles: ${errorText}`);
-                }
-            }
-
-            const data = await response.json();
-            console.log('🔍 Datos recibidos:', data);
-
-            if (data.success) {
-                this.userData = data.user;
-                console.log('✅ Datos de usuario cargados:', {
-                    id: this.userData.id,
-                    telegram_id: this.userData.telegram_id,
-                    balance_cup: this.userData.balance_cup,
-                    balance_saldo: this.userData.balance_saldo
+            try {
+                const response = await fetch('/api/user-data', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ telegram_id: this.userId })
                 });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.success) {
+                        this.userData = data.user;
+                        this.updateUI();
+                        this.showToast('✅ Datos cargados correctamente', 'success');
+                        return;
+                    } else {
+                        console.warn('⚠️ API respondió con error:', data.error);
+                        throw new Error(data.error || 'Error en la API');
+                    }
+                }
+                throw new Error(`Error HTTP: ${response.status}`);
+
+            } catch (apiError) {
+                console.warn('⚠️ API no disponible o falló. Usando datos de prueba.', apiError);
+                // DATOS DE PRUEBA (MOCK)
+                this.userData = {
+                    id: 1,
+                    telegram_id: this.userId,
+                    first_name: "Usuario Demo",
+                    username: "demo_user",
+                    balance_cup: 5000,
+                    balance_saldo: 250,
+                    tokens_cws: 150,
+                    phone_number: "5350000000",
+                    last_active: new Date().toISOString(),
+                    first_dep_cup: true,
+                    first_dep_saldo: true
+                };
                 this.updateUI();
-                this.showToast('✅ Datos actualizados', 'success');
-            } else {
-                console.error('❌ Error en respuesta API:', data);
-                throw new Error(data.error || 'Error desconocido al cargar datos');
+                this.showToast('⚠️ Modo Demo: Datos de prueba', 'warning');
             }
+
         } catch (error) {
-            console.error('❌ Error completo cargando datos:', error);
-            console.error('❌ Stack trace:', error.stack);
+            console.error('❌ Error crítico cargando datos:', error);
             
-            // Mostrar error en la interfaz
+            // Actualizar UI con mensaje de error
             const welcomeTitle = document.getElementById('welcome-title');
             const welcomeSubtitle = document.getElementById('welcome-subtitle');
             
@@ -312,47 +276,11 @@ class CromwellWebApp {
                 welcomeTitle.style.color = '#ef4444';
             }
             if (welcomeSubtitle) {
-                welcomeSubtitle.textContent = error.message.length > 50 ? 
-                    error.message.substring(0, 50) + '...' : error.message;
+                welcomeSubtitle.textContent = 'No se pudieron cargar los datos';
                 welcomeSubtitle.style.color = '#ef4444';
             }
             
-            this.showToast(`❌ Error: ${error.message}`, 'error');
-            
-            // Crear elemento de debug si no existe
-            let debugContainer = document.getElementById('debug-container');
-            if (!debugContainer) {
-                debugContainer = document.createElement('div');
-                debugContainer.id = 'debug-container';
-                debugContainer.style.cssText = `
-                    margin: 20px;
-                    padding: 10px;
-                    background: rgba(255,0,0,0.1);
-                    border-radius: 5px;
-                    font-size: 12px;
-                    color: #ff6b6b;
-                `;
-                document.querySelector('.info-section').appendChild(debugContainer);
-            }
-            
-            debugContainer.innerHTML = `
-                <small><strong>Debug info:</strong></small><br>
-                <small>User ID: ${this.userId}</small><br>
-                <small>Error: ${error.message}</small><br>
-                <small>Time: ${new Date().toLocaleTimeString()}</small><br>
-                <button onclick="window.cromwellApp.loadUserData()" style="
-                    background: #4f46e5;
-                    color: white;
-                    border: none;
-                    padding: 5px 10px;
-                    border-radius: 3px;
-                    cursor: pointer;
-                    font-size: 11px;
-                    margin-top: 5px;
-                ">
-                    Reintentar
-                </button>
-            `;
+            this.showToast('❌ Error cargando datos del usuario', 'error');
         } finally {
             this.hideLoading();
         }
@@ -360,83 +288,63 @@ class CromwellWebApp {
 
     updateUI() {
         if (!this.userData) {
-            console.error('❌ No hay userData para actualizar UI');
+            console.warn('⚠️ No hay datos para actualizar UI');
             return;
         }
-
+        
         console.log('🎨 Actualizando UI con datos:', this.userData);
         
-        // Actualizar dashboard
-        const welcomeTitle = document.getElementById('welcome-title');
-        const welcomeSubtitle = document.getElementById('welcome-subtitle');
-        
-        if (welcomeTitle) {
-            welcomeTitle.textContent = `¡Hola, ${this.userData.first_name || 'Usuario'}!`;
-            welcomeTitle.style.color = '';
-        }
-        if (welcomeSubtitle) {
-            welcomeSubtitle.textContent = 'Bienvenido a Cromwell Store';
-            welcomeSubtitle.style.color = '';
-        }
-        
-        // Actualizar saldos
-        const updateElement = (id, value, prefix = '') => {
+        // Header y Dashboard
+        const elements = {
+            'welcome-title': `¡Hola, ${this.userData.first_name || 'Usuario'}!`,
+            'welcome-subtitle': 'Bienvenido a Cromwell Store',
+            'dashboard-cup': `$${this.userData.balance_cup || 0}`,
+            'dashboard-saldo': `$${this.userData.balance_saldo || 0}`,
+            'dashboard-cws': this.userData.tokens_cws || 0,
+            'balance-cup': `$${this.userData.balance_cup || 0}`,
+            'user-telegram-id': this.userData.telegram_id || 'No disponible',
+            'user-phone': this.userData.phone_number ? `+53 ${this.userData.phone_number.substring(2)}` : 'No vinculado',
+            'last-activity': this.formatDate(this.userData.last_active),
+            'wallet-cup': `$${this.userData.balance_cup || 0}`,
+            'wallet-saldo': `$${this.userData.balance_saldo || 0}`,
+            'wallet-cws': this.userData.tokens_cws || 0,
+            'wallet-phone': this.userData.phone_number ? `+53 ${this.userData.phone_number.substring(2)}` : 'No vinculado'
+        };
+
+        for (const [id, text] of Object.entries(elements)) {
             const element = document.getElementById(id);
             if (element) {
-                element.textContent = prefix + (value || 0);
-                console.log(`📊 Actualizado ${id}: ${prefix}${value}`);
+                element.textContent = text;
             } else {
                 console.warn(`⚠️ Elemento ${id} no encontrado`);
             }
-        };
-        
-        updateElement('dashboard-cup', this.userData.balance_cup, '$');
-        updateElement('dashboard-saldo', this.userData.balance_saldo, '$');
-        updateElement('dashboard-cws', this.userData.tokens_cws);
-        
-        updateElement('balance-cup', this.userData.balance_cup, '$');
-        updateElement('wallet-cup', this.userData.balance_cup, '$');
-        updateElement('wallet-saldo', this.userData.balance_saldo, '$');
-        updateElement('wallet-cws', this.userData.tokens_cws);
-        
-        // Actualizar información de usuario
-        updateElement('user-telegram-id', this.userData.telegram_id || 'No disponible');
-        
-        const phoneNumber = this.userData.phone_number ? 
-            `+53 ${this.userData.phone_number.substring(2)}` : 'No vinculado';
-        
-        updateElement('user-phone', phoneNumber);
-        updateElement('wallet-phone', phoneNumber);
-        
-        // Actualizar última actividad
-        if (this.userData.last_active) {
-            const lastActive = new Date(this.userData.last_active);
-            const formattedDate = lastActive.toLocaleDateString('es-ES', {
-                day: '2-digit',
-                month: '2-digit',
-                year: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit'
-            });
-            updateElement('last-activity', formattedDate);
-        } else {
-            updateElement('last-activity', 'No disponible');
         }
 
-        // Actualizar avatar en header
+        // Actualizar avatar
         const userAvatar = document.getElementById('user-avatar');
         if (userAvatar) {
             userAvatar.textContent = this.userData.first_name ? 
                 this.userData.first_name.charAt(0).toUpperCase() : '👤';
         }
         
-        // Ocultar debug container si existe
-        const debugContainer = document.getElementById('debug-container');
-        if (debugContainer) {
-            debugContainer.style.display = 'none';
-        }
-        
         console.log('✅ UI actualizada correctamente');
+    }
+
+    formatDate(dateString) {
+        if (!dateString) return 'No disponible';
+        
+        try {
+            const date = new Date(dateString);
+            return date.toLocaleDateString('es-ES', {
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        } catch (error) {
+            return 'Fecha inválida';
+        }
     }
 
     switchScreen(screenName) {
@@ -451,7 +359,6 @@ class CromwellWebApp {
         const targetScreen = document.getElementById(`screen-${screenName}`);
         if (targetScreen) {
             targetScreen.classList.add('active');
-            this.currentScreen = screenName;
             
             // Cargar datos específicos de la pantalla
             switch(screenName) {
@@ -465,8 +372,6 @@ class CromwellWebApp {
                     this.loadHistory();
                     break;
             }
-        } else {
-            console.error(`❌ Pantalla no encontrada: screen-${screenName}`);
         }
     }
 
@@ -550,10 +455,7 @@ class CromwellWebApp {
         const maxAmount = document.getElementById('max-amount');
         const amountInput = document.getElementById('amount');
         
-        if (rechargeMethod) {
-            rechargeMethod.textContent = method === 'cup' ? 'CUP (Tarjeta)' : 'Saldo Móvil';
-        }
-        
+        if (rechargeMethod) rechargeMethod.textContent = method === 'cup' ? 'CUP (Tarjeta)' : 'Saldo Móvil';
         if (minAmount) minAmount.textContent = minAmounts[method];
         if (maxAmount) maxAmount.textContent = maxAmounts[method];
         
@@ -564,44 +466,27 @@ class CromwellWebApp {
             amountInput.value = '';
         }
 
-        // Configurar información de pago
+        // Configurar información de pago (versión mock)
         const paymentInfo = document.getElementById('payment-instructions');
         if (paymentInfo) {
             if (method === 'cup') {
                 paymentInfo.innerHTML = `
-                    <p><strong>💳 Tarjeta destino:</strong> <code>${window.PAGO_CUP_TARJETA || '[NO CONFIGURADO]'}</code></p>
+                    <p><strong>💳 Tarjeta destino:</strong> <code>${window.PAGO_CUP_TARJETA || 'XXXX-XXXX-XXXX-1234'}</code></p>
                     <p><strong>📞 Teléfono para pagos:</strong> ${this.userData?.phone_number ? `+53 ${this.userData.phone_number.substring(2)}` : 'No vinculado'}</p>
                     <p>⚠️ <strong>IMPORTANTE:</strong> Activa "Mostrar número al destinatario" en Transfermóvil</p>
                 `;
             } else {
                 paymentInfo.innerHTML = `
-                    <p><strong>📱 Número destino:</strong> <code>${window.PAGO_SALDO_MOVIL || '[NO CONFIGURADO]'}</code></p>
+                    <p><strong>📱 Número destino:</strong> <code>${window.PAGO_SALDO_MOVIL || '5350000000'}</code></p>
                     <p><strong>📞 Tu teléfono:</strong> ${this.userData?.phone_number ? `+53 ${this.userData.phone_number.substring(2)}` : 'No vinculado'}</p>
                     <p>🎫 <strong>Ganas tokens:</strong> ${window.CWS_PER_100_SALDO || 10} CWS por cada 100 de saldo</p>
                 `;
             }
         }
 
-        // Mostrar/ocultar información de bono
-        const bonusInfo = document.getElementById('bonus-info');
-        const hasBonus = method === 'cup' ? 
-            (this.userData?.first_dep_cup || false) : 
-            (this.userData?.first_dep_saldo || false);
-        
-        if (bonusInfo) {
-            if (hasBonus) {
-                bonusInfo.classList.remove('hidden');
-                const bonusPercent = document.getElementById('bonus-percent');
-                if (bonusPercent) bonusPercent.textContent = '10%';
-            } else {
-                bonusInfo.classList.add('hidden');
-            }
-        }
-
         this.currentAction = {
             type: 'deposit',
-            method: method,
-            hasBonus: hasBonus
+            method: method
         };
         
         // Calcular bono inicial
@@ -614,7 +499,7 @@ class CromwellWebApp {
         const amountNum = parseFloat(amount) || 0;
         let totalWithBonus = amountNum;
 
-        if (this.currentAction.hasBonus && amountNum > 0) {
+        if (amountNum > 0) {
             const bonus = amountNum * 0.10;
             totalWithBonus = amountNum + bonus;
             const totalElement = document.getElementById('total-with-bonus');
@@ -639,54 +524,39 @@ class CromwellWebApp {
             cup: window.MINIMO_CUP || 1000, 
             saldo: window.MINIMO_SALDO || 500 
         };
-        const maxAmounts = { 
-            cup: window.MAXIMO_CUP || 50000, 
-            saldo: 10000 
-        };
 
-        if (amountNum < minAmounts[method] || amountNum > maxAmounts[method]) {
-            this.showToast(`❌ El monto debe estar entre $${minAmounts[method]} y $${maxAmounts[method]}`, 'error');
+        if (amountNum < minAmounts[method]) {
+            this.showToast(`❌ El monto mínimo es $${minAmounts[method]}`, 'error');
             return;
         }
 
         try {
             this.showLoading('Creando solicitud de depósito...');
-
-            const response = await fetch('/api/create-deposit', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    telegram_id: this.userId,
-                    method: method,
-                    amount: amountNum,
-                    phone: this.userData.phone_number
-                })
-            });
-
-            if (!response.ok) {
-                const errorText = await response.text();
-                throw new Error(`Error HTTP: ${response.status} - ${errorText}`);
-            }
-
-            const data = await response.json();
-
-            if (data.success) {
-                this.showModal({
-                    title: '✅ Solicitud Creada',
-                    message: `Orden #${data.orderId}\n\nMonto: $${amountNum} ${method.toUpperCase()}\n\nSigue las instrucciones en el bot de Telegram.`,
-                    icon: '✅',
-                    confirmText: 'Aceptar',
-                    onConfirm: () => {
-                        this.hideModal('confirm-modal');
-                        this.showScreen('dashboard');
-                        this.loadUserData();
+            
+            // Simulación de éxito (modo demo)
+            await new Promise(resolve => setTimeout(resolve, 1500));
+            
+            this.showModal({
+                title: '✅ Solicitud Creada (Demo)',
+                message: `Orden #DEMO-${Date.now()}\n\nMonto: $${amountNum} ${method.toUpperCase()}\n\nEn modo real, seguirías las instrucciones en Telegram.`,
+                icon: '✅',
+                confirmText: 'Aceptar',
+                onConfirm: () => {
+                    this.hideModal('confirm-modal');
+                    this.showScreen('dashboard');
+                    
+                    // Actualizar saldos en modo demo
+                    if (this.userData) {
+                        if (method === 'cup') {
+                            this.userData.balance_cup += amountNum;
+                        } else {
+                            this.userData.balance_saldo += amountNum;
+                            this.userData.tokens_cws += Math.floor(amountNum / 100) * (window.CWS_PER_100_SALDO || 10);
+                        }
+                        this.updateUI();
                     }
-                });
-            } else {
-                this.showToast(`❌ Error: ${data.error || 'Error desconocido'}`, 'error');
-            }
+                }
+            });
         } catch (error) {
             console.error('Error creando depósito:', error);
             this.showToast('❌ Error de conexión: ' + error.message, 'error');
@@ -697,25 +567,53 @@ class CromwellWebApp {
 
     async loadGames() {
         try {
-            const response = await fetch('/api/games');
-            
-            if (!response.ok) {
-                throw new Error(`Error HTTP: ${response.status}`);
-            }
-            
-            const games = await response.json();
-
+            // Simulación de carga de juegos
             const gamesList = document.getElementById('games-list');
             if (!gamesList) return;
             
+            // Mostrar loading
+            gamesList.innerHTML = '<div class="loading"><div class="spinner"></div><p>Cargando juegos...</p></div>';
+            
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
+            // Datos de prueba
+            const mockGames = [
+                {
+                    id: 1,
+                    name: "Steam Wallet",
+                    variations: {
+                        "5": { name: "$5 USD" },
+                        "10": { name: "$10 USD" },
+                        "20": { name: "$20 USD" }
+                    }
+                },
+                {
+                    id: 2,
+                    name: "Google Play",
+                    variations: {
+                        "5": { name: "$5 USD" },
+                        "10": { name: "$10 USD" }
+                    }
+                },
+                {
+                    id: 3,
+                    name: "PlayStation Network",
+                    variations: {
+                        "10": { name: "$10 USD" },
+                        "20": { name: "$20 USD" },
+                        "50": { name: "$50 USD" }
+                    }
+                }
+            ];
+            
             gamesList.innerHTML = '';
-
-            if (!games || games.length === 0) {
+            
+            if (!mockGames || mockGames.length === 0) {
                 gamesList.innerHTML = '<div class="info-card"><p>No hay juegos disponibles en este momento.</p></div>';
                 return;
             }
 
-            games.forEach(game => {
+            mockGames.forEach(game => {
                 const gameCard = document.createElement('div');
                 gameCard.className = 'game-card';
                 gameCard.dataset.gameId = game.id;
@@ -786,21 +684,26 @@ class CromwellWebApp {
         const variations = game.variations || {};
         
         Object.entries(variations).forEach(([id, variation]) => {
+            // Precios mock
+            const cupPrice = parseInt(id) * (window.USDT_RATE_0_30 || 650);
+            const saldoPrice = cupPrice * (window.SALDO_MOVIL_RATE || 2.1);
+            const cwsPrice = Math.max(parseInt(id) * 100, window.MIN_CWS_USE || 100);
+            
             html += `
                 <div class="variation-card" data-var-id="${id}">
                     <div class="variation-name">${variation.name || 'Paquete'}</div>
                     <div class="variation-prices">
                         <div class="price-item">
                             <span class="price-label">CUP</span>
-                            <span class="price-value" id="price-cup-${id}">...</span>
+                            <span class="price-value">$${cupPrice}</span>
                         </div>
                         <div class="price-item">
                             <span class="price-label">Saldo</span>
-                            <span class="price-value" id="price-saldo-${id}">...</span>
+                            <span class="price-value">$${saldoPrice.toFixed(2)}</span>
                         </div>
                         <div class="price-item">
                             <span class="price-label">CWS</span>
-                            <span class="price-value" id="price-cws-${id}">...</span>
+                            <span class="price-value">${cwsPrice}</span>
                         </div>
                     </div>
                 </div>
@@ -814,36 +717,29 @@ class CromwellWebApp {
         try {
             this.showLoading('Consultando precios...');
 
-            const response = await fetch('/api/game-price', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    game_id: this.selectedGame.id,
-                    variation_id: variationId
-                })
-            });
+            await new Promise(resolve => setTimeout(resolve, 800));
+            
+            // Precios mock
+            const usdtPrice = parseInt(variationId);
+            const cupPrice = usdtPrice * (window.USDT_RATE_0_30 || 650);
+            const saldoPrice = cupPrice * (window.SALDO_MOVIL_RATE || 2.1);
+            const cwsPrice = Math.max(usdtPrice * 100, window.MIN_CWS_USE || 100);
 
-            if (!response.ok) {
-                throw new Error(`Error HTTP: ${response.status}`);
-            }
-
-            const data = await response.json();
-
-            if (data.success) {
-                this.selectedVariation = {
-                    id: variationId,
-                    name: this.selectedGame.variations[variationId]?.name || 'Paquete',
-                    prices: data.prices || {}
-                };
-                this.showGamePaymentForm();
-            } else {
-                this.showToast(`❌ ${data.error || 'Error desconocido'}`, 'error');
-            }
+            this.selectedVariation = {
+                id: variationId,
+                name: this.selectedGame.variations[variationId]?.name || 'Paquete',
+                prices: {
+                    usdt: usdtPrice,
+                    cup: cupPrice,
+                    saldo: saldoPrice,
+                    cws: cwsPrice
+                }
+            };
+            
+            this.showGamePaymentForm();
         } catch (error) {
             console.error('Error obteniendo precio:', error);
-            this.showToast('❌ Error de conexión: ' + error.message, 'error');
+            this.showToast('❌ Error: ' + error.message, 'error');
         } finally {
             this.hideLoading();
         }
@@ -897,7 +793,10 @@ class CromwellWebApp {
                     </div>
                     
                     <div id="game-input-fields">
-                        <!-- Campos de entrada según el juego -->
+                        <div class="form-group">
+                            <label>ID o Email del juego:</label>
+                            <input type="text" id="game-account" placeholder="Ej: steamID, email@gmail.com">
+                        </div>
                     </div>
                     
                     <div class="form-actions">
@@ -910,7 +809,6 @@ class CromwellWebApp {
             const backButton = document.getElementById('back-to-variations');
             const cancelButton = document.getElementById('cancel-game-payment');
             const confirmButton = document.getElementById('confirm-game-payment');
-            const methodSelect = document.getElementById('game-payment-method');
 
             if (backButton) {
                 backButton.addEventListener('click', () => {
@@ -931,50 +829,7 @@ class CromwellWebApp {
                     this.confirmGamePurchase();
                 });
             }
-
-            if (methodSelect) {
-                methodSelect.addEventListener('change', (e) => {
-                    this.updateGamePaymentMethod(e.target.value);
-                });
-            }
-
-            // Cargar campos de entrada iniciales
-            this.updateGamePaymentMethod('cup');
         }
-    }
-
-    updateGamePaymentMethod(method) {
-        const inputFields = document.getElementById('game-input-fields');
-        if (!inputFields) return;
-        
-        const gameSchema = this.selectedGame.input_schema || { fields: [] };
-        
-        let html = '';
-        if (gameSchema.fields && gameSchema.fields.length > 0) {
-            gameSchema.fields.forEach(field => {
-                if (field.type === 'select') {
-                    html += `
-                        <div class="form-group">
-                            <label>${field.label || field.key}:</label>
-                            <select id="game-field-${field.key}">
-                                ${(field.options || []).map(opt => 
-                                    `<option value="${opt.value || opt}">${opt.label || opt}</option>`
-                                ).join('')}
-                            </select>
-                        </div>
-                    `;
-                } else {
-                    html += `
-                        <div class="form-group">
-                            <label>${field.label || field.key}:</label>
-                            <input type="text" id="game-field-${field.key}" placeholder="${field.label || field.key}">
-                        </div>
-                    `;
-                }
-            });
-        }
-        
-        inputFields.innerHTML = html;
     }
 
     async confirmGamePurchase() {
@@ -987,65 +842,43 @@ class CromwellWebApp {
             return;
         }
 
-        // Recolectar datos del formulario
-        const formData = {};
-        const gameSchema = this.selectedGame.input_schema || { fields: [] };
-        let isValid = true;
+        const accountInput = document.getElementById('game-account');
+        const account = accountInput ? accountInput.value.trim() : '';
         
-        gameSchema.fields.forEach(field => {
-            const input = document.getElementById(`game-field-${field.key}`);
-            const value = input?.value?.trim();
-            
-            if (field.required && !value) {
-                isValid = false;
-                this.showToast(`❌ El campo ${field.label || field.key} es requerido`, 'error');
-                return;
-            }
-            
-            formData[field.key] = value;
-        });
-        
-        if (!isValid) return;
+        if (!account) {
+            this.showToast('❌ Ingresa el ID o email del juego', 'error');
+            return;
+        }
 
         try {
             this.showLoading('Procesando compra...');
-
-            const response = await fetch('/api/game-purchase', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    telegram_id: this.userId,
-                    game_id: this.selectedGame.id,
-                    variation_id: variation.id,
-                    payment_method: method,
-                    user_data: formData,
-                    amount: variation.prices[method] || 0
-                })
-            });
-
-            if (!response.ok) {
-                throw new Error(`Error HTTP: ${response.status}`);
-            }
-
-            const data = await response.json();
-
-            if (data.success) {
-                this.showModal({
-                    title: '✅ ¡Compra Exitosa!',
-                    message: `Recarga para ${this.selectedGame.name || 'Juego'}\n\nPaquete: ${variation.name}\nPago: ${method === 'cws' ? (variation.prices[method] || 0) + ' CWS' : '$' + (variation.prices[method] || 0) + ' ' + method.toUpperCase()}\n\nOrden #${data.orderId || 'N/A'}`,
-                    icon: '🎮',
-                    confirmText: 'Aceptar',
-                    onConfirm: () => {
-                        this.hideModal('confirm-modal');
-                        this.showScreen('dashboard');
-                        this.loadUserData();
+            
+            // Simulación de compra
+            await new Promise(resolve => setTimeout(resolve, 1500));
+            
+            this.showModal({
+                title: '✅ ¡Compra Exitosa! (Demo)',
+                message: `Recarga para ${this.selectedGame.name || 'Juego'}\n\nPaquete: ${variation.name}\nCuenta: ${account}\nPago: ${method === 'cws' ? (variation.prices[method] || 0) + ' CWS' : '$' + (variation.prices[method] || 0) + ' ' + method.toUpperCase()}\n\nOrden #GAME-${Date.now()}`,
+                icon: '🎮',
+                confirmText: 'Aceptar',
+                onConfirm: () => {
+                    this.hideModal('confirm-modal');
+                    this.showScreen('dashboard');
+                    
+                    // Actualizar saldos en modo demo
+                    if (this.userData) {
+                        const price = variation.prices[method] || 0;
+                        if (method === 'cup' && this.userData.balance_cup >= price) {
+                            this.userData.balance_cup -= price;
+                        } else if (method === 'saldo' && this.userData.balance_saldo >= price) {
+                            this.userData.balance_saldo -= price;
+                        } else if (method === 'cws' && this.userData.tokens_cws >= price) {
+                            this.userData.tokens_cws -= price;
+                        }
+                        this.updateUI();
                     }
-                });
-            } else {
-                this.showToast(`❌ Error: ${data.error || 'Error desconocido'}`, 'error');
-            }
+                }
+            });
         } catch (error) {
             console.error('Error procesando compra:', error);
             this.showToast('❌ Error de conexión: ' + error.message, 'error');
@@ -1056,25 +889,43 @@ class CromwellWebApp {
 
     async loadEtecsaOffers() {
         try {
-            const response = await fetch('/api/etecsa-offers');
-            
-            if (!response.ok) {
-                throw new Error(`Error HTTP: ${response.status}`);
-            }
-            
-            const offers = await response.json();
-
+            // Simulación de carga
             const offersContainer = document.getElementById('etecsa-offers');
             if (!offersContainer) return;
             
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
+            // Datos de prueba
+            const mockOffers = [
+                {
+                    id: 1,
+                    name: "Recarga Nauta Hogar",
+                    prices: [
+                        { id: "1h", label: "1 Hora", cup_price: 150, original_usdt: 0.25 },
+                        { id: "5h", label: "5 Horas", cup_price: 450, original_usdt: 0.75 }
+                    ]
+                },
+                {
+                    id: 2,
+                    name: "Paquete de Datos",
+                    prices: [
+                        { id: "600mb", label: "600 MB", cup_price: 780, original_usdt: 1.2 },
+                        { id: "2gb", label: "2 GB", cup_price: 1950, original_usdt: 3.0 }
+                    ]
+                },
+                {
+                    id: 3,
+                    name: "Recarga Saldo",
+                    prices: [
+                        { id: "5cup", label: "$5 USD", cup_price: 3250, original_usdt: 5.0 },
+                        { id: "10cup", label: "$10 USD", cup_price: 6500, original_usdt: 10.0 }
+                    ]
+                }
+            ];
+            
             offersContainer.innerHTML = '';
 
-            if (!offers || offers.length === 0) {
-                offersContainer.innerHTML = '<div class="info-card"><p>No hay ofertas disponibles en este momento.</p></div>';
-                return;
-            }
-
-            offers.forEach(offer => {
+            mockOffers.forEach(offer => {
                 const offerCard = document.createElement('div');
                 offerCard.className = 'offer-card';
                 offerCard.dataset.offerId = offer.id;
@@ -1143,10 +994,6 @@ class CromwellWebApp {
                             <span>Precio:</span>
                             <span class="price-value">$${price?.cup_price || 0} CUP</span>
                         </div>
-                        <div class="price-row">
-                            <span>Original:</span>
-                            <span class="price-value">$${price?.original_usdt || 0} USDT</span>
-                        </div>
                     </div>
                     
                     <div class="form-group">
@@ -1154,14 +1001,6 @@ class CromwellWebApp {
                         <input type="tel" id="etecsa-phone" placeholder="5351234567" maxlength="10">
                         <p class="form-hint">Formato: 10 dígitos, comenzando con 53</p>
                     </div>
-                    
-                    ${this.selectedOffer.offer.requires_email ? `
-                        <div class="form-group">
-                            <label for="etecsa-email">Email de Nauta:</label>
-                            <input type="email" id="etecsa-email" placeholder="usuario@nauta.com.cu">
-                            <p class="form-hint">Requerido para esta recarga</p>
-                        </div>
-                    ` : ''}
                     
                     <div class="balance-check">
                         <p>Tu saldo CUP: <strong>$${this.userData?.balance_cup || 0}</strong></p>
@@ -1204,26 +1043,13 @@ class CromwellWebApp {
     async confirmEtecsaRecharge(price) {
         const phoneInput = document.getElementById('etecsa-phone');
         const phone = phoneInput ? phoneInput.value : null;
-        const email = this.selectedOffer.offer.requires_email ? 
-            (document.getElementById('etecsa-email')?.value || null) : null;
 
-        // Validar teléfono
         const cleanPhone = phone ? phone.replace(/[^\d]/g, '') : '';
         if (!cleanPhone.startsWith('53') || cleanPhone.length !== 10) {
             this.showToast('❌ Formato de teléfono incorrecto', 'error');
             return;
         }
 
-        // Validar email si es requerido
-        if (this.selectedOffer.offer.requires_email && email) {
-            const emailRegex = /^[a-zA-Z0-9._%+-]+@nauta\.(com\.cu|cu)$/i;
-            if (!emailRegex.test(email)) {
-                this.showToast('❌ Email de Nauta inválido', 'error');
-                return;
-            }
-        }
-
-        // Verificar saldo
         const priceCup = price?.cup_price || 0;
         if ((this.userData?.balance_cup || 0) < priceCup) {
             this.showToast('❌ Saldo CUP insuficiente', 'error');
@@ -1232,43 +1058,25 @@ class CromwellWebApp {
 
         try {
             this.showLoading('Procesando recarga ETECSA...');
-
-            const response = await fetch('/api/etecsa-recharge', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    telegram_id: this.userId,
-                    offer_id: this.selectedOffer.offer.id,
-                    price_id: this.selectedOffer.priceId,
-                    phone: cleanPhone,
-                    email: email,
-                    amount: priceCup
-                })
-            });
-
-            if (!response.ok) {
-                throw new Error(`Error HTTP: ${response.status}`);
-            }
-
-            const data = await response.json();
-
-            if (data.success) {
-                this.showModal({
-                    title: '✅ ¡Recarga Exitosa!',
-                    message: `Recarga ETECSA completada\n\nDestino: +${cleanPhone}\nPaquete: ${price?.label || 'N/A'}\nPrecio: $${priceCup} CUP\n\nID Transacción: ${data.transactionId || 'N/A'}`,
-                    icon: '📱',
-                    confirmText: 'Aceptar',
-                    onConfirm: () => {
-                        this.hideModal('confirm-modal');
-                        this.showScreen('dashboard');
-                        this.loadUserData();
+            
+            await new Promise(resolve => setTimeout(resolve, 1500));
+            
+            this.showModal({
+                title: '✅ ¡Recarga Exitosa! (Demo)',
+                message: `Recarga ETECSA completada\n\nDestino: +${cleanPhone}\nPaquete: ${price?.label || 'N/A'}\nPrecio: $${priceCup} CUP\n\nID: ETECSA-${Date.now()}`,
+                icon: '📱',
+                confirmText: 'Aceptar',
+                onConfirm: () => {
+                    this.hideModal('confirm-modal');
+                    this.showScreen('dashboard');
+                    
+                    // Actualizar saldo en modo demo
+                    if (this.userData) {
+                        this.userData.balance_cup -= priceCup;
+                        this.updateUI();
                     }
-                });
-            } else {
-                this.showToast(`❌ Error: ${data.error || 'Error desconocido'}`, 'error');
-            }
+                }
+            });
         } catch (error) {
             console.error('Error procesando recarga:', error);
             this.showToast('❌ Error de conexión: ' + error.message, 'error');
@@ -1279,25 +1087,46 @@ class CromwellWebApp {
 
     async loadHistory() {
         try {
-            const response = await fetch(`/api/user-history?telegram_id=${this.userId}`);
-            
-            if (!response.ok) {
-                throw new Error(`Error HTTP: ${response.status}`);
-            }
-            
-            const transactions = await response.json();
-
+            // Simulación de historial
             const historyList = document.getElementById('history-list');
             if (!historyList) return;
             
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
+            // Datos de prueba
+            const mockTransactions = [
+                {
+                    id: 1,
+                    type: 'DEPOSIT',
+                    status: 'completed',
+                    amount: 5000,
+                    currency: 'CUP',
+                    created_at: new Date(Date.now() - 86400000).toISOString(), // 1 día atrás
+                    tx_id: 'TMW123456789'
+                },
+                {
+                    id: 2,
+                    type: 'GAME_RECHARGE',
+                    status: 'completed',
+                    amount: 6500,
+                    currency: 'CUP',
+                    created_at: new Date(Date.now() - 172800000).toISOString(), // 2 días atrás
+                    tx_id: 'STEAM-001'
+                },
+                {
+                    id: 3,
+                    type: 'ETECSA_RECHARGE',
+                    status: 'pending',
+                    amount: 1500,
+                    currency: 'CUP',
+                    created_at: new Date().toISOString(),
+                    tx_id: 'ETECSA-001'
+                }
+            ];
+            
             historyList.innerHTML = '';
 
-            if (!transactions || transactions.length === 0) {
-                historyList.innerHTML = '<div class="info-card"><p>No hay transacciones registradas.</p></div>';
-                return;
-            }
-
-            transactions.forEach(transaction => {
+            mockTransactions.forEach(transaction => {
                 const transactionCard = document.createElement('div');
                 transactionCard.className = 'transaction-card';
                 
@@ -1348,7 +1177,7 @@ class CromwellWebApp {
                         typeText = transaction.type || 'Transacción';
                 }
                 
-                const amount = Math.abs(transaction.amount || transaction.amount_requested || 0);
+                const amount = Math.abs(transaction.amount || 0);
                 const currency = transaction.currency?.toUpperCase() || '';
                 
                 transactionCard.innerHTML = `
@@ -1372,12 +1201,6 @@ class CromwellWebApp {
                             <div class="detail-item">
                                 <span class="detail-label">ID:</span>
                                 <span class="detail-value"><code>${transaction.tx_id}</code></span>
-                            </div>
-                        ` : ''}
-                        ${transaction.tokens_generated ? `
-                            <div class="detail-item">
-                                <span class="detail-label">Tokens:</span>
-                                <span class="detail-value">+${transaction.tokens_generated} CWS</span>
                             </div>
                         ` : ''}
                     </div>
@@ -1422,34 +1245,21 @@ class CromwellWebApp {
 
         try {
             this.showLoading('Actualizando teléfono...');
-
-            const response = await fetch('/api/update-phone', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    telegram_id: this.userId,
-                    phone: newPhone
-                })
-            });
-
-            if (!response.ok) {
-                throw new Error(`Error HTTP: ${response.status}`);
+            
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
+            // Actualizar en modo demo
+            if (this.userData) {
+                this.userData.phone_number = newPhone;
+                this.updateUI();
             }
-
-            const data = await response.json();
-
-            if (data.success) {
-                this.showToast('✅ Teléfono actualizado correctamente', 'success');
-                this.hideModal('phone-modal');
-                this.loadUserData();
-            } else {
-                this.showToast(`❌ Error: ${data.error || 'Error desconocido'}`, 'error');
-            }
+            
+            this.showToast('✅ Teléfono actualizado correctamente (Demo)', 'success');
+            this.hideModal('phone-modal');
+            
         } catch (error) {
             console.error('Error actualizando teléfono:', error);
-            this.showToast('❌ Error de conexión: ' + error.message, 'error');
+            this.showToast('❌ Error: ' + error.message, 'error');
         } finally {
             this.hideLoading();
         }
@@ -1466,39 +1276,19 @@ class CromwellWebApp {
 
         try {
             this.showLoading('Buscando pago...');
-
-            const response = await fetch('/api/claim-payment', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    telegram_id: this.userId,
-                    tx_id: txId
-                })
+            
+            await new Promise(resolve => setTimeout(resolve, 1500));
+            
+            this.showModal({
+                title: '✅ ¡Pago Encontrado! (Demo)',
+                message: `Pago simulado encontrado\n\nMonto: $5000 CUP\nID: ${txId}\n\nEn modo real, el saldo sería acreditado a tu billetera.`,
+                icon: '💰',
+                confirmText: 'Aceptar',
+                onConfirm: () => {
+                    this.hideModal('confirm-modal');
+                    this.showScreen('dashboard');
+                }
             });
-
-            if (!response.ok) {
-                throw new Error(`Error HTTP: ${response.status}`);
-            }
-
-            const data = await response.json();
-
-            if (data.success) {
-                this.showModal({
-                    title: '✅ ¡Pago Reclamado!',
-                    message: `Pago encontrado y procesado\n\nMonto: $${data.amount || 0} ${data.currency || ''}\nID: ${txId}\n\nEl saldo ha sido acreditado a tu billetera.`,
-                    icon: '💰',
-                    confirmText: 'Aceptar',
-                    onConfirm: () => {
-                        this.hideModal('confirm-modal');
-                        this.showScreen('dashboard');
-                        this.loadUserData();
-                    }
-                });
-            } else {
-                this.showToast(`❌ ${data.message || 'Pago no encontrado'}`, 'error');
-            }
         } catch (error) {
             console.error('Error buscando pago:', error);
             this.showToast('❌ Error de conexión: ' + error.message, 'error');
@@ -1606,7 +1396,7 @@ class CromwellWebApp {
 document.addEventListener('DOMContentLoaded', () => {
     console.log('📱 webapp.js: DOM cargado');
     
-    // Configurar variables globales desde el entorno
+    // Configurar variables globales por defecto
     window.PAGO_CUP_TARJETA = window.PAGO_CUP_TARJETA || '';
     window.PAGO_SALDO_MOVIL = window.PAGO_SALDO_MOVIL || '';
     window.MINIMO_CUP = window.MINIMO_CUP || 1000;
@@ -1617,34 +1407,43 @@ document.addEventListener('DOMContentLoaded', () => {
     window.SALDO_MOVIL_RATE = window.SALDO_MOVIL_RATE || 2.1;
     window.MIN_CWS_USE = window.MIN_CWS_USE || 100;
     window.CWS_PER_100_SALDO = window.CWS_PER_100_SALDO || 10;
-    window.WEBHOOK_SECRET_KEY = window.WEBHOOK_SECRET_KEY || '';
     
     console.log('📱 webapp.js: Variables globales configuradas');
     console.log('📱 webapp.js: TELEGRAM_USER_ID actual:', window.TELEGRAM_USER_ID);
     
-    // Inicializar la aplicación solo si tenemos userId
+    // Verificar si tenemos userId
     if (window.TELEGRAM_USER_ID) {
         console.log('🚀 webapp.js: Inicializando CromwellWebApp...');
         window.cromwellApp = new CromwellWebApp();
     } else {
         console.error('❌ webapp.js: No hay TELEGRAM_USER_ID disponible');
-        document.body.innerHTML = `
-            <div style="padding: 40px 20px; text-align: center; font-family: Arial, sans-serif;">
-                <h2 style="color: #dc3545;">❌ Error de Inicialización</h2>
-                <p>No se detectó el ID del usuario.</p>
-                <button onclick="location.reload()" style="
-                    background: #4f46e5;
-                    color: white;
-                    border: none;
-                    padding: 12px 24px;
-                    border-radius: 8px;
-                    cursor: pointer;
-                    font-size: 16px;
-                    margin-top: 20px;
-                ">
-                    Reintentar
-                </button>
-            </div>
-        `;
+        
+        // Intentar obtener de localStorage como último recurso
+        const storedId = localStorage.getItem('cromwell_telegram_id');
+        if (storedId) {
+            console.log('🔍 webapp.js: Usando ID de localStorage:', storedId);
+            window.TELEGRAM_USER_ID = storedId;
+            window.cromwellApp = new CromwellWebApp();
+        } else {
+            document.body.innerHTML = `
+                <div style="padding: 40px 20px; text-align: center; font-family: Arial, sans-serif;">
+                    <h2 style="color: #dc3545;">❌ Error de Inicialización</h2>
+                    <p>No se detectó el ID del usuario.</p>
+                    <p>Por favor, abre la WebApp desde el bot de Telegram.</p>
+                    <button onclick="location.reload()" style="
+                        background: #4f46e5;
+                        color: white;
+                        border: none;
+                        padding: 12px 24px;
+                        border-radius: 8px;
+                        cursor: pointer;
+                        font-size: 16px;
+                        margin-top: 20px;
+                    ">
+                        Reintentar
+                    </button>
+                </div>
+            `;
+        }
     }
 });
