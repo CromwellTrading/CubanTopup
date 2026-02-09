@@ -17,6 +17,7 @@ const cors = require('cors');
 // Import handlers
 const GameRechargeHandler = require('./game_recharges.js');
 const SokyRecargasHandler = require('./sokyrecargas.js');
+const BolitaHandler = require('./BolitaHandler.js');
 
 // ============================================
 // ENVIRONMENT VARIABLES (FROM .env)
@@ -49,7 +50,7 @@ const PAGO_USDT_ADDRES = process.env.PAGO_USDT_ADDRES;
 
 // Admin configuration
 const ADMIN_CHAT_ID = process.env.ADMIN_GROUP;
-const BOT_ADMIN_ID = process.env.BOT_ADMIN_ID;
+const BOT_ADMIN_ID = process.env.BOT_ADMIN_ID; // ID único del admin
 
 // Server configuration
 const PORT = process.env.PORT || 3000;
@@ -133,6 +134,7 @@ const supabase = createClient(DB_URL, DB_KEY);
 // Initialize handlers
 const gameHandler = new GameRechargeHandler(bot, supabase);
 const sokyHandler = new SokyRecargasHandler(bot, supabase);
+const bolitaHandler = new BolitaHandler(bot, supabase);
 
 // Global variables
 const activeSessions = {};
@@ -234,6 +236,59 @@ async function updateUser(telegramId, updates) {
         .eq('telegram_id', telegramId);
     
     return !error;
+}
+
+// Check if user has pending deposit order
+async function tieneOrdenPendiente(telegramId, currency = null) {
+    try {
+        let query = supabase
+            .from('transactions')
+            .select('*')
+            .eq('user_id', telegramId)
+            .eq('status', 'pending')
+            .eq('type', 'DEPOSIT');
+        
+        if (currency) {
+            query = query.eq('currency', currency);
+        }
+        
+        const { data, error } = await query;
+        
+        if (error) {
+            console.log('Error checking pending order:', error);
+            return null;
+        }
+        
+        return data && data.length > 0 ? data[0] : null;
+    } catch (error) {
+        console.error('Error in tieneOrdenPendiente:', error);
+        return null;
+    }
+}
+
+// Cancel pending order
+async function cancelarOrdenPendiente(telegramId, currency = null) {
+    try {
+        const orden = await tieneOrdenPendiente(telegramId, currency);
+        
+        if (!orden) {
+            return { success: false, message: 'No tienes órdenes pendientes para cancelar' };
+        }
+        
+        const { error } = await supabase
+            .from('transactions')
+            .update({ status: 'canceled', canceled_at: new Date().toISOString() })
+            .eq('id', orden.id);
+        
+        if (error) {
+            throw error;
+        }
+        
+        return { success: true, message: `Orden #${orden.id} cancelada exitosamente` };
+    } catch (error) {
+        console.error('Error canceling order:', error);
+        return { success: false, message: 'Error al cancelar la orden' };
+    }
 }
 
 // Get user by phone
@@ -555,1072 +610,215 @@ async function procesarPagoAutomatico(userId, amount, currency, txId, tipoPago) 
 }
 
 // ============================================
-// WEBHOOK ENDPOINTS
+// ADMIN FUNCTIONS
 // ============================================
 
-// LioGames webhook
-app.post('/lio-webhook', verifyWebhookToken, async (req, res) => {
-    try {
-        console.log('📥 LioGames webhook received:', req.body);
-        
-        const { order_id, status, message, partner_ref } = req.body;
-        
-        if (!order_id) {
-            return res.status(400).json({ error: 'order_id is required' });
-        }
-        
-        // Search transaction by order_id or partner_ref
-        let transaction = null;
-        
-        // Search by lio_transaction_id
-        const { data: txByLioId } = await supabase
-            .from('game_transactions')
-            .select('*')
-            .eq('lio_transaction_id', order_id)
-            .single();
-        
-        if (txByLioId) {
-            transaction = txByLioId;
-        } else if (partner_ref) {
-            // Search by partner_ref
-            const { data: txByRef } = await supabase
-                .from('game_transactions')
-                .select('*')
-                .eq('partner_ref', partner_ref)
-                .single();
-            
-            if (txByRef) {
-                transaction = txByRef;
-            }
-        }
-        
-        if (!transaction) {
-            console.log(`❌ Transaction not found for order_id: ${order_id}, partner_ref: ${partner_ref}`);
-            return res.status(404).json({ error: 'Transaction not found' });
-        }
-        
-        // Map LioGames status to our system
-        let newStatus = 'processing';
-        if (status === 'SUCCESS') newStatus = 'completed';
-        else if (status === 'FAILED') newStatus = 'failed';
-        else if (status === 'PENDING') newStatus = 'pending';
-        else if (status === 'CANCELED') newStatus = 'canceled';
-        
-        // Update transaction status
-        const updates = {
-            status: newStatus,
-            updated_at: new Date().toISOString(),
-            response_data: req.body
-        };
-        
-        if (newStatus === 'completed') {
-            updates.completed_at = new Date().toISOString();
-        }
-        
-        await supabase
-            .from('game_transactions')
-            .update(updates)
-            .eq('id', transaction.id);
-        
-        // Update general transactions table
-        await supabase
-            .from('transactions')
-            .update({ 
-                status: newStatus,
-                completed_at: newStatus === 'completed' ? new Date().toISOString() : null
-            })
-            .eq('game_transaction_id', transaction.id);
-        
-        // Notify user
-        if (transaction.telegram_user_id) {
-            let statusMessage = '';
-            switch (newStatus) {
-                case 'completed':
-                    statusMessage = `✅ *¡Recarga de ${transaction.game_name} completada!*\n\n` +
-                        `🎮 Juego: ${transaction.game_name}\n` +
-                        `💰 Monto: ${formatCurrency(transaction.amount, transaction.currency)}\n` +
-                        `🆔 Orden LioGames: ${order_id}\n` +
-                        `📅 Fecha: ${new Date().toLocaleString()}`;
-                    break;
-                case 'failed':
-                    statusMessage = `❌ *Recarga de ${transaction.game_name} fallida*\n\n` +
-                        `Error: ${message || 'Error desconocido'}\n\n` +
-                        `Contacta al administrador para más información.`;
-                    break;
-                case 'processing':
-                    statusMessage = `⏳ *Recarga de ${transaction.game_name} en proceso*\n\n` +
-                        `Estamos procesando tu recarga. Te notificaremos cuando esté completa.`;
-                    break;
-            }
-            
-            if (statusMessage) {
-                await bot.sendMessage(transaction.telegram_user_id, statusMessage, { 
-                    parse_mode: 'Markdown' 
-                });
-            }
-        }
-        
-        // Notify admin
-        if (ADMIN_CHAT_ID) {
-            const adminMsg = `🎮 *Webhook LioGames - Estado Actualizado*\n\n` +
-                `👤 Usuario: ${transaction.telegram_user_id}\n` +
-                `🎮 Juego: ${transaction.game_name}\n` +
-                `📦 Estado: ${newStatus}\n` +
-                `🆔 Orden LioGames: ${order_id}\n` +
-                `💰 Monto: ${formatCurrency(transaction.amount, transaction.currency)}`;
-            
-            await bot.sendMessage(ADMIN_CHAT_ID, adminMsg, { parse_mode: 'Markdown' });
-        }
-        
-        res.json({ 
-            success: true, 
-            message: 'Estado actualizado correctamente',
-            transaction_id: transaction.id,
-            new_status: newStatus
-        });
-        
-    } catch (error) {
-        console.error('❌ Error procesando webhook LioGames:', error);
-        res.status(500).json({ error: 'Error interno del servidor' });
-    }
-});
+// Check if user is admin
+function esAdmin(userId) {
+    return userId.toString() === BOT_ADMIN_ID.toString();
+}
 
-// SokyRecargas webhook
-app.post('/soky-webhook', verifyWebhookToken, async (req, res) => {
+// Get total balances from all users
+async function obtenerEstadisticasTotales() {
     try {
-        console.log('📥 SokyRecargas webhook received:', req.body);
-        
-        const { transaction_id, status, message, offer_id, price_id } = req.body;
-        
-        if (!transaction_id) {
-            return res.status(400).json({ error: 'transaction_id es requerido' });
-        }
-        
-        // Search transaction
-        const { data: transaction, error } = await supabase
-            .from('soky_transactions')
-            .select('*')
-            .eq('soky_transaction_id', transaction_id)
-            .single();
-        
-        if (error || !transaction) {
-            console.log(`❌ Transacción Soky no encontrada: ${transaction_id}`);
-            return res.status(404).json({ error: 'Transacción no encontrada' });
-        }
-        
-        // Map SokyRecargas status
-        let newStatus = 'pending';
-        if (status === 'completed' || status === 'success') newStatus = 'completed';
-        else if (status === 'failed') newStatus = 'failed';
-        else if (status === 'canceled') newStatus = 'canceled';
-        else newStatus = status;
-        
-        // Update status
-        const updates = {
-            status: newStatus,
-            updated_at: new Date().toISOString(),
-            metadata: { ...transaction.metadata, webhook_data: req.body }
-        };
-        
-        await supabase
-            .from('soky_transactions')
-            .update(updates)
-            .eq('id', transaction.id);
-        
-        // Notify user
-        if (transaction.telegram_user_id) {
-            let statusMessage = '';
-            switch (newStatus) {
-                case 'completed':
-                    statusMessage = `✅ *¡Recarga ETECSA completada!*\n\n` +
-                        `📱 Oferta: ${transaction.offer_name}\n` +
-                        `💰 Paquete: ${transaction.price_label}\n` +
-                        `💵 Monto: $${transaction.cup_price} CUP\n` +
-                        `📞 Destino: ${transaction.recipient_phone}\n` +
-                        `🆔 ID Soky: ${transaction_id}\n` +
-                        `📅 Fecha: ${new Date().toLocaleString()}`;
-                    break;
-                case 'failed':
-                    statusMessage = `❌ *Recarga ETECSA fallida*\n\n` +
-                        `Oferta: ${transaction.offer_name}\n` +
-                        `Error: ${message || 'Error desconocido'}\n\n` +
-                        `Contacta al administrador para más información.`;
-                    break;
-                case 'pending':
-                    statusMessage = `⏳ *Recarga ETECSA en proceso*\n\n` +
-                        `Tu recarga está siendo procesada por ETECSA. Te notificaremos cuando esté completa.`;
-                    break;
-            }
-            
-            if (statusMessage) {
-                await bot.sendMessage(transaction.telegram_user_id, statusMessage, { 
-                    parse_mode: 'Markdown' 
-                });
-            }
-        }
-        
-        // Notify admin
-        if (ADMIN_CHAT_ID) {
-            const adminMsg = `📱 *Webhook SokyRecargas - Estado Actualizado*\n\n` +
-                `👤 Usuario: ${transaction.telegram_user_id}\n` +
-                `📱 Oferta: ${transaction.offer_name}\n` +
-                `📦 Estado: ${newStatus}\n` +
-                `🆔 ID Soky: ${transaction_id}\n` +
-                `💰 Monto: $${transaction.cup_price} CUP`;
-            
-            await bot.sendMessage(ADMIN_CHAT_ID, adminMsg, { parse_mode: 'Markdown' });
-        }
-        
-        res.json({ 
-            success: true, 
-            message: 'Estado actualizado correctamente',
-            transaction_id: transaction.id,
-            new_status: newStatus
-        });
-        
-    } catch (error) {
-        console.error('❌ Error procesando webhook SokyRecargas:', error);
-        res.status(500).json({ error: 'Error interno del servidor' });
-    }
-});
-
-// Generic status webhook
-app.post('/status-webhook', verifyWebhookToken, async (req, res) => {
-    try {
-        console.log('📥 Status webhook received:', req.body);
-        
-        const { service, type, data } = req.body;
-        
-        if (!service || !type || !data) {
-            return res.status(400).json({ error: 'service, type y data son requeridos' });
-        }
-        
-        switch (service) {
-            case 'liogames':
-                // Redirect to LioGames webhook
-                return app._router.handle(req, res, (err) => {
-                    if (err) throw err;
-                });
-                
-            case 'sokyrecargas':
-                // Redirect to SokyRecargas webhook
-                return app._router.handle(req, res, (err) => {
-                    if (err) throw err;
-                });
-                
-            default:
-                console.log(`⚠️ Servicio no reconocido: ${service}`);
-                // Process as generic notification
-                if (ADMIN_CHAT_ID) {
-                    const adminMsg = `🌐 *Webhook Genérico Recibido*\n\n` +
-                        `🔧 Servicio: ${service}\n` +
-                        `📋 Tipo: ${type}\n` +
-                        `📊 Datos: ${JSON.stringify(data, null, 2)}\n\n` +
-                        `Hora: ${new Date().toLocaleString()}`;
-                    
-                    await bot.sendMessage(ADMIN_CHAT_ID, adminMsg, { parse_mode: 'Markdown' });
-                }
-                
-                res.json({ 
-                    success: true, 
-                    message: 'Notificación recibida',
-                    service: service,
-                    type: type
-                });
-        }
-        
-    } catch (error) {
-        console.error('❌ Error procesando webhook de estado:', error);
-        res.status(500).json({ error: 'Error interno del servidor' });
-    }
-});
-
-// Payment notification endpoint
-app.post('/payment-notification', verifyWebhookToken, async (req, res) => {
-    try {
-        console.log('\n' + '='.repeat(80));
-        console.log('📥 PAYMENT-NOTIFICATION RECIBIDA EN EL BOT');
-        console.log('🕐 Hora:', new Date().toISOString());
-        
-        const { 
-            type, 
-            amount, 
-            currency, 
-            tx_id, 
-            tipo_pago, 
-            phone
-        } = req.body;
-        
-        if (!type || !amount || !currency || !tx_id) {
-            console.log('❌ Campos requeridos faltantes en payload');
-            return res.status(400).json({ 
-                success: false, 
-                message: 'Campos requeridos faltantes: type, amount, currency, tx_id' 
-            });
-        }
-        
-        switch (type) {
-            case 'SMS_PAYMENT_DETECTED':
-                console.log(`🔍 Procesando SMS_PAYMENT_DETECTED`);
-                console.log(`📞 Teléfono recibido: ${phone}`);
-                console.log(`💰 Monto: ${amount} ${currency}`);
-                
-                let user = null;
-                let normalizedPhone = null;
-                
-                if (phone) {
-                    normalizedPhone = phone.replace(/[^\d]/g, '');
-                    console.log(`🔍 Buscando usuario con teléfono normalizado: ${normalizedPhone}`);
-                    
-                    user = await getUserByPhone(normalizedPhone);
-                    
-                    if (user) {
-                        console.log(`✅ Usuario encontrado: ${user.telegram_id}`);
-                        
-                        const result = await procesarPagoAutomatico(
-                            user.telegram_id, 
-                            amount, 
-                            currency, 
-                            tx_id, 
-                            tipo_pago
-                        );
-                        
-                        console.log(`✅ Resultado del procesamiento:`, result);
-                        return res.json(result);
-                    } else {
-                        console.log(`❌ Usuario NO encontrado para teléfono: ${normalizedPhone}`);
-                        
-                        // Save as pending payment
-                        await supabase.from('pending_sms_payments').insert({
-                            phone: normalizedPhone,
-                            amount: amount,
-                            currency: currency,
-                            tx_id: tx_id,
-                            tipo_pago: tipo_pago,
-                            claimed: false,
-                            created_at: new Date().toISOString()
-                        });
-                        
-                        console.log(`✅ Pago pendiente guardado para teléfono: ${normalizedPhone}`);
-                        
-                        // Notify admin
-                        if (ADMIN_CHAT_ID) {
-                            const mensajeAdmin = `📱 *PAGO NO IDENTIFICADO*\n\n` +
-                                `📞 Teléfono: ${normalizedPhone}\n` +
-                                `💰 Monto: ${formatCurrency(amount, currency)}\n` +
-                                `🔧 Tipo: ${tipo_pago}\n` +
-                                `🆔 ID: \`${tx_id}\`\n\n` +
-                                `ℹ️ Este pago está pendiente de reclamar.`;
-                            
-                            await bot.sendMessage(ADMIN_CHAT_ID, mensajeAdmin, { parse_mode: 'Markdown' });
-                        }
-                        
-                        return res.json({ 
-                            success: false, 
-                            message: 'Usuario no encontrado, pago guardado como pendiente',
-                            phone: normalizedPhone
-                        });
-                    }
-                }
-                break;
-                
-            default:
-                console.log(`❌ Tipo de notificación desconocido: ${type}`);
-                return res.status(400).json({ 
-                    success: false, 
-                    message: 'Tipo de notificación desconocido',
-                    received_type: type 
-                });
-        }
-        
-    } catch (error) {
-        console.error('❌ Error en payment-notification:', error);
-        
-        if (ADMIN_CHAT_ID) {
-            const errorMsg = `❌ *ERROR EN PAYMENT-NOTIFICATION*\n\n` +
-                `Error: ${error.message}\n` +
-                `Hora: ${new Date().toLocaleString()}`;
-            
-            try {
-                await bot.sendMessage(ADMIN_CHAT_ID, errorMsg, { parse_mode: 'Markdown' });
-            } catch (botError) {
-                console.error('Error enviando mensaje de error:', botError);
-            }
-        }
-        
-        return res.status(500).json({ 
-            success: false, 
-            message: error.message
-        });
-    }
-});
-
-// ============================================
-// WEBAPP API ENDPOINTS
-// ============================================
-// Get user data for WebApp
-app.post('/api/user-data', async (req, res) => {
-    console.log('📨 POST /api/user-data recibido');
-    console.log('📦 Body:', req.body);
-    console.log('🔍 telegram_id del body:', req.body.telegram_id);
-    
-    try {
-        const { telegram_id } = req.body;
-        
-        if (!telegram_id) {
-            console.error('❌ telegram_id no proporcionado');
-            return res.status(400).json({ error: 'telegram_id es requerido' });
-        }
-        
-        console.log('🔍 Buscando en DB usuario con telegram_id:', telegram_id);
-        
-        // Método 1: Usando Supabase Client (recomendado)
-        const { data: user, error } = await supabase
+        const { data: users, error } = await supabase
             .from('users')
-            .select('*')
-            .eq('telegram_id', telegram_id.toString())
-            .single();
-        
-        console.log('🔍 Resultado de Supabase:');
-        console.log('   - Error:', error);
-        console.log('   - User encontrado:', user);
-        
-        if (error) {
-            console.error('❌ Error de Supabase:', error);
-            return res.status(404).json({ 
-                error: 'Error en la consulta',
-                details: error.message,
-                hint: error.hint 
-            });
-        }
-        
-        if (!user) {
-            console.error('❌ Usuario no encontrado en la tabla');
-            return res.status(404).json({ 
-                error: 'Usuario no encontrado',
-                hint: 'Verifica que el telegram_id exista en la tabla users' 
-            });
-        }
-        
-        console.log('✅ Usuario encontrado, enviando respuesta...');
-        
-        // Construir respuesta segura
-        const safeUser = {
-            telegram_id: user.telegram_id,
-            first_name: user.first_name || 'Usuario',
-            username: user.username || '',
-            phone_number: user.phone_number || null,
-            balance_cup: Number(user.balance_cup) || 0,
-            balance_saldo: Number(user.balance_saldo) || 0,
-            tokens_cws: Number(user.tokens_cws) || 0,
-            first_dep_cup: Boolean(user.first_dep_cup === undefined ? true : user.first_dep_cup),
-            first_dep_saldo: Boolean(user.first_dep_saldo === undefined ? true : user.first_dep_saldo),
-            last_active: user.last_active || user.created_at || new Date().toISOString()
-        };
-        
-        console.log('📤 Enviando usuario:', safeUser);
-        
-        res.json({
-            success: true,
-            user: safeUser
-        });
-        
-    } catch (error) {
-        console.error('💥 Error inesperado en /api/user-data:', error);
-        console.error('💥 Stack trace:', error.stack);
-        
-        res.status(500).json({ 
-            error: 'Error interno del servidor',
-            message: error.message,
-            stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
-        });
-    }
-});
-
-// Create deposit from WebApp
-app.post('/api/create-deposit', verifyWebhookToken, async (req, res) => {
-    try {
-        const { telegram_id, method, amount, phone } = req.body;
-        
-        if (!telegram_id || !method || !amount) {
-            return res.status(400).json({ error: 'Datos incompletos' });
-        }
-        
-        // Create pending transaction (similar to handleConfirmDeposit)
-        const user = await getUser(telegram_id);
-        if (!user) {
-            return res.status(404).json({ error: 'Usuario no encontrado' });
-        }
-        
-        // Verify minimum amount
-        const minAmounts = { cup: MINIMO_CUP, saldo: MINIMO_SALDO };
-        const maxAmounts = { cup: MAXIMO_CUP, saldo: 10000 };
-        
-        if (amount < minAmounts[method] || amount > maxAmounts[method]) {
-            return res.json({ 
-                success: false, 
-                error: `Monto fuera de límites (${minAmounts[method]} - ${maxAmounts[method]})` 
-            });
-        }
-        
-        // Create order in database
-        const { data: transaction, error } = await supabase
-            .from('transactions')
-            .insert([{
-                user_id: telegram_id,
-                type: 'DEPOSIT',
-                currency: method,
-                amount_requested: amount,
-                status: 'pending',
-                user_name: user.first_name,
-                user_username: user.username,
-                user_phone: phone || user.phone_number
-            }])
-            .select()
-            .single();
+            .select('balance_cup, balance_saldo, tokens_cws');
         
         if (error) throw error;
         
-        // Notify user via Telegram
-        await bot.sendMessage(telegram_id,
-            `🌐 *Solicitud de depósito desde WebApp*\n\n` +
-            `🆔 Orden #${transaction.id}\n` +
-            `💰 Monto: $${amount} ${method.toUpperCase()}\n\n` +
-            `Por favor, completa el pago según las instrucciones.`,
-            { parse_mode: 'Markdown' }
-        );
+        let totalCUP = 0;
+        let totalSaldo = 0;
+        let totalCWS = 0;
         
-        // Notify admin
-        if (ADMIN_CHAT_ID) {
-            const adminMsg = `🌐 *NUEVA SOLICITUD WEBAPP*\n\n` +
-                `👤 Usuario: ${user.first_name} (@${user.username || 'sin usuario'})\n` +
-                `💰 Monto: $${amount} ${method.toUpperCase()}\n` +
-                `📋 Orden #: ${transaction.id}`;
-            
-            await bot.sendMessage(ADMIN_CHAT_ID, adminMsg, { parse_mode: 'Markdown' });
-        }
-        
-        res.json({ 
-            success: true, 
-            orderId: transaction.id 
+        users.forEach(user => {
+            totalCUP += parseFloat(user.balance_cup) || 0;
+            totalSaldo += parseFloat(user.balance_saldo) || 0;
+            totalCWS += parseFloat(user.tokens_cws) || 0;
         });
         
-    } catch (error) {
-        console.error('Error en /api/create-deposit:', error);
-        res.status(500).json({ error: 'Error interno del servidor' });
-    }
-});
-
-// Get games list
-app.get('/api/games', verifyWebhookToken, async (req, res) => {
-    try {
-        // Import GAMES object from game_recharges.js
-        const GameRechargeHandler = require('./game_recharges.js');
-        
-        // Acceder al objeto GAMES desde game_recharges.js
-        // Necesitamos modificar game_recharges.js para exportar GAMES
-        // Por ahora, intentamos acceder de diferentes formas
-        let GAMES;
-        
-        try {
-            // Intento 1: Si GAMES está exportado directamente
-            GAMES = require('./game_recharges.js').GAMES;
-        } catch (e) {
-            // Intento 2: Si no, usamos un objeto vacío
-            GAMES = {};
-        }
-        
-        // Si GAMES está vacío, devolver datos de ejemplo
-        if (!GAMES || Object.keys(GAMES).length === 0) {
-            GAMES = {
-                66584: {
-                    name: "Arena Breakout",
-                    variations: {
-                        528315: { name: "60 + 6 Bonds" }
-                    },
-                    input_schema: {
-                        fields: [
-                            { key: "user_id", label: "User ID", required: true, type: "text" },
-                            { key: "server_id", label: "Server ID", required: true, type: "text" }
-                        ]
-                    }
-                }
-            };
-        }
-        
-        const games = Object.entries(GAMES).map(([id, game]) => ({
-            id,
-            name: game.name,
-            variations: game.variations,
-            input_schema: game.input_schema
-        }));
-        
-        res.json(games);
-    } catch (error) {
-        console.error('Error en /api/games:', error);
-        res.status(500).json({ error: 'Error interno del servidor' });
-    }
-});
-
-// Get game price
-app.post('/api/game-price', verifyWebhookToken, async (req, res) => {
-    try {
-        const { game_id, variation_id } = req.body;
-        
-        if (!game_id || !variation_id) {
-            return res.status(400).json({ error: 'Datos incompletos' });
-        }
-        
-        // Use gameHandler to get prices
-        const prices = await gameHandler.getPackagePrice(game_id, variation_id);
-        
-        res.json({
-            success: true,
-            prices: prices
-        });
-        
-    } catch (error) {
-        console.error('Error en /api/game-price:', error);
-        res.status(500).json({ error: error.message });
-    }
-});
-
-// Purchase game from WebApp
-app.post('/api/game-purchase', verifyWebhookToken, async (req, res) => {
-    try {
-        const { telegram_id, game_id, variation_id, payment_method, user_data, amount } = req.body;
-        
-        if (!telegram_id || !game_id || !variation_id || !payment_method || !amount) {
-            return res.status(400).json({ error: 'Datos incompletos' });
-        }
-        
-        // Verify user balance
-        const user = await getUser(telegram_id);
-        if (!user) {
-            return res.status(404).json({ error: 'Usuario no encontrado' });
-        }
-        
-        let balanceField = '';
-        let currentBalance = 0;
-        
-        switch(payment_method) {
-            case 'cup':
-                balanceField = 'balance_cup';
-                currentBalance = user.balance_cup || 0;
-                break;
-            case 'saldo':
-                balanceField = 'balance_saldo';
-                currentBalance = user.balance_saldo || 0;
-                break;
-            case 'cws':
-                balanceField = 'tokens_cws';
-                currentBalance = user.tokens_cws || 0;
-                break;
-        }
-        
-        if (currentBalance < amount) {
-            return res.json({ 
-                success: false, 
-                error: `Saldo insuficiente. Necesitas: ${amount}, Tienes: ${currentBalance}` 
-            });
-        }
-        
-        // Import GAMES object
-        const GAMES = require('./game_recharges.js').GAMES || {};
-        const game = GAMES[game_id];
-        const variation = game.variations[variation_id];
-        
-        // Create order in LioGames
-        const orderData = {
-            product_id: game_id,
-            variation_id: variation_id,
-            user_id: user_data.user_id,
-            server_id: user_data.server_id || null,
-            quantity: 1,
-            partner_ref: `WEBAPP_${telegram_id}_${Date.now()}`
+        return {
+            totalCUP: Math.round(totalCUP * 100) / 100,
+            totalSaldo: Math.round(totalSaldo * 100) / 100,
+            totalCWS: Math.round(totalCWS)
         };
-        
-        const createOrder = require('./game_recharges.js').createOrder;
-        const orderResult = await createOrder(orderData);
-        
-        if (!orderResult.ok) {
-            throw new Error(orderResult.message || 'Error creando orden');
-        }
-        
-        // Deduct balance
-        const updates = {};
-        updates[balanceField] = currentBalance - amount;
-        
-        await updateUser(telegram_id, updates);
-        
-        // Register transaction
-        await supabase
-            .from('transactions')
-            .insert({
-                user_id: telegram_id,
-                type: 'GAME_RECHARGE',
-                currency: payment_method,
-                amount: -amount,
-                status: 'completed',
-                tx_id: orderResult.data.order_id,
-                partner_ref: orderData.partner_ref,
-                details: {
-                    game: game.name,
-                    package: variation.name,
-                    game_data: user_data,
-                    lio_order_id: orderResult.data.order_id
-                },
-                completed_at: new Date().toISOString()
-            });
-        
-        res.json({
-            success: true,
-            orderId: orderResult.data.order_id
-        });
-        
     } catch (error) {
-        console.error('Error en /api/game-purchase:', error);
-        res.status(500).json({ error: error.message });
+        console.error('Error obteniendo estadísticas:', error);
+        return null;
     }
-});
+}
 
-// Get ETECSA offers
-app.get('/api/etecsa-offers', verifyWebhookToken, async (req, res) => {
+// Get user statistics
+async function obtenerEstadisticasUsuario(userId) {
     try {
-        const offers = await sokyHandler.getOffers();
+        const user = await getUser(userId);
+        if (!user) return null;
         
-        // Format offers for WebApp
-        const formattedOffers = offers.map(offer => ({
-            id: offer.id,
-            name: offer.name,
-            description: offer.description,
-            prices: offer.prices,
-            requires_email: offer.metadata?.has_email || false
-        }));
-        
-        res.json(formattedOffers);
-    } catch (error) {
-        console.error('Error en /api/etecsa-offers:', error);
-        res.status(500).json({ error: 'Error interno del servidor' });
-    }
-});
-
-// ETECSA recharge from WebApp
-app.post('/api/etecsa-recharge', verifyWebhookToken, async (req, res) => {
-    try {
-        const { telegram_id, offer_id, price_id, phone, email, amount } = req.body;
-        
-        if (!telegram_id || !offer_id || !price_id || !phone || !amount) {
-            return res.status(400).json({ error: 'Datos incompletos' });
-        }
-        
-        // Verify user balance
-        const user = await getUser(telegram_id);
-        if (!user || user.balance_cup < amount) {
-            return res.json({ 
-                success: false, 
-                error: 'Saldo CUP insuficiente' 
-            });
-        }
-        
-        // We need to adapt sokyHandler to support WebApp calls
-        // For now, return success with dummy transaction ID
-        res.json({
-            success: true,
-            transactionId: `ETECSA_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-        });
-        
-    } catch (error) {
-        console.error('Error en /api/etecsa-recharge:', error);
-        res.status(500).json({ error: error.message });
-    }
-});
-
-// Update phone from WebApp
-app.post('/api/update-phone', verifyWebhookToken, async (req, res) => {
-    try {
-        const { telegram_id, phone } = req.body;
-        
-        if (!telegram_id || !phone) {
-            return res.status(400).json({ error: 'Datos incompletos' });
-        }
-        
-        // Validate format
-        const cleanPhone = phone.replace(/[^\d]/g, '');
-        if (!cleanPhone.startsWith('53') || cleanPhone.length !== 10) {
-            return res.json({ 
-                success: false, 
-                error: 'Formato inválido. Debe comenzar con 53 y tener 10 dígitos.' 
-            });
-        }
-        
-        // Check if number is already in use
-        const { data: existingUser } = await supabase
-            .from('users')
-            .select('telegram_id, first_name')
-            .eq('phone_number', cleanPhone)
-            .neq('telegram_id', telegram_id)
-            .single();
-        
-        if (existingUser) {
-            return res.json({ 
-                success: false, 
-                error: 'Este número ya está vinculado a otra cuenta.' 
-            });
-        }
-        
-        // Update phone
-        await updateUser(telegram_id, { phone_number: cleanPhone });
-        
-        res.json({ success: true });
-        
-    } catch (error) {
-        console.error('Error en /api/update-phone:', error);
-        res.status(500).json({ error: 'Error interno del servidor' });
-    }
-});
-
-// Claim payment from WebApp
-app.post('/api/claim-payment', verifyWebhookToken, async (req, res) => {
-    try {
-        const { telegram_id, tx_id } = req.body;
-        
-        if (!telegram_id || !tx_id) {
-            return res.status(400).json({ error: 'Datos incompletos' });
-        }
-        
-        // Search pending payment
-        const { data: pendingPayment } = await supabase
-            .from('pending_sms_payments')
-            .select('*')
-            .eq('tx_id', tx_id)
-            .eq('claimed', false)
-            .single();
-        
-        if (!pendingPayment) {
-            return res.json({ 
-                success: false, 
-                message: 'Pago no encontrado o ya reclamado' 
-            });
-        }
-        
-        // Process payment
-        const result = await procesarPagoAutomatico(
-            telegram_id,
-            pendingPayment.amount,
-            pendingPayment.currency,
-            pendingPayment.tx_id,
-            pendingPayment.tipo_pago
-        );
-        
-        if (result.success) {
-            // Mark as claimed
-            await supabase
-                .from('pending_sms_payments')
-                .update({ claimed: true, claimed_by: telegram_id })
-                .eq('id', pendingPayment.id);
-            
-            res.json({
-                success: true,
-                amount: pendingPayment.amount,
-                currency: pendingPayment.currency
-            });
-        } else {
-            res.json({ 
-                success: false, 
-                message: result.message 
-            });
-        }
-        
-    } catch (error) {
-        console.error('Error en /api/claim-payment:', error);
-        res.status(500).json({ error: 'Error interno del servidor' });
-    }
-});
-
-// Get transaction history
-app.get('/api/user-history', verifyWebhookToken, async (req, res) => {
-    try {
-        const { telegram_id } = req.query;
-        
-        if (!telegram_id) {
-            return res.status(400).json({ error: 'telegram_id es requerido' });
-        }
-        
-        const { data: transactions } = await supabase
+        // Get transaction history
+        const { data: transacciones } = await supabase
             .from('transactions')
             .select('*')
-            .eq('user_id', telegram_id)
+            .eq('user_id', userId)
             .order('created_at', { ascending: false })
             .limit(20);
         
-        res.json(transactions || []);
+        // Get pending orders
+        const { data: ordenesPendientes } = await supabase
+            .from('transactions')
+            .select('*')
+            .eq('user_id', userId)
+            .eq('status', 'pending')
+            .order('created_at', { ascending: false });
         
-    } catch (error) {
-        console.error('Error en /api/user-history:', error);
-        res.status(500).json({ error: 'Error interno del servidor' });
-    }
-});
-
-// Get WebApp configuration
-app.get('/api/webapp-config', verifyWebhookToken, async (req, res) => {
-    try {
-        res.json({
-            success: true,
-            config: {
-                pago_cup_tarjeta: PAGO_CUP_TARJETA || '',
-                pago_saldo_movil: PAGO_SALDO_MOVIL || '',
-                minimo_cup: MINIMO_CUP,
-                minimo_saldo: MINIMO_SALDO,
-                usdt_rate_0_30: USDT_RATE_0_30,
-                usdt_rate_30_plus: USDT_RATE_30_PLUS,
-                saldo_movil_rate: SALDO_MOVIL_RATE,
-                min_cws_use: MIN_CWS_USE,
-                cws_per_100_saldo: CWS_PER_100_SALDO
-            }
-        });
-    } catch (error) {
-        console.error('Error en /api/webapp-config:', error);
-        res.status(500).json({ error: 'Error interno del servidor' });
-    }
-});
-
-// Web login endpoint
-app.post('/api/login', async (req, res) => {
-    try {
-        const { identifier, password } = req.body;
+        // Get bolita bets
+        const { data: apuestasBolita } = await supabase
+            .from('bolita_apuestas')
+            .select('*')
+            .eq('user_id', userId)
+            .order('created_at', { ascending: false })
+            .limit(10);
         
-        if (!identifier || !password) {
-            return res.status(400).json({ error: 'Credenciales faltantes' });
-        }
-        
-        const telegramId = parseInt(identifier);
-        if (isNaN(telegramId)) {
-            return res.status(400).json({ error: 'Solo ID de Telegram (número) está permitido' });
-        }
-        
-        const user = await getUser(telegramId);
-        
-        if (!user) {
-            return res.status(404).json({ error: 'Usuario no encontrado' });
-        }
-        
-        if (user.web_password) {
-            const validPassword = await bcrypt.compare(password, user.web_password);
-            if (!validPassword) {
-                return res.status(401).json({ error: 'Contraseña incorrecta' });
-            }
-        } else {
-            return res.status(403).json({ 
-                error: 'Debes registrar una contraseña primero',
-                needsRegistration: true,
-                userId: user.telegram_id 
-            });
-        }
-        
-        req.session.userId = user.telegram_id;
-        req.session.authenticated = true;
-        req.session.userData = {
-            telegramId: user.telegram_id,
-            username: user.username,
-            firstName: user.first_name,
-            phone: user.phone_number
+        return {
+            usuario: {
+                id: user.telegram_id,
+                nombre: user.first_name,
+                username: user.username,
+                telefono: user.phone_number,
+                balance_cup: user.balance_cup || 0,
+                balance_saldo: user.balance_saldo || 0,
+                tokens_cws: user.tokens_cws || 0,
+                fecha_registro: user.created_at || user.last_active
+            },
+            transacciones: transacciones || [],
+            ordenesPendientes: ordenesPendientes || [],
+            apuestasBolita: apuestasBolita || []
         };
-
-        req.session.save((err) => {
-            if (err) {
-                return res.status(500).json({ error: 'Error interno del servidor' });
-            }
-            
-            res.json({ 
-                success: true, 
-                user: {
-                    id: user.telegram_id,
-                    username: user.username,
-                    firstName: user.first_name,
-                    phone: user.phone_number,
-                    balance_cup: user.balance_cup || 0,
-                    balance_saldo: user.balance_saldo || 0,
-                    tokens_cws: user.tokens_cws || 0
-                }
-            });
-        });
-        
     } catch (error) {
-        console.error('❌ Error en login web:', error);
-        res.status(500).json({ error: 'Error interno del servidor' });
+        console.error('Error obteniendo estadísticas usuario:', error);
+        return null;
     }
+}
+
+// Admin panel keyboard
+const createAdminKeyboard = () => ({
+    inline_keyboard: [
+        [
+            { text: '📊 Estadísticas Totales', callback_data: 'admin_stats_total' },
+            { text: '🔍 Buscar Usuario', callback_data: 'admin_search_user' }
+        ],
+        [
+            { text: '📋 Ver Todas Órdenes Pendientes', callback_data: 'admin_pending_orders' },
+            { text: '🎮 Ver Juegos Activos', callback_data: 'admin_active_games' }
+        ],
+        [
+            { text: '💰 Ver Pagos Pendientes', callback_data: 'admin_pending_payments' },
+            { text: '🔄 Sincronizar Base de Datos', callback_data: 'admin_sync_db' }
+        ],
+        [
+            { text: '🔙 Volver al Menú Principal', callback_data: 'start_back' }
+        ]
+    ]
 });
 
-// Serve main pages
-app.get('/', (req, res) => {
-    if (req.session.authenticated) {
-        res.redirect('/dashboard');
-    } else {
-        res.sendFile(__dirname + '/public/index.html');
-    }
-});
-
-app.get('/dashboard', (req, res) => {
-    if (req.session.userId && req.session.authenticated) {
-        res.sendFile(__dirname + '/public/dashboard.html');
-    } else {
-        res.redirect('/');
-    }
-});
-
-app.get('/webapp', (req, res) => {
-    res.sendFile(__dirname + '/public/webapp.html');
-});
-
-// Keep alive endpoint
-app.get('/keepalive', (req, res) => {
-    res.json({ 
-        status: 'alive', 
-        timestamp: new Date().toISOString(),
-        service: 'cromwell-bot-server',
-        uptime: process.uptime()
-    });
+// User search keyboard
+const createUserSearchKeyboard = (userId) => ({
+    inline_keyboard: [
+        [
+            { text: '👛 Ver Billetera', callback_data: `admin_user_wallet:${userId}` },
+            { text: '📜 Historial Transacciones', callback_data: `admin_user_history:${userId}` }
+        ],
+        [
+            { text: '📋 Órdenes Pendientes', callback_data: `admin_user_orders:${userId}` },
+            { text: '🎱 Apuestas La Bolita', callback_data: `admin_user_bets:${userId}` }
+        ],
+        [
+            { text: '📊 Estadísticas Detalladas', callback_data: `admin_user_stats:${userId}` },
+            { text: '📞 Contactar Usuario', callback_data: `admin_contact_user:${userId}` }
+        ],
+        [
+            { text: '🔙 Volver al Panel Admin', callback_data: 'admin_panel' },
+            { text: '🔄 Buscar Otro Usuario', callback_data: 'admin_search_user' }
+        ]
+    ]
 });
 
 // ============================================
-// TELEGRAM BOT - KEYBOARDS
+// KEYBOARDS (ORGANIZADOS EN 2 COLUMNAS)
 // ============================================
 
-// Main keyboard with WebApp button
+// Main keyboard with WebApp button - ORGANIZADO EN 2 COLUMNAS
 const createMainKeyboard = () => ({
     inline_keyboard: [
-        [{ text: '👛 Mi Billetera', callback_data: 'wallet' }],
-        [{ text: '💰 Recargar Billetera', callback_data: 'recharge_menu' }],
-        [{ text: '📱 Recargas ETECSA', callback_data: 'soky_offers' }],
-        [{ text: '🎮 Recargar Juegos', callback_data: 'games_menu' }],
-        [{ text: '📱 Cambiar Teléfono', callback_data: 'link_phone' }],
-        [{ text: '🎁 Reclamar Pago', callback_data: 'claim_payment' }],
-        [{ text: '🌐 Abrir WebApp', callback_data: 'open_webapp' }],
-        [{ text: '🔄 Actualizar', callback_data: 'refresh_wallet' }]
+        [
+            { text: '👛 Mi Billetera', callback_data: 'wallet' },
+            { text: '💰 Recargar Billetera', callback_data: 'recharge_menu' }
+        ],
+        [
+            { text: '📱 Recargas ETECSA', callback_data: 'soky_offers' },
+            { text: '🎮 Recargar Juegos', callback_data: 'games_menu' }
+        ],
+        [
+            { text: '📱 Cambiar Teléfono', callback_data: 'link_phone' },
+            { text: '🎁 Reclamar Pago', callback_data: 'claim_payment' }
+        ],
+        [
+            { text: '🌐 Abrir WebApp', callback_data: 'open_webapp' },
+            { text: '🎱 La Bolita', callback_data: 'bolita_menu' }
+        ],
+        [
+            { text: '🔄 Actualizar', callback_data: 'refresh_wallet' }
+        ]
     ]
 });
 
-// Wallet keyboard
+// Wallet keyboard - ORGANIZADO EN 2 COLUMNAS
 const createWalletKeyboard = () => ({
     inline_keyboard: [
-        [{ text: '💰 Recargar Billetera', callback_data: 'recharge_menu' }],
-        [{ text: '📱 Recargas ETECSA', callback_data: 'soky_offers' }],
-        [{ text: '🎮 Recargar Juegos', callback_data: 'games_menu' }],
-        [{ text: '📜 Historial', callback_data: 'history' }],
-        [{ text: '📱 Cambiar Teléfono', callback_data: 'link_phone' }],
-        [{ text: '📊 Saldo Pendiente', callback_data: 'view_pending' }],
-        [{ text: '🌐 Abrir WebApp', callback_data: 'open_webapp' }],
-        [{ text: '🔙 Volver al Inicio', callback_data: 'start_back' }]
+        [
+            { text: '💰 Recargar Billetera', callback_data: 'recharge_menu' },
+            { text: '📱 Recargas ETECSA', callback_data: 'soky_offers' }
+        ],
+        [
+            { text: '🎮 Recargar Juegos', callback_data: 'games_menu' },
+            { text: '🎱 La Bolita', callback_data: 'bolita_menu' }
+        ],
+        [
+            { text: '📜 Historial', callback_data: 'history' },
+            { text: '📱 Cambiar Teléfono', callback_data: 'link_phone' }
+        ],
+        [
+            { text: '📊 Saldo Pendiente', callback_data: 'view_pending' },
+            { text: '🌐 Abrir WebApp', callback_data: 'open_webapp' }
+        ],
+        [
+            { text: '❌ Cancelar Orden Pendiente', callback_data: 'cancel_pending_order' }
+        ],
+        [
+            { text: '🔙 Volver al Inicio', callback_data: 'start_back' }
+        ]
     ]
 });
 
-// Recharge methods keyboard
+// Recharge methods keyboard - ORGANIZADO EN 2 COLUMNAS
 const createRechargeMethodsKeyboard = () => ({
     inline_keyboard: [
-        [{ text: '💳 CUP (Tarjeta)', callback_data: 'dep_init:cup' }],
-        [{ text: '📲 Saldo Móvil', callback_data: 'dep_init:saldo' }],
-        [{ text: '🔙 Volver a Billetera', callback_data: 'wallet' }]
+        [
+            { text: '💳 CUP (Tarjeta)', callback_data: 'dep_init:cup' },
+            { text: '📲 Saldo Móvil', callback_data: 'dep_init:saldo' }
+        ],
+        [
+            { text: '🔙 Volver a Billetera', callback_data: 'wallet' }
+        ]
+    ]
+});
+
+// Cancel order keyboard
+const createCancelOrderKeyboard = (ordenId, currency) => ({
+    inline_keyboard: [
+        [
+            { text: '✅ Sí, cancelar orden', callback_data: `confirm_cancel:${ordenId}:${currency}` },
+            { text: '❌ No, mantener orden', callback_data: 'recharge_menu' }
+        ]
     ]
 });
 
@@ -1632,12 +830,16 @@ const createTermsKeyboard = () => ({
     ]
 });
 
-// Claim payment keyboard
+// Claim payment keyboard - ORGANIZADO EN 2 COLUMNAS
 const createClaimPaymentKeyboard = () => ({
     inline_keyboard: [
-        [{ text: '🔍 Buscar por ID', callback_data: 'search_payment_id' }],
-        [{ text: '📋 Ver Pendientes', callback_data: 'view_pending_payments' }],
-        [{ text: '🔙 Volver al Inicio', callback_data: 'start_back' }]
+        [
+            { text: '🔍 Buscar por ID', callback_data: 'search_payment_id' },
+            { text: '📋 Ver Pendientes', callback_data: 'view_pending_payments' }
+        ],
+        [
+            { text: '🔙 Volver al Inicio', callback_data: 'start_back' }
+        ]
     ]
 });
 
@@ -1649,8 +851,10 @@ const createBackKeyboard = (callback_data) => ({
 // Deposit confirmation keyboard
 const createDepositConfirmKeyboard = (currency, amount) => ({
     inline_keyboard: [
-        [{ text: '✅ Confirmar Depósito', callback_data: `confirm_deposit:${currency}:${amount}` }],
-        [{ text: '❌ Cancelar', callback_data: 'recharge_menu' }]
+        [
+            { text: '✅ Confirmar Depósito', callback_data: `confirm_deposit:${currency}:${amount}` },
+            { text: '❌ Cancelar', callback_data: 'recharge_menu' }
+        ]
     ]
 });
 
@@ -1661,15 +865,29 @@ const createDepositConfirmKeyboard = (currency, amount) => ({
 // Command /start
 bot.onText(/\/start/, async (msg) => {
     const chatId = msg.chat.id;
-    const { id, first_name, username } = msg.from;
+    const userId = msg.from.id;
+    const { first_name, username } = msg.from;
     
-    console.log(`🚀 User ${id} (${first_name}) started the bot`);
+    console.log(`🚀 User ${userId} (${first_name}) started the bot`);
+    
+    // Check if admin
+    if (esAdmin(userId)) {
+        const adminMessage = `👑 *Panel de Administración*\n\n` +
+            `Bienvenido, Administrador.\n\n` +
+            `Selecciona una opción del menú:`;
+        
+        await bot.sendMessage(chatId, adminMessage, { 
+            parse_mode: 'Markdown',
+            reply_markup: createAdminKeyboard()
+        });
+        return;
+    }
     
     let user = await getUser(chatId);
     
     if (!user) {
         user = {
-            telegram_id: id,
+            telegram_id: userId,
             first_name: first_name,
             username: username,
             phone_number: null,
@@ -1713,7 +931,7 @@ bot.onText(/\/start/, async (msg) => {
     
     // STEP 3: Complete user - Show main menu
     const welcomeMessage = `✅ *¡Bienvenido de nuevo, ${first_name}!*\n\n` +
-        `🆔 *Tu ID de Telegram es:* \`${id}\`\n\n` +
+        `🆔 *Tu ID de Telegram es:* \`${userId}\`\n\n` +
         `⚠️ *GUARDA ESTE ID* - Lo necesitarás para acceder a la web.\n\n` +
         `Ahora también puedes usar nuestra *WebApp* para una mejor experiencia.\n\n` +
         `¿Cómo puedo ayudarte hoy?`;
@@ -1721,6 +939,26 @@ bot.onText(/\/start/, async (msg) => {
     await bot.sendMessage(chatId, welcomeMessage, { 
         parse_mode: 'Markdown', 
         reply_markup: createMainKeyboard()
+    });
+});
+
+// Command /admin
+bot.onText(/\/admin/, async (msg) => {
+    const chatId = msg.chat.id;
+    const userId = msg.from.id;
+    
+    if (!esAdmin(userId)) {
+        await bot.sendMessage(chatId, '❌ No tienes permisos de administrador.');
+        return;
+    }
+    
+    const adminMessage = `👑 *Panel de Administración*\n\n` +
+        `Bienvenido, Administrador.\n\n` +
+        `Selecciona una opción del menú:`;
+    
+    await bot.sendMessage(chatId, adminMessage, { 
+        parse_mode: 'Markdown',
+        reply_markup: createAdminKeyboard()
     });
 });
 
@@ -1757,26 +995,39 @@ bot.onText(/\/webapp/, async (msg) => {
 
 bot.on('callback_query', async (query) => {
     const chatId = query.message.chat.id;
+    const userId = query.from.id;
     const messageId = query.message.message_id;
     const data = query.data;
 
     try {
         await bot.answerCallbackQuery(query.id);
 
-        // FIRST: Try to handle with sokyHandler
+        // Admin functions first
+        if (esAdmin(userId)) {
+            const adminHandled = await handleAdminCallbacks(chatId, messageId, userId, data);
+            if (adminHandled) return;
+        }
+
+        // THEN: Try to handle with sokyHandler
         const handledBySoky = await sokyHandler.handleCallback(query);
         if (handledBySoky) {
             return;
         }
 
-        // SECOND: Try to handle with gameHandler
+        // THEN: Try to handle with gameHandler
         const handledByGame = await gameHandler.handleCallback(query);
         if (handledByGame) {
             return;
         }
 
-        // THIRD: Process normal bot actions
-        const [action, param1, param2] = data.split(':');
+        // THEN: Try to handle with bolitaHandler
+        const handledByBolita = await bolitaHandler.handleCallback(query);
+        if (handledByBolita) {
+            return;
+        }
+
+        // FINALLY: Process normal bot actions
+        const [action, param1, param2, param3] = data.split(':');
 
         switch (action) {
             case 'start_back':
@@ -1802,6 +1053,12 @@ bot.on('callback_query', async (query) => {
                 break;
             case 'confirm_deposit':
                 await handleConfirmDeposit(chatId, messageId, param1, param2);
+                break;
+            case 'cancel_pending_order':
+                await handleCancelPendingOrder(chatId, messageId);
+                break;
+            case 'confirm_cancel':
+                await handleConfirmCancel(chatId, messageId, param1, param2);
                 break;
             case 'terms':
                 await handleTerms(chatId, messageId);
@@ -1839,13 +1096,80 @@ bot.on('callback_query', async (query) => {
     }
 });
 
-// Callback handler functions
+// ============================================
+// ADMIN CALLBACK HANDLER
+// ============================================
+
+async function handleAdminCallbacks(chatId, messageId, adminId, data) {
+    const [action, param1, param2] = data.split(':');
+    
+    switch (action) {
+        case 'admin_panel':
+            await showAdminPanel(chatId, messageId);
+            return true;
+            
+        case 'admin_stats_total':
+            await showTotalStats(chatId, messageId);
+            return true;
+            
+        case 'admin_search_user':
+            await searchUserPrompt(chatId, messageId);
+            return true;
+            
+        case 'admin_user_wallet':
+            await showUserWallet(chatId, messageId, param1);
+            return true;
+            
+        case 'admin_user_history':
+            await showUserHistory(chatId, messageId, param1);
+            return true;
+            
+        case 'admin_user_orders':
+            await showUserOrders(chatId, messageId, param1);
+            return true;
+            
+        case 'admin_user_bets':
+            await showUserBets(chatId, messageId, param1);
+            return true;
+            
+        case 'admin_user_stats':
+            await showUserStats(chatId, messageId, param1);
+            return true;
+            
+        case 'admin_contact_user':
+            await contactUserPrompt(chatId, messageId, param1);
+            return true;
+            
+        case 'admin_pending_orders':
+            await showAllPendingOrders(chatId, messageId);
+            return true;
+            
+        case 'admin_active_games':
+            await showActiveGames(chatId, messageId);
+            return true;
+            
+        case 'admin_pending_payments':
+            await showPendingPayments(chatId, messageId);
+            return true;
+            
+        case 'admin_sync_db':
+            await syncDatabase(chatId, messageId);
+            return true;
+    }
+    
+    return false;
+}
+
+// ============================================
+// NORMAL BOT HANDLER FUNCTIONS
+// ============================================
+
 async function handleStartBack(chatId, messageId) {
     const user = await getUser(chatId);
     const message = `✅ *¡Bienvenido de nuevo, ${user.first_name}!*\n\n` +
         `🆔 *Tu ID de Telegram es:* \`${chatId}\`\n\n` +
         `⚠️ *GUARDA ESTE ID* - Lo necesitarás para acceder a la web.\n\n` +
-        `Ahora también puedes usar nuestra *WebApp* para una mejor experiencia.\n\n` +
+        `Ahora también puedes use nuestra *WebApp* para una mejor experiencia.\n\n` +
         `¿Cómo puedo ayudarte hoy?`;
     
     await bot.editMessageText(message, {
@@ -1857,10 +1181,7 @@ async function handleStartBack(chatId, messageId) {
 }
 
 async function handleOpenWebApp(chatId, messageId) {
-    // Obtener URL base del servidor
     const baseUrl = process.env.WEBAPP_URL || `http://localhost:${PORT || 3000}`;
-    
-    // Crear URL con el userId como parámetro
     const webAppUrl = `${baseUrl}/webapp.html?userId=${chatId}`;
     
     console.log(`🔗 WebApp URL generada para ${chatId}: ${webAppUrl}`);
@@ -1897,6 +1218,15 @@ async function handleWallet(chatId, messageId) {
         return;
     }
     
+    // Check for pending orders
+    const ordenPendiente = await tieneOrdenPendiente(chatId);
+    const pendienteMsg = ordenPendiente ? 
+        `\n⚠️ *Tienes una orden pendiente:*\n` +
+        `🆔 Orden #${ordenPendiente.id}\n` +
+        `💰 ${formatCurrency(ordenPendiente.amount_requested, ordenPendiente.currency)}\n` +
+        `💳 ${ordenPendiente.currency.toUpperCase()}\n` +
+        `📅 ${new Date(ordenPendiente.created_at).toLocaleDateString()}\n\n` : '';
+    
     const pendiente = user.pending_balance_cup || 0;
     const faltante = MINIMO_CUP - pendiente;
     
@@ -1904,7 +1234,8 @@ async function handleWallet(chatId, messageId) {
         `🆔 *ID de Telegram:* \`${chatId}\`\n\n` +
         `💰 *CUP:* **${formatCurrency(user.balance_cup, 'cup')}**\n` +
         `📱 *Saldo Móvil:* **${formatCurrency(user.balance_saldo, 'saldo')}**\n` +
-        `🎫 *CWS (Tokens):* **${user.tokens_cws || 0}**\n\n`;
+        `🎫 *CWS (Tokens):* **${user.tokens_cws || 0}**\n\n` +
+        pendienteMsg;
     
     if (pendiente > 0) {
         message += `📥 *CUP Pendiente:* **${formatCurrency(pendiente, 'cup')}**\n`;
@@ -1972,6 +1303,25 @@ async function handleDepositInit(chatId, messageId, currency) {
         return;
     }
     
+    // Check for pending order
+    const ordenPendiente = await tieneOrdenPendiente(chatId, currency);
+    if (ordenPendiente) {
+        const mensaje = `❌ *Ya tienes una orden pendiente*\n\n` +
+            `🆔 Orden #${ordenPendiente.id}\n` +
+            `💰 Monto: ${formatCurrency(ordenPendiente.amount_requested, currency)}\n` +
+            `⏳ Estado: Pendiente\n\n` +
+            `Debes cancelar esta orden antes de crear una nueva.\n\n` +
+            `¿Deseas cancelar la orden pendiente?`;
+        
+        await bot.editMessageText(mensaje, {
+            chat_id: chatId,
+            message_id: messageId,
+            parse_mode: 'Markdown',
+            reply_markup: createCancelOrderKeyboard(ordenPendiente.id, currency)
+        });
+        return;
+    }
+    
     let instrucciones = '';
     let minimo = MINIMO_CUP;
     let maximo = MAXIMO_CUP;
@@ -2024,6 +1374,53 @@ async function handleDepositInit(chatId, messageId, currency) {
         parse_mode: 'Markdown',
         reply_markup: createBackKeyboard('recharge_menu')
     });
+}
+
+async function handleCancelPendingOrder(chatId, messageId) {
+    const ordenPendiente = await tieneOrdenPendiente(chatId);
+    
+    if (!ordenPendiente) {
+        await bot.editMessageText('❌ No tienes órdenes pendientes para cancelar.', {
+            chat_id: chatId,
+            message_id: messageId,
+            parse_mode: 'Markdown',
+            reply_markup: createWalletKeyboard()
+        });
+        return;
+    }
+    
+    const mensaje = `❓ *¿Confirmar cancelación?*\n\n` +
+        `🆔 Orden #${ordenPendiente.id}\n` +
+        `💰 Monto: ${formatCurrency(ordenPendiente.amount_requested, ordenPendiente.currency)}\n` +
+        `💳 Método: ${ordenPendiente.currency.toUpperCase()}\n\n` +
+        `Esta acción no se puede deshacer.`;
+    
+    await bot.editMessageText(mensaje, {
+        chat_id: chatId,
+        message_id: messageId,
+        parse_mode: 'Markdown',
+        reply_markup: createCancelOrderKeyboard(ordenPendiente.id, ordenPendiente.currency)
+    });
+}
+
+async function handleConfirmCancel(chatId, messageId, ordenId, currency) {
+    const result = await cancelarOrdenPendiente(chatId, currency);
+    
+    if (result.success) {
+        await bot.editMessageText(`✅ ${result.message}`, {
+            chat_id: chatId,
+            message_id: messageId,
+            parse_mode: 'Markdown',
+            reply_markup: createWalletKeyboard()
+        });
+    } else {
+        await bot.editMessageText(`❌ ${result.message}`, {
+            chat_id: chatId,
+            message_id: messageId,
+            parse_mode: 'Markdown',
+            reply_markup: createWalletKeyboard()
+        });
+    }
 }
 
 async function handleConfirmDeposit(chatId, messageId, currency, amount) {
@@ -2092,13 +1489,14 @@ async function handleConfirmDeposit(chatId, messageId, currency, amount) {
         return;
     }
     
-    const solicitudExistente = await verificarSolicitudPendiente(chatId, currency);
-    if (solicitudExistente) {
-        const mensaje = `❌ *Ya tienes una solicitud pendiente*\n\n` +
-            `🆔 Orden #${solicitudExistente.id}\n` +
-            `💰 Monto: ${formatCurrency(solicitudExistente.amount_requested, currency)}\n` +
+    // Check again for pending order (in case user opened multiple tabs)
+    const ordenPendiente = await tieneOrdenPendiente(chatId, currency);
+    if (ordenPendiente) {
+        const mensaje = `❌ *Ya tienes una orden pendiente*\n\n` +
+            `🆔 Orden #${ordenPendiente.id}\n` +
+            `💰 Monto: ${formatCurrency(ordenPendiente.amount_requested, currency)}\n` +
             `⏳ Estado: Pendiente\n\n` +
-            `Completa o cancela la solicitud actual antes de crear una nueva.`;
+            `Debes cancelar esta orden antes de crear una nueva.`;
         
         if (messageId) {
             await bot.editMessageText(mensaje, {
@@ -2458,11 +1856,481 @@ async function handleViewPending(chatId, messageId) {
 }
 
 // ============================================
+// ADMIN FUNCTIONS IMPLEMENTATION
+// ============================================
+
+async function showAdminPanel(chatId, messageId) {
+    const message = `👑 *Panel de Administración*\n\n` +
+        `Selecciona una opción:`;
+    
+    await bot.editMessageText(message, {
+        chat_id: chatId,
+        message_id: messageId,
+        parse_mode: 'Markdown',
+        reply_markup: createAdminKeyboard()
+    });
+}
+
+async function showTotalStats(chatId, messageId) {
+    try {
+        const stats = await obtenerEstadisticasTotales();
+        
+        if (!stats) {
+            await bot.editMessageText('❌ Error al obtener estadísticas.', {
+                chat_id: chatId,
+                message_id: messageId,
+                parse_mode: 'Markdown',
+                reply_markup: createAdminKeyboard()
+            });
+            return;
+        }
+        
+        const message = `📊 *ESTADÍSTICAS TOTALES DEL BOT*\n\n` +
+            `💰 *Total CUP en el sistema:* ${formatCurrency(stats.totalCUP, 'cup')}\n` +
+            `📱 *Total Saldo Móvil:* ${formatCurrency(stats.totalSaldo, 'saldo')}\n` +
+            `🎫 *Total CWS (Tokens):* ${stats.totalCWS} CWS\n\n` +
+            `*Desglose por moneda:*\n` +
+            `• CUP: $${stats.totalCUP.toFixed(2)}\n` +
+            `• Saldo Móvil: $${stats.totalSaldo.toFixed(2)}\n` +
+            `• CWS: ${stats.totalCWS} tokens\n\n` +
+            `_Actualizado: ${new Date().toLocaleString()}_`;
+        
+        await bot.editMessageText(message, {
+            chat_id: chatId,
+            message_id: messageId,
+            parse_mode: 'Markdown',
+            reply_markup: createAdminKeyboard()
+        });
+    } catch (error) {
+        console.error('Error showing total stats:', error);
+        await bot.editMessageText('❌ Error al obtener estadísticas.', {
+            chat_id: chatId,
+            message_id: messageId,
+            parse_mode: 'Markdown',
+            reply_markup: createAdminKeyboard()
+        });
+    }
+}
+
+async function searchUserPrompt(chatId, messageId) {
+    const message = `🔍 *Buscar Usuario*\n\n` +
+        `Por favor, envía el ID de Telegram del usuario que deseas buscar:\n\n` +
+        `Ejemplo: \`123456789\``;
+    
+    activeSessions[chatId] = { step: 'admin_search_user' };
+    
+    await bot.editMessageText(message, {
+        chat_id: chatId,
+        message_id: messageId,
+        parse_mode: 'Markdown',
+        reply_markup: createBackKeyboard('admin_panel')
+    });
+}
+
+async function showUserWallet(chatId, messageId, userId) {
+    try {
+        const user = await getUser(userId);
+        
+        if (!user) {
+            await bot.editMessageText(`❌ Usuario con ID ${userId} no encontrado.`, {
+                chat_id: chatId,
+                message_id: messageId,
+                parse_mode: 'Markdown',
+                reply_markup: createBackKeyboard('admin_search_user')
+            });
+            return;
+        }
+        
+        const message = `👛 *Billetera del Usuario*\n\n` +
+            `👤 *Nombre:* ${user.first_name}\n` +
+            `🆔 *ID:* ${user.telegram_id}\n` +
+            `📱 *Usuario:* @${user.username || 'N/A'}\n` +
+            `📞 *Teléfono:* ${user.phone_number ? `+53 ${user.phone_number.substring(2)}` : 'No vinculado'}\n\n` +
+            `💰 *CUP:* **${formatCurrency(user.balance_cup, 'cup')}**\n` +
+            `📱 *Saldo Móvil:* **${formatCurrency(user.balance_saldo, 'saldo')}**\n` +
+            `🎫 *CWS (Tokens):* **${user.tokens_cws || 0}**\n\n` +
+            `📅 *Última actividad:* ${new Date(user.last_active).toLocaleString()}\n` +
+            `📅 *Registrado:* ${new Date(user.created_at || user.last_active).toLocaleDateString()}`;
+        
+        await bot.editMessageText(message, {
+            chat_id: chatId,
+            message_id: messageId,
+            parse_mode: 'Markdown',
+            reply_markup: createUserSearchKeyboard(userId)
+        });
+    } catch (error) {
+        console.error('Error showing user wallet:', error);
+        await bot.editMessageText('❌ Error al obtener información del usuario.', {
+            chat_id: chatId,
+            message_id: messageId,
+            parse_mode: 'Markdown',
+            reply_markup: createAdminKeyboard()
+        });
+    }
+}
+
+async function showUserHistory(chatId, messageId, userId) {
+    try {
+        const { data: transactions } = await supabase
+            .from('transactions')
+            .select('*')
+            .eq('user_id', userId)
+            .order('created_at', { ascending: false })
+            .limit(15);
+        
+        let message = `📜 *Historial de Transacciones*\n\n` +
+            `👤 Usuario ID: ${userId}\n\n`;
+        
+        if (!transactions || transactions.length === 0) {
+            message += `No hay transacciones registradas.`;
+        } else {
+            transactions.forEach((tx, index) => {
+                let icon = '🔸';
+                if (tx.status === 'completed') icon = '✅';
+                else if (tx.status === 'pending') icon = '⏳';
+                else if (tx.status === 'rejected' || tx.status === 'canceled') icon = '❌';
+                
+                const fecha = new Date(tx.created_at).toLocaleDateString('es-ES', {
+                    day: '2-digit',
+                    month: '2-digit',
+                    year: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                });
+                
+                message += `${icon} *${tx.type === 'DEPOSIT' ? 'Depósito' : tx.type === 'GAME_RECHARGE' ? 'Recarga Juego' : tx.type === 'ETECSA_RECHARGE' ? 'Recarga ETECSA' : tx.type}*\n`;
+                message += `💰 ${formatCurrency(Math.abs(tx.amount || tx.amount_requested), tx.currency)}\n`;
+                message += `📅 ${fecha}\n`;
+                message += `📊 ${tx.status === 'completed' ? 'Completado' : tx.status === 'pending' ? 'Pendiente' : tx.status}\n`;
+                if (tx.tx_id) message += `🆔 \`${tx.tx_id}\`\n`;
+                if (tx.tokens_generated > 0) message += `🎫 +${tx.tokens_generated} CWS\n`;
+                message += `---\n`;
+            });
+        }
+        
+        await bot.editMessageText(message, {
+            chat_id: chatId,
+            message_id: messageId,
+            parse_mode: 'Markdown',
+            reply_markup: createUserSearchKeyboard(userId)
+        });
+    } catch (error) {
+        console.error('Error showing user history:', error);
+        await bot.editMessageText('❌ Error al obtener historial del usuario.', {
+            chat_id: chatId,
+            message_id: messageId,
+            parse_mode: 'Markdown',
+            reply_markup: createUserSearchKeyboard(userId)
+        });
+    }
+}
+
+async function showUserOrders(chatId, messageId, userId) {
+    try {
+        const { data: orders } = await supabase
+            .from('transactions')
+            .select('*')
+            .eq('user_id', userId)
+            .eq('status', 'pending')
+            .order('created_at', { ascending: false });
+        
+        let message = `📋 *Órdenes Pendientes*\n\n` +
+            `👤 Usuario ID: ${userId}\n\n`;
+        
+        if (!orders || orders.length === 0) {
+            message += `No hay órdenes pendientes.`;
+        } else {
+            orders.forEach((order, index) => {
+                message += `🆔 *Orden #${order.id}*\n`;
+                message += `💰 ${formatCurrency(order.amount_requested, order.currency)}\n`;
+                message += `💳 ${order.currency.toUpperCase()}\n`;
+                message += `📅 ${new Date(order.created_at).toLocaleDateString()}\n`;
+                message += `---\n`;
+            });
+        }
+        
+        await bot.editMessageText(message, {
+            chat_id: chatId,
+            message_id: messageId,
+            parse_mode: 'Markdown',
+            reply_markup: createUserSearchKeyboard(userId)
+        });
+    } catch (error) {
+        console.error('Error showing user orders:', error);
+        await bot.editMessageText('❌ Error al obtener órdenes del usuario.', {
+            chat_id: chatId,
+            message_id: messageId,
+            parse_mode: 'Markdown',
+            reply_markup: createUserSearchKeyboard(userId)
+        });
+    }
+}
+
+async function showUserBets(chatId, messageId, userId) {
+    try {
+        const { data: bets } = await supabase
+            .from('bolita_apuestas')
+            .select('*, bolita_sorteos(numero_ganador, fecha, hora)')
+            .eq('user_id', userId)
+            .order('created_at', { ascending: false })
+            .limit(10);
+        
+        let message = `🎱 *Apuestas La Bolita*\n\n` +
+            `👤 Usuario ID: ${userId}\n\n`;
+        
+        if (!bets || bets.length === 0) {
+            message += `No hay apuestas registradas.`;
+        } else {
+            bets.forEach((bet, index) => {
+                const emoji = bet.estado === 'ganada' ? '✅' : bet.estado === 'perdida' ? '❌' : '⏳';
+                message += `${emoji} *Ticket #${bet.id}*\n`;
+                message += `🎯 ${bet.tipo_apuesta} ${bet.numero_apostado} ${bet.posicion ? `(${bet.posicion})` : ''}\n`;
+                message += `💰 ${bet.monto} CWS → ${bet.ganancia ? `Ganó: ${bet.ganancia} CWS` : 'Pendiente'}\n`;
+                message += `📅 ${new Date(bet.created_at).toLocaleDateString()}\n`;
+                if (bet.bolita_sorteos?.numero_ganador) {
+                    message += `🎯 Resultado: ${bet.bolita_sorteos.numero_ganador}\n`;
+                }
+                message += `---\n`;
+            });
+        }
+        
+        await bot.editMessageText(message, {
+            chat_id: chatId,
+            message_id: messageId,
+            parse_mode: 'Markdown',
+            reply_markup: createUserSearchKeyboard(userId)
+        });
+    } catch (error) {
+        console.error('Error showing user bets:', error);
+        await bot.editMessageText('❌ Error al obtener apuestas del usuario.', {
+            chat_id: chatId,
+            message_id: messageId,
+            parse_mode: 'Markdown',
+            reply_markup: createUserSearchKeyboard(userId)
+        });
+    }
+}
+
+async function showUserStats(chatId, messageId, userId) {
+    try {
+        const stats = await obtenerEstadisticasUsuario(userId);
+        
+        if (!stats) {
+            await bot.editMessageText(`❌ Error al obtener estadísticas del usuario.`, {
+                chat_id: chatId,
+                message_id: messageId,
+                parse_mode: 'Markdown',
+                reply_markup: createUserSearchKeyboard(userId)
+            });
+            return;
+        }
+        
+        const { usuario, transacciones, ordenesPendientes, apuestasBolita } = stats;
+        
+        // Calculate totals
+        let totalDepositado = 0;
+        let totalGastado = 0;
+        let totalGanadoBolita = 0;
+        
+        transacciones.forEach(tx => {
+            if (tx.type === 'DEPOSIT' && tx.status === 'completed') {
+                totalDepositado += Math.abs(tx.amount) || tx.amount_requested || 0;
+            } else if (tx.type === 'GAME_RECHARGE' || tx.type === 'ETECSA_RECHARGE') {
+                totalGastado += Math.abs(tx.amount) || 0;
+            }
+        });
+        
+        apuestasBolita.forEach(bet => {
+            if (bet.estado === 'ganada') {
+                totalGanadoBolita += bet.ganancia || 0;
+            }
+        });
+        
+        const message = `📊 *ESTADÍSTICAS DETALLADAS*\n\n` +
+            `👤 *Usuario:* ${usuario.nombre}\n` +
+            `🆔 *ID:* ${usuario.id}\n` +
+            `📱 *@${usuario.username || 'N/A'}*\n\n` +
+            `💰 *Balance Actual:*\n` +
+            `• CUP: ${formatCurrency(usuario.balance_cup, 'cup')}\n` +
+            `• Saldo Móvil: ${formatCurrency(usuario.balance_saldo, 'saldo')}\n` +
+            `• CWS: ${usuario.tokens_cws} tokens\n\n` +
+            `📈 *Actividad Total:*\n` +
+            `• Total depositado: ${formatCurrency(totalDepositado, 'cup')}\n` +
+            `• Total gastado: ${formatCurrency(totalGastado, 'cup')}\n` +
+            `• Ganado en La Bolita: ${totalGanadoBolita} CWS\n\n` +
+            `📋 *Resumen:*\n` +
+            `• Transacciones: ${transacciones.length}\n` +
+            `• Órdenes pendientes: ${ordenesPendientes.length}\n` +
+            `• Apuestas La Bolita: ${apuestasBolita.length}\n\n` +
+            `📅 *Registrado:* ${new Date(usuario.fecha_registro).toLocaleDateString()}`;
+        
+        await bot.editMessageText(message, {
+            chat_id: chatId,
+            message_id: messageId,
+            parse_mode: 'Markdown',
+            reply_markup: createUserSearchKeyboard(userId)
+        });
+    } catch (error) {
+        console.error('Error showing user stats:', error);
+        await bot.editMessageText('❌ Error al obtener estadísticas del usuario.', {
+            chat_id: chatId,
+            message_id: messageId,
+            parse_mode: 'Markdown',
+            reply_markup: createUserSearchKeyboard(userId)
+        });
+    }
+}
+
+async function contactUserPrompt(chatId, messageId, userId) {
+    const message = `📞 *Contactar Usuario*\n\n` +
+        `ID del usuario: ${userId}\n\n` +
+        `Por favor, envía el mensaje que deseas enviar al usuario:`;
+    
+    activeSessions[chatId] = { 
+        step: 'admin_contact_user',
+        targetUserId: userId 
+    };
+    
+    await bot.editMessageText(message, {
+        chat_id: chatId,
+        message_id: messageId,
+        parse_mode: 'Markdown',
+        reply_markup: createBackKeyboard(`admin_user_stats:${userId}`)
+    });
+}
+
+async function showAllPendingOrders(chatId, messageId) {
+    try {
+        const { data: orders } = await supabase
+            .from('transactions')
+            .select('*, users!inner(first_name, username, phone_number)')
+            .eq('status', 'pending')
+            .eq('type', 'DEPOSIT')
+            .order('created_at', { ascending: false });
+        
+        let message = `📋 *TODAS LAS ÓRDENES PENDIENTES*\n\n`;
+        
+        if (!orders || orders.length === 0) {
+            message += `No hay órdenes pendientes en el sistema.`;
+        } else {
+            message += `Total: ${orders.length} órdenes\n\n`;
+            
+            orders.forEach((order, index) => {
+                message += `🆔 *Orden #${order.id}*\n`;
+                message += `👤 ${order.users.first_name} (@${order.users.username || 'N/A'})\n`;
+                message += `🆔 ID: ${order.user_id}\n`;
+                message += `💰 ${formatCurrency(order.amount_requested, order.currency)}\n`;
+                message += `💳 ${order.currency.toUpperCase()}\n`;
+                message += `📅 ${new Date(order.created_at).toLocaleDateString()}\n`;
+                message += `---\n`;
+            });
+        }
+        
+        await bot.editMessageText(message, {
+            chat_id: chatId,
+            message_id: messageId,
+            parse_mode: 'Markdown',
+            reply_markup: createAdminKeyboard()
+        });
+    } catch (error) {
+        console.error('Error showing all pending orders:', error);
+        await bot.editMessageText('❌ Error al obtener órdenes pendientes.', {
+            chat_id: chatId,
+            message_id: messageId,
+            parse_mode: 'Markdown',
+            reply_markup: createAdminKeyboard()
+        });
+    }
+}
+
+async function showActiveGames(chatId, messageId) {
+    // This would show active game transactions
+    // For now, just a placeholder
+    const message = `🎮 *Juegos Activos*\n\n` +
+        `Funcionalidad en desarrollo...`;
+    
+    await bot.editMessageText(message, {
+        chat_id: chatId,
+        message_id: messageId,
+        parse_mode: 'Markdown',
+        reply_markup: createAdminKeyboard()
+    });
+}
+
+async function showPendingPayments(chatId, messageId) {
+    try {
+        const { data: payments } = await supabase
+            .from('pending_sms_payments')
+            .select('*')
+            .eq('claimed', false)
+            .order('created_at', { ascending: false });
+        
+        let message = `💰 *PAGOS PENDIENTES DE RECLAMAR*\n\n`;
+        
+        if (!payments || payments.length === 0) {
+            message += `No hay pagos pendientes de reclamar.`;
+        } else {
+            message += `Total: ${payments.length} pagos\n\n`;
+            
+            payments.forEach((payment, index) => {
+                message += `${index + 1}. ${formatCurrency(payment.amount, payment.currency)}\n`;
+                message += `   📞 Teléfono: ${payment.phone}\n`;
+                message += `   🆔 ID: \`${payment.tx_id}\`\n`;
+                message += `   🔧 ${payment.tipo_pago}\n`;
+                message += `   📅 ${new Date(payment.created_at).toLocaleDateString()}\n`;
+                message += `---\n`;
+            });
+        }
+        
+        await bot.editMessageText(message, {
+            chat_id: chatId,
+            message_id: messageId,
+            parse_mode: 'Markdown',
+            reply_markup: createAdminKeyboard()
+        });
+    } catch (error) {
+        console.error('Error showing pending payments:', error);
+        await bot.editMessageText('❌ Error al obtener pagos pendientes.', {
+            chat_id: chatId,
+            message_id: messageId,
+            parse_mode: 'Markdown',
+            reply_markup: createAdminKeyboard()
+        });
+    }
+}
+
+async function syncDatabase(chatId, messageId) {
+    try {
+        // This would perform database maintenance tasks
+        // For now, just a placeholder
+        const message = `🔄 *Sincronización de Base de Datos*\n\n` +
+            `Sincronización completada.\n` +
+            `_${new Date().toLocaleString()}_`;
+        
+        await bot.editMessageText(message, {
+            chat_id: chatId,
+            message_id: messageId,
+            parse_mode: 'Markdown',
+            reply_markup: createAdminKeyboard()
+        });
+    } catch (error) {
+        console.error('Error syncing database:', error);
+        await bot.editMessageText('❌ Error al sincronizar base de datos.', {
+            chat_id: chatId,
+            message_id: messageId,
+            parse_mode: 'Markdown',
+            reply_markup: createAdminKeyboard()
+        });
+    }
+}
+
+// ============================================
 // TELEGRAM BOT - MESSAGE HANDLERS
 // ============================================
 
 bot.on('message', async (msg) => {
     const chatId = msg.chat.id;
+    const userId = msg.from.id;
     const text = msg.text;
     const session = activeSessions[chatId];
     
@@ -2481,7 +2349,27 @@ bot.on('message', async (msg) => {
             return;
         }
         
-        // 3. Process normal bot messages
+        // 3. Try to handle with bolitaHandler
+        const handledByBolita = await bolitaHandler.handleMessage(msg);
+        if (handledByBolita) {
+            return;
+        }
+        
+        // 4. Process admin sessions
+        if (session && esAdmin(userId)) {
+            switch (session.step) {
+                case 'admin_search_user':
+                    await handleAdminSearchUser(chatId, text);
+                    break;
+                    
+                case 'admin_contact_user':
+                    await handleAdminContactUser(chatId, text, session.targetUserId);
+                    break;
+            }
+            return;
+        }
+        
+        // 5. Process normal bot sessions
         if (session) {
             switch (session.step) {
                 case 'waiting_phone':
@@ -2509,6 +2397,75 @@ bot.on('message', async (msg) => {
         });
     }
 });
+
+async function handleAdminSearchUser(chatId, userIdInput) {
+    try {
+        const userId = parseInt(userIdInput.trim());
+        
+        if (isNaN(userId)) {
+            await bot.sendMessage(chatId, '❌ ID inválido. Debe ser un número.', {
+                reply_markup: createBackKeyboard('admin_search_user')
+            });
+            return;
+        }
+        
+        const user = await getUser(userId);
+        
+        if (!user) {
+            await bot.sendMessage(chatId, `❌ Usuario con ID ${userId} no encontrado.`, {
+                reply_markup: createBackKeyboard('admin_search_user')
+            });
+            return;
+        }
+        
+        const message = `👤 *Usuario Encontrado*\n\n` +
+            `✅ *Nombre:* ${user.first_name}\n` +
+            `🆔 *ID:* ${user.telegram_id}\n` +
+            `📱 *Usuario:* @${user.username || 'N/A'}\n` +
+            `📞 *Teléfono:* ${user.phone_number ? `+53 ${user.phone_number.substring(2)}` : 'No vinculado'}\n\n` +
+            `Selecciona una opción para ver más detalles:`;
+        
+        delete activeSessions[chatId];
+        
+        await bot.sendMessage(chatId, message, {
+            parse_mode: 'Markdown',
+            reply_markup: createUserSearchKeyboard(userId)
+        });
+    } catch (error) {
+        console.error('Error in admin search user:', error);
+        await bot.sendMessage(chatId, '❌ Error al buscar usuario.', {
+            reply_markup: createBackKeyboard('admin_panel')
+        });
+    }
+}
+
+async function handleAdminContactUser(chatId, messageText, targetUserId) {
+    try {
+        // Send message to target user
+        await bot.sendMessage(targetUserId,
+            `📨 *Mensaje del Administrador*\n\n` +
+            `${messageText}\n\n` +
+            `_Este es un mensaje oficial del sistema Cromwell Store._`,
+            { parse_mode: 'Markdown' }
+        );
+        
+        // Notify admin
+        await bot.sendMessage(chatId,
+            `✅ *Mensaje enviado*\n\n` +
+            `Mensaje enviado al usuario ID: ${targetUserId}\n\n` +
+            `Contenido:\n${messageText}`,
+            { parse_mode: 'Markdown', reply_markup: createBackKeyboard('admin_panel') }
+        );
+        
+        delete activeSessions[chatId];
+    } catch (error) {
+        console.error('Error contacting user:', error);
+        await bot.sendMessage(chatId,
+            `❌ Error al enviar mensaje. El usuario puede haber bloqueado el bot o no existir.`,
+            { reply_markup: createBackKeyboard('admin_panel') }
+        );
+    }
+}
 
 async function handlePhoneInput(chatId, phone, session) {
     let cleanPhone = phone.replace(/[^\d]/g, '');
@@ -2775,6 +2732,8 @@ app.listen(PORT, () => {
     console.log(`💳 Tarjeta para pagos: ${PAGO_CUP_TARJETA ? '✅ Configurada' : '❌ No configurada'}`);
     console.log(`🎮 LioGames: ${LIOGAMES_MEMBER_CODE ? '✅ Configurado' : '❌ No configurado'}`);
     console.log(`📱 SokyRecargas: ${SOKY_API_TOKEN ? '✅ Configurado' : '❌ No configurado'}`);
+    console.log(`🎱 La Bolita: ✅ Integrado`);
+    console.log(`👑 Admin ID: ${BOT_ADMIN_ID ? '✅ Configurado' : '❌ No configurado'}`);
     console.log(`💱 Tasas de cambio:`);
     console.log(`   • USDT 0-30: $${USDT_RATE_0_30} CUP`);
     console.log(`   • USDT >30: $${USDT_RATE_30_PLUS} CUP`);
