@@ -959,39 +959,81 @@ app.post('/payment-notification', verifyWebhookToken, async (req, res) => {
 // WEBAPP API ENDPOINTS
 // ============================================
 // Get user data for WebApp
-app.post('/api/user-data', async (req, res) => {  // Quitar verifyWebhookToken
+app.post('/api/user-data', async (req, res) => {
+    console.log('📨 POST /api/user-data recibido');
+    console.log('📦 Body:', req.body);
+    console.log('🔍 telegram_id del body:', req.body.telegram_id);
+    
     try {
         const { telegram_id } = req.body;
         
         if (!telegram_id) {
+            console.error('❌ telegram_id no proporcionado');
             return res.status(400).json({ error: 'telegram_id es requerido' });
         }
         
-        const user = await getUser(telegram_id);
-        if (!user) {
-            return res.status(404).json({ error: 'Usuario no encontrado' });
+        console.log('🔍 Buscando en DB usuario con telegram_id:', telegram_id);
+        
+        // Método 1: Usando Supabase Client (recomendado)
+        const { data: user, error } = await supabase
+            .from('users')
+            .select('*')
+            .eq('telegram_id', telegram_id.toString())
+            .single();
+        
+        console.log('🔍 Resultado de Supabase:');
+        console.log('   - Error:', error);
+        console.log('   - User encontrado:', user);
+        
+        if (error) {
+            console.error('❌ Error de Supabase:', error);
+            return res.status(404).json({ 
+                error: 'Error en la consulta',
+                details: error.message,
+                hint: error.hint 
+            });
         }
         
-        // No devolver información sensible
+        if (!user) {
+            console.error('❌ Usuario no encontrado en la tabla');
+            return res.status(404).json({ 
+                error: 'Usuario no encontrado',
+                hint: 'Verifica que el telegram_id exista en la tabla users' 
+            });
+        }
+        
+        console.log('✅ Usuario encontrado, enviando respuesta...');
+        
+        // Construir respuesta segura
+        const safeUser = {
+            telegram_id: user.telegram_id,
+            first_name: user.first_name || 'Usuario',
+            username: user.username || '',
+            phone_number: user.phone_number || null,
+            balance_cup: Number(user.balance_cup) || 0,
+            balance_saldo: Number(user.balance_saldo) || 0,
+            tokens_cws: Number(user.tokens_cws) || 0,
+            first_dep_cup: Boolean(user.first_dep_cup === undefined ? true : user.first_dep_cup),
+            first_dep_saldo: Boolean(user.first_dep_saldo === undefined ? true : user.first_dep_saldo),
+            last_active: user.last_active || user.created_at || new Date().toISOString()
+        };
+        
+        console.log('📤 Enviando usuario:', safeUser);
+        
         res.json({
             success: true,
-            user: {
-                telegram_id: user.telegram_id,
-                first_name: user.first_name,
-                username: user.username,
-                phone_number: user.phone_number,
-                balance_cup: user.balance_cup || 0,
-                balance_saldo: user.balance_saldo || 0,
-                tokens_cws: user.tokens_cws || 0,
-                first_dep_cup: user.first_dep_cup || true,
-                first_dep_saldo: user.first_dep_saldo || true,
-                last_active: user.last_active
-            }
+            user: safeUser
         });
         
     } catch (error) {
-        console.error('Error en /api/user-data:', error);
-        res.status(500).json({ error: 'Error interno del servidor' });
+        console.error('💥 Error inesperado en /api/user-data:', error);
+        console.error('💥 Stack trace:', error.stack);
+        
+        res.status(500).json({ 
+            error: 'Error interno del servidor',
+            message: error.message,
+            stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+        });
     }
 });
 
