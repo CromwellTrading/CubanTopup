@@ -2022,3 +2022,183 @@ document.addEventListener('DOMContentLoaded', () => {
     // NOTA: La aplicación se inicializa desde webapp-main.html
     // Solo definimos la clase aquí
 });
+// Añade esto al final de tu archivo JavaScript existente
+
+// Efecto de ripple al hacer clic
+document.addEventListener('DOMContentLoaded', function() {
+    // Crear línea de escaneo
+    const scanLine = document.createElement('div');
+    scanLine.className = 'scan-line';
+    document.body.appendChild(scanLine);
+    
+    // Efecto ripple en botones y tarjetas
+    const interactiveElements = document.querySelectorAll('.btn-primary, .btn-secondary, .nav-item, .game-card, .action-btn');
+    
+    interactiveElements.forEach(element => {
+        element.addEventListener('click', function(e) {
+            // Crear efecto ripple
+            const ripple = document.createElement('span');
+            ripple.className = 'click-ripple';
+            
+            const rect = this.getBoundingClientRect();
+            const size = Math.max(rect.width, rect.height);
+            const x = e.clientX - rect.left - size / 2;
+            const y = e.clientY - rect.top - size / 2;
+            
+            ripple.style.width = ripple.style.height = size + 'px';
+            ripple.style.left = x + 'px';
+            ripple.style.top = y + 'px';
+            
+            this.style.position = 'relative';
+            this.style.overflow = 'hidden';
+            this.appendChild(ripple);
+            
+            // Remover después de la animación
+            setTimeout(() => {
+                ripple.remove();
+            }, 600);
+            
+            // Efecto de partículas
+            createParticles(e.clientX, e.clientY);
+        });
+    });
+    
+    // Efecto de partículas al hacer hover
+    const cards = document.querySelectorAll('.game-card, .balance-card, .variation-card');
+    
+    cards.forEach(card => {
+        card.addEventListener('mouseenter', function(e) {
+            const rect = this.getBoundingClientRect();
+            for(let i = 0; i < 5; i++) {
+                createHoverParticle(
+                    rect.left + Math.random() * rect.width,
+                    rect.top + Math.random() * rect.height
+                );
+            }
+        });
+    });
+    
+    // Scroll suave con efecto parallax
+    window.addEventListener('scroll', function() {
+        const scrolled = window.pageYOffset;
+        const parallaxElements = document.querySelectorAll('.parallax-card');
+        
+        parallaxElements.forEach(element => {
+            const speed = element.dataset.speed || 0.5;
+            element.style.transform = `translateY(${scrolled * speed}px)`;
+        });
+        
+        // Efecto de desenfoque al scroll
+        const app = document.getElementById('app');
+        app.classList.toggle('scroll-blur', scrolled > 100);
+    });
+    
+    // Animación de entrada por elementos
+    const observerOptions = {
+        threshold: 0.1,
+        rootMargin: '0px 0px -50px 0px'
+    };
+    
+    const observer = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+            if (entry.isIntersecting) {
+                entry.target.classList.add('animate-in');
+                observer.unobserve(entry.target);
+            }
+        });
+    }, observerOptions);
+    
+    // Observar elementos para animación
+    document.querySelectorAll('.game-card, .balance-card, .action-btn').forEach(el => {
+        observer.observe(el);
+    });
+    
+    // Función para crear partículas
+    function createParticles(x, y) {
+        for(let i = 0; i < 8; i++) {
+            const particle = document.createElement('div');
+            particle.className = 'hover-particle';
+            particle.style.left = x + 'px';
+            particle.style.top = y + 'px';
+            
+            const angle = Math.random() * Math.PI * 2;
+            const velocity = 2 + Math.random() * 2;
+            const size = 2 + Math.random() * 4;
+            
+            particle.style.width = particle.style.height = size + 'px';
+            
+            document.body.appendChild(particle);
+            
+            let opacity = 1;
+            const animate = () => {
+                opacity -= 0.02;
+                particle.style.opacity = opacity;
+                particle.style.transform = `translate(${Math.cos(angle) * velocity}px, ${Math.sin(angle) * velocity}px)`;
+                
+                if(opacity > 0) {
+                    requestAnimationFrame(animate);
+                } else {
+                    particle.remove();
+                }
+            };
+            
+            animate();
+        }
+    }
+    
+    function createHoverParticle(x, y) {
+        const particle = document.createElement('div');
+        particle.className = 'hover-particle';
+        particle.style.left = x + 'px';
+        particle.style.top = y + 'px';
+        
+        document.body.appendChild(particle);
+        
+        // Animación de aparición y desaparición
+        particle.animate([
+            { opacity: 0, transform: 'scale(0)' },
+            { opacity: 1, transform: 'scale(1)' },
+            { opacity: 0, transform: 'scale(0) translateY(-20px)' }
+        ], {
+            duration: 1000,
+            easing: 'cubic-bezier(0.4, 0, 0.2, 1)'
+        });
+        
+        setTimeout(() => particle.remove(), 1000);
+    }
+    
+    // Efecto confetti para éxito
+    window.createConfetti = function(x, y) {
+        for(let i = 0; i < 50; i++) {
+            const confetti = document.createElement('div');
+            confetti.className = 'confetti';
+            confetti.style.left = x + 'px';
+            confetti.style.top = y + 'px';
+            
+            const colors = [var(--primary), var(--accent), var(--neon-pink), var(--neon-green)];
+            confetti.style.background = colors[Math.floor(Math.random() * colors.length)];
+            
+            document.body.appendChild(confetti);
+            
+            // Animación
+            const angle = Math.random() * Math.PI * 2;
+            const velocity = 3 + Math.random() * 5;
+            
+            confetti.animate([
+                { 
+                    opacity: 1,
+                    transform: `translate(0, 0) rotate(0deg)`
+                },
+                { 
+                    opacity: 0,
+                    transform: `translate(${Math.cos(angle) * velocity * 50}px, ${Math.sin(angle) * velocity * 50}px) rotate(${Math.random() * 360}deg)`
+                }
+            ], {
+                duration: 2000,
+                easing: 'cubic-bezier(0.4, 0, 0.2, 1)'
+            });
+            
+            setTimeout(() => confetti.remove(), 2000);
+        }
+    };
+});
