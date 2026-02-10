@@ -529,7 +529,7 @@
                 });
             }
             
-            // Cargar todos los scripts
+            // Cargar todos los scripts en orden
             Promise.all(scripts.map(script => loadScript(script)))
                 .then(() => {
                     console.log(`✅ Todos los scripts cargados (${loadedCount}/${scripts.length})`);
@@ -545,11 +545,11 @@
         async function initializeApp() {
             console.log('🚀 Inicializando aplicación...');
             
-            // Lista de scripts a cargar (en orden)
+            // Lista de scripts a cargar (en orden CORRECTO)
             const scripts = [
                 '/js/webapp.js',
-                '/js/components/wallet.js',
                 '/js/components/etecsa.js',
+                '/js/components/wallet.js',
                 '/js/components/transactions.js'
             ];
             
@@ -561,10 +561,16 @@
                 document.getElementById('loading-screen').style.display = 'none';
                 document.getElementById('app').style.display = 'block';
                 
-                // Verificar que la clase CromwellWebApp esté disponible
+                // Verificar que las clases necesarias estén disponibles
                 if (typeof CromwellWebApp === 'undefined') {
                     console.error('❌ CromwellWebApp no está definido');
                     showError('Error cargando la aplicación. Por favor, recarga la página.');
+                    return;
+                }
+                
+                if (typeof EtecsaComponent === 'undefined') {
+                    console.error('❌ EtecsaComponent no está definido');
+                    showError('Error cargando componente ETECSA. Por favor, recarga la página.');
                     return;
                 }
                 
