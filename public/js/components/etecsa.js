@@ -33,17 +33,29 @@ class EtecsaComponent {
                 </div>
             `;
 
+            console.log('🔍 Solicitando ofertas ETECSA a la API...');
             const response = await fetch('/api/etecsa-offers');
-            this.offers = await response.json();
-
-            this.renderOffers();
+            
+            if (!response.ok) {
+                throw new Error(`Error HTTP: ${response.status}`);
+            }
+            
+            const data = await response.json();
+            console.log('📦 Respuesta de API:', data);
+            
+            if (data.success && data.offers) {
+                this.offers = data.offers;
+                this.renderOffers();
+            } else {
+                throw new Error(data.error || 'No hay ofertas disponibles');
+            }
         } catch (error) {
             console.error('Error cargando ofertas:', error);
             const offersContainer = document.getElementById('etecsa-offers');
             if (offersContainer) {
                 offersContainer.innerHTML = `
                     <div class="error-message">
-                        <p>❌ Error cargando ofertas ETECSA</p>
+                        <p>❌ Error cargando ofertas ETECSA: ${error.message}</p>
                         <button class="btn-secondary" onclick="window.cromwellApp.etecsa.loadOffers()">🔄 Reintentar</button>
                     </div>
                 `;
@@ -71,22 +83,24 @@ class EtecsaComponent {
                     <div class="offer-header">
                         <div class="offer-icon">📱</div>
                         <div class="offer-info">
-                            <h3 class="offer-name">${offer.name}</h3>
-                            <p class="offer-description">${offer.description || 'Recarga ETECSA'}</p>
+                            <h3 class="offer-name">${offer.name || 'Oferta ETECSA'}</h3>
+                            <p class="offer-description">${offer.description || 'Recarga de saldo'}</p>
                         </div>
                     </div>
                     <div class="offer-prices">
-                        ${offer.prices.map(price => `
+                        ${(offer.prices || []).map(price => `
                             <div class="price-option" 
                                  data-offer-id="${offer.id}" 
                                  data-price-id="${price.id}">
                                 <div class="price-main">
-                                    <span class="price-label">${price.label}</span>
-                                    <span class="price-value">$${price.cup_price} CUP</span>
+                                    <span class="price-label">${price.label || 'Paquete'}</span>
+                                    <span class="price-value">$${price.cup_price || 0} CUP</span>
                                 </div>
-                                <div class="price-details">
-                                    <small>${price.description || ''}</small>
-                                </div>
+                                ${price.original_usdt ? `
+                                    <div class="price-details">
+                                        <small>$${price.original_usdt} USDT</small>
+                                    </div>
+                                ` : ''}
                                 <div class="price-select-btn">
                                     <span>👉 Seleccionar</span>
                                 </div>
@@ -127,7 +141,7 @@ class EtecsaComponent {
         const offer = this.offers.find(o => o.id == offerId);
         if (!offer) return;
 
-        const price = offer.prices.find(p => p.id === priceId);
+        const price = (offer.prices || []).find(p => p.id === priceId);
         if (!price) return;
 
         this.selectedOffer = {
@@ -161,17 +175,17 @@ class EtecsaComponent {
                     </div>
                 </div>
                 <div class="recharge-form">
-                    <h3>${offer.name}</h3>
+                    <h3>${offer.name || 'Recarga'}</h3>
                     
                     <div class="selected-offer-card">
                         <div class="selected-offer-header">
                             <span class="offer-icon">📱</span>
-                            <span class="offer-name">${price.label}</span>
+                            <span class="offer-name">${price.label || 'Paquete'}</span>
                         </div>
                         <div class="selected-offer-details">
                             <div class="price-row">
                                 <span>Precio:</span>
-                                <span class="price-value">$${price.cup_price} CUP</span>
+                                <span class="price-value">$${price.cup_price || 0} CUP</span>
                             </div>
                             ${price.original_usdt ? `
                                 <div class="price-row">
@@ -195,22 +209,25 @@ class EtecsaComponent {
                         </div>
                         <div class="balance-row">
                             <span>Costo recarga:</span>
-                            <span class="balance-value negative">-$${price.cup_price}</span>
+                            <span class="balance-value negative">-$${price.cup_price || 0}</span>
                         </div>
                         <div class="balance-row total">
                             <span>Saldo después:</span>
-                            <span class="balance-value">$${(user.balance_cup || 0) - price.cup_price}</span>
+                            <span class="balance-value">$${(user.balance_cup || 0) - (price.cup_price || 0)}</span>
                         </div>
                     </div>
 
                     <div class="form-group">
                         <label for="etecsa-phone">Número de teléfono destino *</label>
+                        <!-- CAMBIADO: Ahora aceptamos 8 dígitos -->
                         <input type="tel" 
                                id="etecsa-phone" 
-                               placeholder="5351234567" 
-                               maxlength="10"
+                               placeholder="51234567" 
+                               maxlength="8"
+                               pattern="[0-9]{8}"
                                required>
-                        <p class="form-hint">Formato: 10 dígitos, comenzando con 53</p>
+                        <p class="form-hint">Formato: 8 dígitos (ej: 51234567). El sistema automáticamente agregará el prefijo 53.</p>
+                        <p class="form-hint">También puedes poner 10 dígitos con el 53 (ej: 5351234567)</p>
                     </div>
 
                     ${offer.requires_email ? `
@@ -266,10 +283,20 @@ class EtecsaComponent {
         const email = this.selectedOffer.offer.requires_email && emailInput ? 
             emailInput.value.trim() : null;
 
-        // Validaciones
+        // Validaciones del teléfono - AHORA ACEPTA 8 DÍGITOS
         const cleanPhone = phone.replace(/[^\d]/g, '');
-        if (!cleanPhone.startsWith('53') || cleanPhone.length !== 10) {
-            this.app.showToast('❌ Formato de teléfono incorrecto. Debe ser 5351234567', 'error');
+        let fullPhone = '';
+        
+        if (cleanPhone.length === 8) {
+            // Número de 8 dígitos, agregamos 53
+            fullPhone = '53' + cleanPhone;
+            console.log(`✅ Número convertido: ${cleanPhone} -> ${fullPhone}`);
+        } else if (cleanPhone.length === 10 && cleanPhone.startsWith('53')) {
+            // Ya tiene 10 dígitos con 53, lo aceptamos tal cual
+            fullPhone = cleanPhone;
+            console.log(`✅ Número aceptado: ${cleanPhone}`);
+        } else {
+            this.app.showToast('❌ Formato de teléfono incorrecto. Debe ser 8 dígitos (ej: 51234567) o 10 dígitos con 53 (ej: 5351234567)', 'error');
             return;
         }
 
@@ -282,7 +309,7 @@ class EtecsaComponent {
         }
 
         // Verificar saldo
-        const price = this.selectedOffer.price.cup_price;
+        const price = this.selectedOffer.price.cup_price || 0;
         const userBalance = this.app.userData?.balance_cup || 0;
         
         if (userBalance < price) {
@@ -312,7 +339,7 @@ class EtecsaComponent {
                     telegram_id: this.app.userId,
                     offer_id: this.selectedOffer.offer.id,
                     price_id: this.selectedOffer.price.id,
-                    phone: cleanPhone,
+                    phone: fullPhone, // Enviamos el número con 53
                     email: email,
                     amount: price
                 })
@@ -327,7 +354,7 @@ class EtecsaComponent {
             if (data.success) {
                 this.app.showModal({
                     title: '✅ ¡Recarga Exitosa!',
-                    message: `Recarga ETECSA completada\n\nDestino: +${cleanPhone}\nPaquete: ${this.selectedOffer.price.label}\nPrecio: $${price} CUP\nID: ${data.transactionId || 'N/A'}`,
+                    message: `Recarga ETECSA completada\n\nDestino: +${fullPhone}\nPaquete: ${this.selectedOffer.price.label || 'N/A'}\nPrecio: $${price} CUP\nID: ${data.transactionId || 'N/A'}`,
                     icon: '📱',
                     confirmText: 'Aceptar',
                     onConfirm: () => {
