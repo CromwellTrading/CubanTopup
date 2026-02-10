@@ -18,8 +18,6 @@ const cors = require('cors');
 const GameRechargeHandler = require('./game_recharges.js');
 const SokyRecargasHandler = require('./sokyrecargas.js');
 const BolitaHandler = require('./BolitaHandler.js');
-// Nota: El handler de Apuestas Deportivas se agregará después
-// const ApuestasHandler = require('./ApuestasHandler.js');
 
 // ============================================
 // ENVIRONMENT VARIABLES (FROM .env)
@@ -137,8 +135,6 @@ const supabase = createClient(DB_URL, DB_KEY);
 const gameHandler = new GameRechargeHandler(bot, supabase);
 const sokyHandler = new SokyRecargasHandler(bot, supabase);
 const bolitaHandler = new BolitaHandler(bot, supabase);
-// Nota: Inicializar ApuestasHandler después
-// const apuestasHandler = new ApuestasHandler(bot, supabase);
 
 // Global variables
 const activeSessions = {};
@@ -995,6 +991,30 @@ bot.onText(/\/webapp/, async (msg) => {
     });
 });
 
+// Command /bolita - Menú principal de La Bolita
+bot.onText(/\/bolita/, async (msg) => {
+    const chatId = msg.chat.id;
+    const userId = msg.from.id;
+    
+    // Mostrar menú principal de La Bolita
+    await bolitaHandler.mostrarMenuPrincipal(chatId);
+});
+
+// Command /cancelar - Cancelar operación actual
+bot.onText(/\/cancelar/, async (msg) => {
+    const chatId = msg.chat.id;
+    const userId = msg.from.id;
+    
+    // Limpiar sesión activa
+    if (activeSessions[chatId]) {
+        delete activeSessions[chatId];
+    }
+    
+    await bot.sendMessage(chatId, '❌ Operación cancelada. ¿Qué deseas hacer?', {
+        reply_markup: createMainKeyboard()
+    });
+});
+
 // ============================================
 // TELEGRAM BOT - CALLBACK HANDLERS
 // ============================================
@@ -1096,6 +1116,9 @@ bot.on('callback_query', async (query) => {
             case 'view_pending':
                 await handleViewPending(chatId, messageId);
                 break;
+            case 'bolita_menu':
+                await bolitaHandler.mostrarMenuPrincipal(chatId, messageId);
+                break;
             default:
                 console.log(`Acción no reconocida: ${action}`);
         }
@@ -1178,7 +1201,7 @@ async function handleStartBack(chatId, messageId) {
     const message = `✅ *¡Bienvenido de nuevo, ${user.first_name}!*\n\n` +
         `🆔 *Tu ID de Telegram es:* \`${chatId}\`\n\n` +
         `⚠️ *GUARDA ESTE ID* - Lo necesitarás para acceder a la web.\n\n` +
-        `Ahora también puedes use nuestra *WebApp* para una mejor experiencia.\n\n` +
+        `Ahora también puedes usar nuestra *WebApp* para una mejor experiencia.\n\n` +
         `¿Cómo puedo ayudarte hoy?`;
     
     await bot.editMessageText(message, {
@@ -2356,28 +2379,39 @@ bot.on('message', async (msg) => {
     const text = msg.text;
     const session = activeSessions[chatId];
     
-    if (!text || text.startsWith('/')) return;
+    // Si no hay texto o es un comando, manejarlo primero
+    if (!text) return;
+    
+    // Manejar comandos primero
+    if (text.startsWith('/')) {
+        // Comandos ya manejados por bot.onText
+        return;
+    }
     
     try {
-        // 1. Try to handle with gameHandler
-        const handledByGame = await gameHandler.handleMessage(msg);
-        if (handledByGame) {
-            return;
-        }
-        
-        // 2. Try to handle with sokyHandler
-        const handledBySoky = await sokyHandler.handleMessage(chatId, text);
-        if (handledBySoky) {
-            return;
-        }
-        
-        // 3. Try to handle with bolitaHandler
+        // ORDEN CRÍTICO DE HANDLERS PARA EVITAR CONFLICTOS:
+        // 1. Primero: BolitaHandler (tiene su propio sistema de estados)
         const handledByBolita = await bolitaHandler.handleMessage(msg);
         if (handledByBolita) {
+            console.log(`✅ Mensaje manejado por BolitaHandler: ${text.substring(0, 50)}...`);
             return;
         }
         
-        // 4. Process admin sessions
+        // 2. Segundo: GameHandler
+        const handledByGame = await gameHandler.handleMessage(msg);
+        if (handledByGame) {
+            console.log(`✅ Mensaje manejado por GameHandler: ${text.substring(0, 50)}...`);
+            return;
+        }
+        
+        // 3. Tercero: SokyHandler
+        const handledBySoky = await sokyHandler.handleMessage(chatId, text);
+        if (handledBySoky) {
+            console.log(`✅ Mensaje manejado por SokyHandler: ${text.substring(0, 50)}...`);
+            return;
+        }
+        
+        // 4. Procesar sesiones administrativas
         if (session && esAdmin(userId)) {
             switch (session.step) {
                 case 'admin_search_user':
@@ -2387,11 +2421,14 @@ bot.on('message', async (msg) => {
                 case 'admin_contact_user':
                     await handleAdminContactUser(chatId, text, session.targetUserId);
                     break;
+                    
+                default:
+                    console.log(`Paso administrativo no manejado: ${session.step}`);
             }
             return;
         }
         
-        // 5. Process normal bot sessions
+        // 5. Procesar sesiones normales del bot
         if (session) {
             switch (session.step) {
                 case 'waiting_phone':
@@ -2412,6 +2449,20 @@ bot.on('message', async (msg) => {
                     console.log(`Paso no manejado: ${session.step}`);
             }
         }
+        
+        // 6. Si llega aquí y no fue manejado, podría ser un número (para evitar falsos positivos)
+        // Verificar si es admin ingresando resultado de la bolita (7 dígitos)
+        if (esAdmin(userId) && /^\d{7}$/.test(text)) {
+            // Solo sugerir, no procesar automáticamente
+            await bot.sendMessage(chatId,
+                `👑 *¿Es un resultado de La Bolita?*\n\n` +
+                `Detecté un número de 7 dígitos: ${text}\n\n` +
+                `Si quieres cargar este resultado, usa el menú de La Bolita o escribe /bolita`,
+                { parse_mode: 'Markdown' }
+            );
+            return;
+        }
+        
     } catch (error) {
         console.error('Error procesando mensaje:', error);
         await bot.sendMessage(chatId, '❌ Ocurrió un error. Por favor, intenta de nuevo.', {
@@ -2754,7 +2805,7 @@ app.listen(PORT, () => {
     console.log(`💳 Tarjeta para pagos: ${PAGO_CUP_TARJETA ? '✅ Configurada' : '❌ No configurada'}`);
     console.log(`🎮 LioGames: ${LIOGAMES_MEMBER_CODE ? '✅ Configurado' : '❌ No configurado'}`);
     console.log(`📱 SokyRecargas: ${SOKY_API_TOKEN ? '✅ Configurado' : '❌ No configurado'}`);
-    console.log(`🎱 La Bolita: ✅ Integrado`);
+    console.log(`🎱 La Bolita: ✅ Integrado (Sistema propio de estados)`);
     console.log(`⚽ Apuestas Deportivas: 🔜 Próximamente`);
     console.log(`👑 Admin ID: ${BOT_ADMIN_ID ? '✅ Configurado' : '❌ No configurado'}`);
     console.log(`💱 Tasas de cambio:`);
