@@ -259,10 +259,10 @@ class SokyRecargasHandler {
                 message += `📧 *Esta recarga requiere email de Nauta*\n\n`;
             }
             
-            // CAMBIADO: Ahora pedimos 8 dígitos sin el 53
+            // CAMBIADO: Solo pedimos 8 dígitos
             message += `Por favor, escribe el número de teléfono de destino:\n` +
                 `*Formato:* 8 dígitos (ej: 51234567)\n` +
-                `El sistema automáticamente agregará el prefijo 53`;
+                `No incluyas el prefijo 53`;
 
             await this.bot.editMessageText(message, {
                 chat_id: chatId,
@@ -291,28 +291,23 @@ class SokyRecargasHandler {
 
             const cleanPhone = phone.replace(/[^\d]/g, '');
             
-            // CAMBIADO: Ahora aceptamos 8 dígitos y automáticamente agregamos el 53
-            if (cleanPhone.length === 8) {
-                // Número de 8 dígitos, agregamos 53
-                const fullPhone = '53' + cleanPhone;
-                session.phone = fullPhone;
-                console.log(`✅ Número convertido: ${cleanPhone} -> ${fullPhone}`);
-            } else if (cleanPhone.length === 10 && cleanPhone.startsWith('53')) {
-                // Ya tiene 10 dígitos con 53, lo aceptamos tal cual
-                session.phone = cleanPhone;
-                console.log(`✅ Número aceptado: ${cleanPhone}`);
-            } else {
+            // CAMBIADO: Solo aceptamos 8 dígitos exactos
+            if (cleanPhone.length !== 8) {
                 await this.bot.sendMessage(chatId,
                     `❌ *Formato incorrecto*\n\n` +
-                    `Debe tener 8 dígitos (sin el 53).\n\n` +
+                    `Debe tener exactamente 8 dígitos (sin el 53).\n\n` +
                     `Ejemplos válidos:\n` +
-                    `• *51234567* (8 dígitos) → Se convertirá a 5351234567\n` +
-                    `• *5351234567* (10 dígitos con 53) → Se acepta tal cual\n\n` +
-                    `Inténtalo de nuevo:`,
+                    `• *51234567* (8 dígitos) ✅\n` +
+                    `• *59190241* (8 dígitos) ✅\n\n` +
+                    `No incluyas el prefijo 53. Inténtalo de nuevo:`,
                     { parse_mode: 'Markdown' }
                 );
                 return;
             }
+            
+            // Guardamos solo los 8 dígitos
+            session.phone = cleanPhone;
+            console.log(`✅ Número guardado (8 dígitos): ${cleanPhone}`);
 
             if (session.requiresEmail && !email) {
                 session.step = 'waiting_email';
@@ -367,7 +362,7 @@ class SokyRecargasHandler {
                 `🎯 *Oferta:* ${session.offerName}\n` +
                 `💰 *Paquete:* ${session.priceLabel}\n` +
                 `💵 *Precio:* $${session.cupPrice} CUP\n` +
-                `📞 *Teléfono destino:* +${session.phone}\n`;
+                `📞 *Teléfono destino:* 53${session.phone}\n`; // Mostramos con 53 para confirmación
             
             if (email) {
                 confirmMessage += `📧 *Email Nauta:* ${email}\n`;
@@ -424,9 +419,10 @@ class SokyRecargasHandler {
                 return;
             }
 
+            // IMPORTANTE: Enviamos solo los 8 dígitos a SokyRecargas
             const rechargeData = {
                 price_id: session.priceId,
-                recipient: session.phone, // Ya tiene el formato 53XXXXXXXX
+                recipient: session.phone, // Solo 8 dígitos
                 recipient_name: user.first_name || 'Usuario',
                 subscribe: false
             };
@@ -437,11 +433,18 @@ class SokyRecargasHandler {
 
             let sokyResult;
             try {
+                console.log(`📤 Enviando a SokyRecargas:`, {
+                    offer_id: session.offerId,
+                    recipient: session.phone, // 8 dígitos
+                    price_id: session.priceId
+                });
+                
                 const response = await this.api.post(
                     `/api/v1/recharges/offers/${session.offerId}/recharge`,
                     rechargeData
                 );
                 sokyResult = response.data;
+                console.log('✅ Respuesta de SokyRecargas:', sokyResult);
             } catch (error) {
                 console.error('❌ Error en API Soky:', error.response?.data || error.message);
                 throw new Error('Error al procesar la recarga con ETECSA');
@@ -468,7 +471,8 @@ class SokyRecargasHandler {
                     soky_offer_id: session.offerId,
                     soky_price_id: session.priceId,
                     soky_transaction_id: sokyResult.data?.id,
-                    recipient: session.phone,
+                    recipient: session.phone, // Guardamos 8 dígitos en la BD
+                    recipient_full: `53${session.phone}`, // Guardamos también el formato completo
                     email: session.email,
                     offer_name: session.offerName,
                     price_label: session.priceLabel,
@@ -482,7 +486,7 @@ class SokyRecargasHandler {
                 `🎯 *Oferta:* ${session.offerName}\n` +
                 `💰 *Paquete:* ${session.priceLabel}\n` +
                 `💵 *Pagado:* $${session.cupPrice} CUP\n` +
-                `📞 *Teléfono destino:* +${session.phone}\n`;
+                `📞 *Teléfono destino:* 53${session.phone}\n`; // Mostramos con 53 al usuario
             
             if (session.email) {
                 successMessage += `📧 *Email Nauta:* ${session.email}\n`;
@@ -511,7 +515,7 @@ class SokyRecargasHandler {
                 const adminMessage = `📱 *NUEVA RECARGA ETECSA*\n\n` +
                     `👤 Usuario: ${user.first_name} (@${user.username || 'sin usuario'})\n` +
                     `💰 Monto: $${session.cupPrice} CUP ($${session.originalUsdt} USDT)\n` +
-                    `📞 Destino: +${session.phone}\n` +
+                    `📞 Destino: 53${session.phone} (${session.phone} enviado a Soky)\n` +
                     `🎯 Oferta: ${session.offerName}\n` +
                     `🆔 ID Soky: ${sokyResult.data?.id || 'N/A'}`;
                 
