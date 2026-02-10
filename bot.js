@@ -710,7 +710,7 @@ async function obtenerEstadisticasUsuario(userId) {
     }
 }
 
-// Admin panel keyboard
+// Admin panel keyboard - ACTUALIZADO SIN BOTONES DE CREAR SEÑAL Y CREAR PLAN
 const createAdminKeyboard = () => ({
     inline_keyboard: [
         [
@@ -723,7 +723,7 @@ const createAdminKeyboard = () => ({
         ],
         [
             { text: '💰 Ver Pagos Pendientes', callback_data: 'admin_pending_payments' },
-            { text: '📈 Señales Trading', callback_data: 'admin_trading_signals' }
+            { text: '📈 Señales Trading', callback_data: 'trading_admin_menu' }
         ],
         [
             { text: '🎱 La Bolita Admin', callback_data: 'bolita_admin_menu' },
@@ -825,7 +825,7 @@ const createWalletKeyboard = () => ({
     ]
 });
 
-// Trading signals keyboard
+// Trading signals keyboard - ACTUALIZADO CON CALLBACKS CORRECTOS
 const createTradingKeyboard = () => ({
     inline_keyboard: [
         [
@@ -1103,7 +1103,7 @@ bot.on('callback_query', async (query) => {
     try {
         await bot.answerCallbackQuery(query.id);
 
-        // Admin functions first
+        // Admin functions first - ACTUALIZADO PARA REDIRIGIR A TRADING_ADMIN_MENU
         if (esAdmin(userId)) {
             const adminHandled = await handleAdminCallbacks(chatId, messageId, userId, data);
             if (adminHandled) return;
@@ -1225,7 +1225,7 @@ bot.on('callback_query', async (query) => {
 });
 
 // ============================================
-// ADMIN CALLBACK HANDLER
+// ADMIN CALLBACK HANDLER - ACTUALIZADO
 // ============================================
 
 async function handleAdminCallbacks(chatId, messageId, adminId, data) {
@@ -1289,11 +1289,24 @@ async function handleAdminCallbacks(chatId, messageId, adminId, data) {
             return true;
             
         case 'admin_trading_signals':
-            await showTradingAdminPanel(chatId, messageId);
+            // REDIRIGIR AL MENÚ DE ADMIN DE TRADING
+            await tradingHandler.showAdminMenu(chatId, messageId);
             return true;
             
         case 'admin_sync_db':
             await syncDatabase(chatId, messageId);
+            return true;
+            
+        // CALLBACKS ANTIGUOS QUE DEBEN SER REDIRIGIDOS
+        case 'admin_trading_create_signal':
+        case 'admin_trading_create_plan':
+        case 'admin_trading_view_plans':
+            // Redirigir al menú principal de admin de trading
+            await tradingHandler.showAdminMenu(chatId, messageId);
+            return true;
+            
+        case 'bolita_admin_menu':
+            await bolitaHandler.mostrarMenuAdmin(chatId, messageId);
             return true;
     }
     
@@ -1360,27 +1373,8 @@ async function handleApuestasMenu(chatId, messageId) {
 }
 
 async function handleTradingMenu(chatId, messageId) {
-    const message = `📈 *Señales de Trading*\n\n` +
-        `Accede a nuestras señales de trading profesionales:\n\n` +
-        `• 📊 Señales en tiempo real\n` +
-        `• 📈 Análisis técnico\n` +
-        `• 💰 Gestión de riesgo\n` +
-        `• 📱 Notificaciones instantáneas\n\n` +
-        `Selecciona una opción:`;
-    
-    if (messageId) {
-        await bot.editMessageText(message, {
-            chat_id: chatId,
-            message_id: messageId,
-            parse_mode: 'Markdown',
-            reply_markup: createTradingKeyboard()
-        });
-    } else {
-        await bot.sendMessage(chatId, message, {
-            parse_mode: 'Markdown',
-            reply_markup: createTradingKeyboard()
-        });
-    }
+    // Delegar al handler de trading
+    await tradingHandler.showTradingMenu(chatId, messageId);
 }
 
 async function handleWallet(chatId, messageId) {
@@ -1807,7 +1801,10 @@ async function handleTerms(chatId, messageId) {
         `   • Servicio de señales de trading profesional\n` +
         `   • Suscripciones por tiempo determinado\n` +
         `   • Las señales son sugerencias, no garantías de ganancia\n` +
-        `   • El trading conlleva riesgos financieros\n\n` +
+        `   • El trading conlleva riesgos financieros\n` +
+        `   • Rentabilidad prometida: +60% semanal\n` +
+        `   • Si baja del 50%, reembolso del 50% (1500 CUP)\n` +
+        `   • Programa de referidos: 20% por cada amigo que se haga VIP\n\n` +
         `8. *SEGURIDAD*:\n` +
         `   • Toma capturas de pantalla de todas las transacciones\n` +
         `   • ETECSA puede fallar con las notificaciones SMS\n` +
@@ -2070,7 +2067,12 @@ async function handleHelpFAQ(chatId, messageId) {
         `5. *¿Qué es La Bolita?*\n` +
         `Sistema de apuestas basado en Florida 3 usando CUP.\n\n` +
         `6. *¿Qué son las Señales de Trading?*\n` +
-        `Señales profesionales para trading con suscripciones.\n\n` +
+        `Señales profesionales para trading con suscripciones.\n` +
+        `• Precio: 3000 CUP mensual\n` +
+        `• Horario: 10am y 10pm (10 señales por sesión)\n` +
+        `• Rentabilidad: +60% semanal garantizado\n` +
+        `• Reembolso: 50% si baja del 50%\n` +
+        `• Referidos: 20% por cada amigo que se haga VIP\n\n` +
         `7. *¿Cómo contacto soporte?*\n` +
         `Usa "📞 Contactar Soporte" o escribe a @admin_username`;
     
@@ -2170,11 +2172,27 @@ async function showTotalStats(chatId, messageId) {
             .select('monto, estado, ganancia')
             .gte('created_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString());
         
+        // Obtener estadísticas de trading
+        const { data: tradingSubscriptions } = await supabase
+            .from('trading_suscripciones')
+            .select('*')
+            .eq('estado', 'activa')
+            .gte('fecha_fin', new Date().toISOString());
+        
+        const { data: tradingSignals } = await supabase
+            .from('trading_senales')
+            .select('*')
+            .gte('created_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString());
+        
         const message = `📊 *ESTADÍSTICAS TOTALES DEL BOT*\n\n` +
             `👥 *Usuarios registrados:* ${users ? users.length : 0}\n` +
             `💰 *Total CUP en el sistema:* ${formatCurrency(stats.totalCUP, 'cup')}\n` +
             `📱 *Total Saldo Móvil:* ${formatCurrency(stats.totalSaldo, 'saldo')}\n` +
             `🎫 *Total CWS (Tokens):* ${stats.totalCWS} CWS\n\n` +
+            `📈 *TRADING:*\n` +
+            `• Usuarios VIP activos: ${tradingSubscriptions ? tradingSubscriptions.length : 0}\n` +
+            `• Señales esta semana: ${tradingSignals ? tradingSignals.length : 0}\n` +
+            `• Ingresos trading: ${tradingSubscriptions ? tradingSubscriptions.reduce((sum, s) => sum + (s.precio_pagado || 0), 0) : 0} CUP\n\n` +
             `📈 *Actividad (últimos 7 días):*\n` +
             `• Transacciones completadas: ${transactions ? transactions.length : 0}\n` +
             `• Apuestas La Bolita: ${bolitaApuestas ? bolitaApuestas.length : 0}\n` +
@@ -2228,11 +2246,16 @@ async function showUserWallet(chatId, messageId, userId) {
             return;
         }
         
+        // Verificar si es VIP
+        const isVIP = await tradingHandler.isUserVIP(userId);
+        const vipInfo = isVIP ? `🎖️ *VIP ACTIVO*` : `🔒 *NO VIP*`;
+        
         const message = `👛 *Billetera del Usuario*\n\n` +
             `👤 *Nombre:* ${user.first_name}\n` +
             `🆔 *ID:* ${user.telegram_id}\n` +
             `📱 *Usuario:* @${user.username || 'N/A'}\n` +
-            `📞 *Teléfono:* ${user.phone_number ? `+53 ${user.phone_number.substring(2)}` : 'No vinculado'}\n\n` +
+            `📞 *Teléfono:* ${user.phone_number ? `+53 ${user.phone_number.substring(2)}` : 'No vinculado'}\n` +
+            `📊 *Estado Trading:* ${vipInfo}\n\n` +
             `💰 *CUP:* **${formatCurrency(user.balance_cup, 'cup')}**\n` +
             `📱 *Saldo Móvil:* **${formatCurrency(user.balance_saldo, 'saldo')}**\n` +
             `🎫 *CWS (Tokens):* **${user.tokens_cws || 0}**\n\n` +
@@ -2400,73 +2423,8 @@ async function showUserBets(chatId, messageId, userId) {
 
 async function showUserTrading(chatId, messageId, userId) {
     try {
-        const { data: subscriptions } = await supabase
-            .from('trading_suscripciones')
-            .select('*, trading_planes(nombre, precio, duracion_dias)')
-            .eq('user_id', userId)
-            .order('created_at', { ascending: false });
-        
-        const { data: signals } = await supabase
-            .from('trading_senales_usuario')
-            .select('*, trading_senales(par, direccion, precio_entrada, take_profit, stop_loss)')
-            .eq('user_id', userId)
-            .order('created_at', { ascending: false })
-            .limit(10);
-        
-        let message = `📈 *Señales de Trading - Usuario*\n\n` +
-            `👤 Usuario ID: ${userId}\n\n`;
-        
-        if (!subscriptions || subscriptions.length === 0) {
-            message += `📭 *No tiene suscripciones activas*\n\n`;
-        } else {
-            message += `📋 *SUSCRIPCIONES:*\n`;
-            
-            subscriptions.forEach((sub, index) => {
-                const activa = new Date(sub.fecha_fin) > new Date();
-                const estado = activa ? '✅ Activa' : '❌ Expirada';
-                
-                message += `${index + 1}. *${sub.trading_planes?.nombre || 'Plan'}*\n`;
-                message += `   💰 ${sub.precio_pagado} CUP\n`;
-                message += `   📅 Inicio: ${new Date(sub.fecha_inicio).toLocaleDateString()}\n`;
-                message += `   📅 Fin: ${new Date(sub.fecha_fin).toLocaleDateString()}\n`;
-                message += `   📊 ${estado}\n`;
-                message += `   ---\n`;
-            });
-        }
-        
-        if (signals && signals.length > 0) {
-            message += `\n📊 *SEÑALES RECIBIDAS:*\n`;
-            
-            signals.slice(0, 5).forEach((signal, index) => {
-                const ganada = signal.resultado === 'ganada';
-                const perdida = signal.resultado === 'perdida';
-                const pendiente = !signal.resultado;
-                
-                let emoji = '⏳';
-                if (ganada) emoji = '✅';
-                if (perdida) emoji = '❌';
-                
-                message += `${index + 1}. ${emoji} *${signal.trading_senales?.par || 'Par'}*\n`;
-                message += `   📈 ${signal.trading_senales?.direccion || ''}\n`;
-                if (signal.trading_senales?.precio_entrada) {
-                    message += `   💰 Entrada: ${signal.trading_senales.precio_entrada}\n`;
-                }
-                if (signal.resultado) {
-                    message += `   🎯 Resultado: ${signal.resultado}\n`;
-                }
-                message += `   📅 ${new Date(signal.created_at).toLocaleDateString()}\n`;
-                message += `   ---\n`;
-            });
-        } else {
-            message += `\n📭 *No ha recibido señales aún*`;
-        }
-        
-        await bot.editMessageText(message, {
-            chat_id: chatId,
-            message_id: messageId,
-            parse_mode: 'Markdown',
-            reply_markup: createUserSearchKeyboard(userId)
-        });
+        // Delegar al handler de trading
+        await tradingHandler.showUserTrading(chatId, messageId, userId);
     } catch (error) {
         console.error('Error showing user trading:', error);
         await bot.editMessageText('❌ Error al obtener información de trading del usuario.', {
@@ -2726,46 +2684,6 @@ async function showPendingPayments(chatId, messageId) {
             message_id: messageId,
             parse_mode: 'Markdown',
             reply_markup: createAdminKeyboard()
-        });
-    }
-}
-
-async function showTradingAdminPanel(chatId, messageId) {
-    const teclado = {
-        inline_keyboard: [
-            [
-                { text: '📊 Estadísticas Trading', callback_data: 'admin_trading_stats' },
-                { text: '👥 Usuarios Suscritos', callback_data: 'admin_trading_users' }
-            ],
-            [
-                { text: '📈 Crear Nueva Señal', callback_data: 'admin_trading_create_signal' },
-                { text: '📋 Ver Señales Activas', callback_data: 'admin_trading_active_signals' }
-            ],
-            [
-                { text: '💰 Crear Plan', callback_data: 'admin_trading_create_plan' },
-                { text: '📋 Ver Planes', callback_data: 'admin_trading_view_plans' }
-            ],
-            [
-                { text: '🔙 Volver al Panel Admin', callback_data: 'admin_panel' }
-            ]
-        ]
-    };
-
-    const message = `📈 *Panel de Administración - Señales de Trading*\n\n` +
-        `Gestiona todas las funciones relacionadas con señales de trading.\n\n` +
-        `Selecciona una opción:`;
-
-    if (messageId) {
-        await bot.editMessageText(message, {
-            chat_id: chatId,
-            message_id: messageId,
-            parse_mode: 'Markdown',
-            reply_markup: teclado
-        });
-    } else {
-        await bot.sendMessage(chatId, message, {
-            parse_mode: 'Markdown',
-            reply_markup: teclado
         });
     }
 }
@@ -3408,8 +3326,8 @@ app.listen(PORT, () => {
     console.log(`💳 Tarjeta para pagos: ${PAGO_CUP_TARJETA ? '✅ Configurada' : '❌ No configurada'}`);
     console.log(`🎮 LioGames: ${LIOGAMES_MEMBER_CODE ? '✅ Configurado' : '❌ No configurado'}`);
     console.log(`📱 SokyRecargas: ${SOKY_API_TOKEN ? '✅ Configurado' : '❌ No configurado'}`);
-    console.log(`🎱 La Bolita: ✅ Integrado (Sistema propio de estados)`);
-    console.log(`⚽ Apuestas Deportivas: 🔜 Próximamente`);
+    console.log(`🎱 La Bolita: ✅ Integrado`);
+    console.log(`📈 Trading Signals: ✅ Integrado con todas las funcionalidades`);
     console.log(`👑 Admin ID: ${BOT_ADMIN_ID ? '✅ Configurado' : '❌ No configurado'}`);
     console.log(`💱 Tasas de cambio:`);
     console.log(`   • USDT 0-30: $${USDT_RATE_0_30} CUP`);
