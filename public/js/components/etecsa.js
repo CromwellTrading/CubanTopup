@@ -219,15 +219,15 @@ class EtecsaComponent {
 
                     <div class="form-group">
                         <label for="etecsa-phone">Número de teléfono destino *</label>
-                        <!-- CAMBIADO: Ahora aceptamos 8 dígitos -->
+                        <!-- CAMBIADO: Solo 8 dígitos, no se agrega 53 -->
                         <input type="tel" 
                                id="etecsa-phone" 
                                placeholder="51234567" 
                                maxlength="8"
                                pattern="[0-9]{8}"
                                required>
-                        <p class="form-hint">Formato: 8 dígitos (ej: 51234567). El sistema automáticamente agregará el prefijo 53.</p>
-                        <p class="form-hint">También puedes poner 10 dígitos con el 53 (ej: 5351234567)</p>
+                        <p class="form-hint">Formato: 8 dígitos exactos (ej: 51234567, 59190241)</p>
+                        <p class="form-hint"><strong>No incluyas el prefijo 53</strong></p>
                     </div>
 
                     ${offer.requires_email ? `
@@ -283,22 +283,16 @@ class EtecsaComponent {
         const email = this.selectedOffer.offer.requires_email && emailInput ? 
             emailInput.value.trim() : null;
 
-        // Validaciones del teléfono - AHORA ACEPTA 8 DÍGITOS
+        // Validaciones del teléfono - AHORA SOLO 8 DÍGITOS EXACTOS
         const cleanPhone = phone.replace(/[^\d]/g, '');
-        let fullPhone = '';
         
-        if (cleanPhone.length === 8) {
-            // Número de 8 dígitos, agregamos 53
-            fullPhone = '53' + cleanPhone;
-            console.log(`✅ Número convertido: ${cleanPhone} -> ${fullPhone}`);
-        } else if (cleanPhone.length === 10 && cleanPhone.startsWith('53')) {
-            // Ya tiene 10 dígitos con 53, lo aceptamos tal cual
-            fullPhone = cleanPhone;
-            console.log(`✅ Número aceptado: ${cleanPhone}`);
-        } else {
-            this.app.showToast('❌ Formato de teléfono incorrecto. Debe ser 8 dígitos (ej: 51234567) o 10 dígitos con 53 (ej: 5351234567)', 'error');
+        if (cleanPhone.length !== 8) {
+            this.app.showToast('❌ Formato de teléfono incorrecto. Debe tener exactamente 8 dígitos (ej: 51234567). No incluyas el prefijo 53.', 'error');
             return;
         }
+        
+        // Guardamos solo los 8 dígitos
+        console.log(`✅ Número guardado (8 dígitos): ${cleanPhone}`);
 
         if (this.selectedOffer.offer.requires_email && email) {
             const emailRegex = /^[a-zA-Z0-9._%+-]+@nauta\.(com\.cu|cu)$/i;
@@ -339,7 +333,7 @@ class EtecsaComponent {
                     telegram_id: this.app.userId,
                     offer_id: this.selectedOffer.offer.id,
                     price_id: this.selectedOffer.price.id,
-                    phone: fullPhone, // Enviamos el número con 53
+                    phone: cleanPhone, // Enviamos SOLO los 8 dígitos
                     email: email,
                     amount: price
                 })
@@ -354,7 +348,7 @@ class EtecsaComponent {
             if (data.success) {
                 this.app.showModal({
                     title: '✅ ¡Recarga Exitosa!',
-                    message: `Recarga ETECSA completada\n\nDestino: +${fullPhone}\nPaquete: ${this.selectedOffer.price.label || 'N/A'}\nPrecio: $${price} CUP\nID: ${data.transactionId || 'N/A'}`,
+                    message: `Recarga ETECSA completada\n\nDestino: 53${cleanPhone}\nPaquete: ${this.selectedOffer.price.label || 'N/A'}\nPrecio: $${price} CUP\nID: ${data.transactionId || 'N/A'}`,
                     icon: '📱',
                     confirmText: 'Aceptar',
                     onConfirm: () => {
