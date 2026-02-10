@@ -1,12 +1,10 @@
-// webapp.js - WebApp principal para Cromwell Store (VERSIÓN MEJORADA)
+// webapp.js - WebApp principal para Cromwell Store (VERSIÓN MEJORADA Y CORREGIDA)
 class CromwellWebApp {
     constructor() {
         console.log('🔄 Constructor CromwellWebApp llamado');
         
         // Obtener userId de variable global
         this.userId = window.TELEGRAM_USER_ID;
-        // En CromwellWebApp constructor:
-        this.etecsa = new EtecsaComponent(this);
         
         // Fallbacks
         if (!this.userId) {
@@ -31,6 +29,7 @@ class CromwellWebApp {
         this.selectedGame = null;
         this.selectedVariation = null;
         this.selectedOffer = null;
+        this.etecsa = null; // Componente ETECSA
         
         // Variables globales de configuración
         window.PAGO_CUP_TARJETA = '';
@@ -75,6 +74,14 @@ class CromwellWebApp {
             
             // Cargar datos del usuario
             await this.loadUserData();
+            
+            // Inicializar componente ETECSA
+            if (typeof EtecsaComponent !== 'undefined') {
+                this.etecsa = new EtecsaComponent(this);
+                console.log('✅ Componente ETECSA inicializado');
+            } else {
+                console.error('❌ EtecsaComponent no está definido');
+            }
             
             // Configurar navegación
             this.setupNavigation();
@@ -358,6 +365,22 @@ class CromwellWebApp {
             });
         }
         
+        // Eventos específicos de ETECSA
+        const refreshEtecsa = document.getElementById('refresh-etecsa');
+        if (refreshEtecsa) {
+            refreshEtecsa.addEventListener('click', () => {
+                this.loadEtecsaOffers();
+            });
+        }
+        
+        // Eventos de historial
+        const refreshHistory = document.getElementById('refresh-history');
+        if (refreshHistory) {
+            refreshHistory.addEventListener('click', () => {
+                this.loadHistory();
+            });
+        }
+        
         console.log('✅ Eventos inicializados');
     }
 
@@ -602,14 +625,8 @@ class CromwellWebApp {
                     this.loadGames();
                     break;
                 case 'etecsa':
-    if (this.etecsa) {
-        this.etecsa.loadOffers();
-    } else {
-        // Si no está inicializado el componente, inicialízalo primero
-        this.etecsa = new EtecsaComponent(this);
-        this.etecsa.loadOffers();
-    }
-    break;
+                    this.loadEtecsaOffers();
+                    break;
                 case 'history':
                     this.loadHistory();
                     break;
@@ -743,11 +760,11 @@ class CromwellWebApp {
         // Mostrar/ocultar información de bono
         const bonusInfo = document.getElementById('bonus-info');
         const hasBonus = method === 'cup' ? 
-            (this.userData?.first_dep_cup || false) : 
-            (this.userData?.first_dep_saldo || false);
+            (this.userData?.first_dep_cup !== false) : // true si es primer depósito o undefined
+            (this.userData?.first_dep_saldo !== false);
         
         if (bonusInfo) {
-            if (!hasBonus) {
+            if (hasBonus) {
                 bonusInfo.style.display = 'block';
                 const bonusPercent = document.getElementById('bonus-percent');
                 if (bonusPercent) bonusPercent.textContent = '10%';
@@ -759,7 +776,7 @@ class CromwellWebApp {
         this.currentAction = {
             type: 'deposit',
             method: method,
-            hasBonus: !hasBonus // Primer depósito = tiene bono
+            hasBonus: hasBonus // Primer depósito = tiene bono
         };
         
         // Calcular bono inicial
@@ -1261,6 +1278,7 @@ class CromwellWebApp {
         }
     }
 
+    // ===== FUNCIONALIDAD DE ETECSA =====
     async loadEtecsaOffers() {
         try {
             const offersContainer = document.getElementById('etecsa-offers');
@@ -1274,109 +1292,210 @@ class CromwellWebApp {
                 throw new Error(`Error HTTP: ${response.status}`);
             }
             
-            const offers = await response.json();
+            const data = await response.json();
             this.hideLoading();
             
-            offersContainer.innerHTML = '';
-
-            if (!offers || offers.length === 0) {
-                offersContainer.innerHTML = '<div class="info-card"><p>No hay ofertas disponibles en este momento.</p></div>';
-                return;
+            if (!data.success || !data.offers) {
+                throw new Error(data.error || 'No hay ofertas disponibles');
             }
-
-            offers.forEach(offer => {
-                const offerCard = document.createElement('div');
-                offerCard.className = 'offer-card';
-                offerCard.dataset.offerId = offer.id;
-                offerCard.innerHTML = `
-                    <div class="offer-header">
-                        <div class="offer-icon">📱</div>
-                        <div class="offer-name">${offer.name || 'Oferta'}</div>
-                    </div>
-                    <div class="offer-prices">
-                        ${(offer.prices || []).map(price => `
-                            <div class="offer-price" data-price-id="${price.id}">
-                                <span>${price.label || 'Paquete'}</span>
-                                <span class="price-value">$${price.cup_price || 0} CUP</span>
-                            </div>
-                        `).join('')}
-                    </div>
-                `;
-
-                offerCard.addEventListener('click', (e) => {
-                    if (e.target.closest('.offer-price')) {
-                        const priceId = e.target.closest('.offer-price').dataset.priceId;
-                        this.selectEtecsaOffer(offer, priceId);
-                    }
-                });
-
-                offersContainer.appendChild(offerCard);
-            });
+            
+            // Usar el componente ETECSA si está disponible, sino usar método propio
+            if (this.etecsa && typeof this.etecsa.loadOffers === 'function') {
+                this.etecsa.loadOffers();
+            } else {
+                this.renderEtecsaOffers(data.offers);
+            }
         } catch (error) {
             console.error('Error cargando ofertas:', error);
             this.hideLoading();
             const offersContainer = document.getElementById('etecsa-offers');
             if (offersContainer) {
-                offersContainer.innerHTML = 
-                    '<div class="error-card"><p>Error cargando ofertas</p></div>';
+                offersContainer.innerHTML = `
+                    <div class="error-message">
+                        <p>❌ Error cargando ofertas ETECSA: ${error.message}</p>
+                        <button class="btn-secondary" onclick="window.cromwellApp.loadEtecsaOffers()">🔄 Reintentar</button>
+                    </div>
+                `;
             }
             this.showToast('❌ Error cargando ofertas ETECSA', 'error');
         }
     }
 
-    selectEtecsaOffer(offer, priceId) {
-        this.selectedOffer = { offer, priceId };
+    renderEtecsaOffers(offers) {
+        const offersContainer = document.getElementById('etecsa-offers');
+        if (!offersContainer) return;
+        
+        if (!offers || offers.length === 0) {
+            offersContainer.innerHTML = `
+                <div class="info-card">
+                    <p>No hay ofertas disponibles en este momento.</p>
+                </div>
+            `;
+            return;
+        }
+
+        let html = '';
+        offers.forEach(offer => {
+            html += `
+                <div class="offer-card">
+                    <div class="offer-header">
+                        <div class="offer-icon">📱</div>
+                        <div class="offer-info">
+                            <h3 class="offer-name">${offer.name || 'Oferta ETECSA'}</h3>
+                            <p class="offer-description">${offer.description || 'Recarga de saldo'}</p>
+                        </div>
+                    </div>
+                    <div class="offer-prices">
+                        ${(offer.prices || []).map(price => `
+                            <div class="price-option" 
+                                 data-offer-id="${offer.id}" 
+                                 data-price-id="${price.id}">
+                                <div class="price-main">
+                                    <span class="price-label">${price.label || 'Paquete'}</span>
+                                    <span class="price-value">$${price.cup_price || 0} CUP</span>
+                                </div>
+                                ${price.original_usdt ? `
+                                    <div class="price-details">
+                                        <small>$${price.original_usdt} USDT</small>
+                                    </div>
+                                ` : ''}
+                                <div class="price-select-btn">
+                                    <span>👉 Seleccionar</span>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+        });
+
+        offersContainer.innerHTML = html;
+
+        // Event listeners para seleccionar oferta
+        document.querySelectorAll('.price-option').forEach(priceElement => {
+            priceElement.addEventListener('click', (e) => {
+                // Remover selección anterior
+                document.querySelectorAll('.price-option').forEach(el => {
+                    el.classList.remove('selected');
+                });
+                
+                // Seleccionar actual
+                priceElement.classList.add('selected');
+                
+                const offerId = priceElement.dataset.offerId;
+                const priceId = priceElement.dataset.priceId;
+                
+                // Añadir animación
+                priceElement.style.animation = 'pulse 0.5s ease';
+                setTimeout(() => {
+                    priceElement.style.animation = '';
+                    this.selectEtecsaOffer(offerId, priceId, offers);
+                }, 300);
+            });
+        });
+    }
+
+    selectEtecsaOffer(offerId, priceId, offers) {
+        const offer = offers.find(o => o.id == offerId);
+        if (!offer) return;
+
+        const price = (offer.prices || []).find(p => p.id === priceId);
+        if (!price) return;
+
+        this.selectedOffer = {
+            offer: offer,
+            price: price
+        };
+
         this.showEtecsaForm();
     }
 
     showEtecsaForm() {
         const offersContainer = document.getElementById('etecsa-offers');
         const etecsaForm = document.getElementById('etecsa-form');
-        
+
         if (offersContainer) offersContainer.classList.add('hidden');
         if (etecsaForm) {
             etecsaForm.classList.remove('hidden');
             etecsaForm.style.animation = 'screenEnter 0.3s ease';
-            
-            const price = (this.selectedOffer.offer.prices || []).find(p => p.id === this.selectedOffer.priceId);
-            
+
+            const offer = this.selectedOffer.offer;
+            const price = this.selectedOffer.price;
+            const user = this.userData || { balance_cup: 0 };
+
             etecsaForm.innerHTML = `
                 <div class="screen-header">
-                    <h2>📱 Recarga ETECSA</h2>
-                    <button class="btn-secondary" id="back-to-offers">← Volver</button>
+                    <div class="header-left">
+                        <button class="btn-icon" id="back-to-offers">
+                            <span class="icon">←</span>
+                        </button>
+                        <h2>📱 Recarga ETECSA</h2>
+                    </div>
                 </div>
                 <div class="recharge-form">
-                    <h3>${this.selectedOffer.offer.name || 'Oferta'}</h3>
-                    <div class="price-summary">
-                        <div class="price-row">
-                            <span>Paquete:</span>
-                            <span class="price-value">${price?.label || 'N/A'}</span>
+                    <h3>${offer.name || 'Recarga'}</h3>
+                    
+                    <div class="selected-offer-card">
+                        <div class="selected-offer-header">
+                            <span class="offer-icon">📱</span>
+                            <span class="offer-name">${price.label || 'Paquete'}</span>
                         </div>
-                        <div class="price-row">
-                            <span>Precio:</span>
-                            <span class="price-value">$${price?.cup_price || 0} CUP</span>
+                        <div class="selected-offer-details">
+                            <div class="price-row">
+                                <span>Precio:</span>
+                                <span class="price-value">$${price.cup_price || 0} CUP</span>
+                            </div>
+                            ${price.original_usdt ? `
+                                <div class="price-row">
+                                    <span>Valor original:</span>
+                                    <span class="price-value">$${price.original_usdt} USDT</span>
+                                </div>
+                            ` : ''}
                         </div>
                     </div>
-                    
-                    <div class="form-group">
-                        <label for="etecsa-phone">Número de teléfono destino:</label>
-                        <input type="tel" id="etecsa-phone" placeholder="5351234567" maxlength="10">
-                        <p class="form-hint">Formato: 10 dígitos, comenzando con 53</p>
-                    </div>
-                    
-                    ${this.selectedOffer.offer.requires_email ? `
-                        <div class="form-group">
-                            <label for="etecsa-email">Email de Nauta:</label>
-                            <input type="email" id="etecsa-email" placeholder="usuario@nauta.com.cu">
-                            <p class="form-hint">Requerido para esta recarga</p>
+
+                    ${offer.requires_email ? `
+                        <div class="warning-note">
+                            ⚠️ Esta recarga requiere email de Nauta
                         </div>
                     ` : ''}
-                    
+
                     <div class="balance-check">
-                        <p>Tu saldo CUP: <strong>$${this.userData?.balance_cup || 0}</strong></p>
-                        <p>Saldo después: <strong>$${(this.userData?.balance_cup || 0) - (price?.cup_price || 0)}</strong></p>
+                        <div class="balance-row">
+                            <span>Tu saldo CUP:</span>
+                            <span class="balance-value">$${user.balance_cup || 0}</span>
+                        </div>
+                        <div class="balance-row">
+                            <span>Costo recarga:</span>
+                            <span class="balance-value negative">-$${price.cup_price || 0}</span>
+                        </div>
+                        <div class="balance-row total">
+                            <span>Saldo después:</span>
+                            <span class="balance-value">$${(user.balance_cup || 0) - (price.cup_price || 0)}</span>
+                        </div>
                     </div>
-                    
+
+                    <div class="form-group">
+                        <label for="etecsa-phone">Número de teléfono destino *</label>
+                        <input type="tel" 
+                               id="etecsa-phone" 
+                               placeholder="5351234567" 
+                               maxlength="10"
+                               required>
+                        <p class="form-hint">Formato: 10 dígitos, comenzando con 53</p>
+                    </div>
+
+                    ${offer.requires_email ? `
+                        <div class="form-group">
+                            <label for="etecsa-email">Email de Nauta *</label>
+                            <input type="email" 
+                                   id="etecsa-email" 
+                                   placeholder="usuario@nauta.com.cu"
+                                   required>
+                            <p class="form-hint">Ejemplo: usuario@nauta.com.cu</p>
+                        </div>
+                    ` : ''}
+
                     <div class="form-actions">
                         <button class="btn-primary" id="confirm-etecsa">✅ Confirmar Recarga</button>
                         <button class="btn-secondary" id="cancel-etecsa">❌ Cancelar</button>
@@ -1384,6 +1503,7 @@ class CromwellWebApp {
                 </div>
             `;
 
+            // Event listeners
             const backButton = document.getElementById('back-to-offers');
             const cancelButton = document.getElementById('cancel-etecsa');
             const confirmButton = document.getElementById('confirm-etecsa');
@@ -1404,38 +1524,51 @@ class CromwellWebApp {
 
             if (confirmButton) {
                 confirmButton.addEventListener('click', () => {
-                    this.confirmEtecsaRecharge(price);
+                    this.confirmEtecsaRecharge();
                 });
             }
         }
     }
 
-    async confirmEtecsaRecharge(price) {
+    async confirmEtecsaRecharge() {
         const phoneInput = document.getElementById('etecsa-phone');
-        const phone = phoneInput ? phoneInput.value : null;
-        const email = this.selectedOffer.offer.requires_email ? 
-            (document.getElementById('etecsa-email')?.value || null) : null;
+        const emailInput = document.getElementById('etecsa-email');
+        
+        const phone = phoneInput ? phoneInput.value.trim() : '';
+        const email = this.selectedOffer.offer.requires_email && emailInput ? 
+            emailInput.value.trim() : null;
 
-        // Validar teléfono
-        const cleanPhone = phone ? phone.replace(/[^\d]/g, '') : '';
+        // Validaciones
+        const cleanPhone = phone.replace(/[^\d]/g, '');
         if (!cleanPhone.startsWith('53') || cleanPhone.length !== 10) {
-            this.showToast('❌ Formato de teléfono incorrecto', 'error');
+            this.showToast('❌ Formato de teléfono incorrecto. Debe ser 5351234567', 'error');
             return;
         }
 
-        // Validar email si es requerido
         if (this.selectedOffer.offer.requires_email && email) {
             const emailRegex = /^[a-zA-Z0-9._%+-]+@nauta\.(com\.cu|cu)$/i;
             if (!emailRegex.test(email)) {
-                this.showToast('❌ Email de Nauta inválido', 'error');
+                this.showToast('❌ Email de Nauta inválido. Formato: usuario@nauta.com.cu', 'error');
                 return;
             }
         }
 
         // Verificar saldo
-        const priceCup = price?.cup_price || 0;
-        if ((this.userData?.balance_cup || 0) < priceCup) {
-            this.showToast('❌ Saldo CUP insuficiente', 'error');
+        const price = this.selectedOffer.price.cup_price || 0;
+        const userBalance = this.userData?.balance_cup || 0;
+        
+        if (userBalance < price) {
+            const faltante = price - userBalance;
+            this.showModal({
+                title: '❌ Saldo Insuficiente',
+                message: `Necesitas $${price} CUP\nTienes: $${userBalance} CUP\nFaltan: $${faltante} CUP\n\nRecarga tu billetera primero.`,
+                icon: '💰',
+                confirmText: 'Recargar Billetera',
+                onConfirm: () => {
+                    this.hideModal('confirm-modal');
+                    this.showScreen('recharge');
+                }
+            });
             return;
         }
 
@@ -1450,10 +1583,10 @@ class CromwellWebApp {
                 body: JSON.stringify({
                     telegram_id: this.userId,
                     offer_id: this.selectedOffer.offer.id,
-                    price_id: this.selectedOffer.priceId,
+                    price_id: this.selectedOffer.price.id,
                     phone: cleanPhone,
                     email: email,
-                    amount: priceCup
+                    amount: price
                 })
             });
 
@@ -1466,7 +1599,7 @@ class CromwellWebApp {
             if (data.success) {
                 this.showModal({
                     title: '✅ ¡Recarga Exitosa!',
-                    message: `Recarga ETECSA completada\n\nDestino: +${cleanPhone}\nPaquete: ${price?.label || 'N/A'}\nPrecio: $${priceCup} CUP\n\nID Transacción: ${data.transactionId || 'N/A'}`,
+                    message: `Recarga ETECSA completada\n\nDestino: +${cleanPhone}\nPaquete: ${this.selectedOffer.price.label || 'N/A'}\nPrecio: $${price} CUP\nID: ${data.transactionId || 'N/A'}`,
                     icon: '📱',
                     confirmText: 'Aceptar',
                     onConfirm: () => {
@@ -1486,6 +1619,7 @@ class CromwellWebApp {
         }
     }
 
+    // ===== FUNCIONALIDAD DE HISTORIAL =====
     async loadHistory() {
         try {
             const historyList = document.getElementById('history-list');
@@ -1678,118 +1812,26 @@ class CromwellWebApp {
         });
     }
 
+    // ===== FUNCIONALIDAD DE PAGOS PENDIENTES =====
     async loadPendingPayments() {
         try {
             const pendingList = document.getElementById('pending-list');
             if (!pendingList) return;
             
-            this.showLoading('Cargando pagos pendientes...');
-            
-            const response = await fetch(`/api/pending-payments?telegram_id=${this.userId}`);
-            
-            if (!response.ok) {
-                throw new Error(`Error HTTP: ${response.status}`);
-            }
-            
-            const pendingPayments = await response.json();
-            this.hideLoading();
-            
-            pendingList.innerHTML = '';
-            
-            if (!pendingPayments || pendingPayments.length === 0) {
-                pendingList.innerHTML = '<div class="info-card"><p>No hay pagos pendientes de reclamar.</p></div>';
-                return;
-            }
-            
-            pendingPayments.forEach(payment => {
-                const paymentCard = document.createElement('div');
-                paymentCard.className = 'payment-card';
-                paymentCard.innerHTML = `
-                    <div class="payment-header">
-                        <div class="payment-type">
-                            <span>💰</span>
-                            <span>${payment.method === 'cup' ? 'CUP' : 'Saldo Móvil'}</span>
-                        </div>
-                        <div class="payment-amount">$${payment.amount}</div>
-                    </div>
-                    <div class="payment-details">
-                        <div class="detail-item">
-                            <span class="detail-label">Fecha:</span>
-                            <span class="detail-value">${new Date(payment.created_at).toLocaleDateString('es-ES')}</span>
-                        </div>
-                        <div class="detail-item">
-                            <span class="detail-label">ID:</span>
-                            <span class="detail-value"><code>${payment.tx_id || 'N/A'}</code></span>
-                        </div>
-                    </div>
-                    <button class="btn-primary claim-payment-btn" data-payment-id="${payment.id}">
-                        🎁 Reclamar
-                    </button>
-                `;
-                
-                pendingList.appendChild(paymentCard);
-            });
-            
-            // Configurar eventos para reclamar pagos
-            document.querySelectorAll('.claim-payment-btn').forEach(btn => {
-                btn.addEventListener('click', (e) => {
-                    const paymentId = e.currentTarget.dataset.paymentId;
-                    this.claimPendingPayment(paymentId);
-                });
-            });
+            // Por ahora, solo mostrar el formulario de búsqueda
+            pendingList.innerHTML = `
+                <div class="info-card">
+                    <p>Para buscar pagos pendientes, usa el formulario de búsqueda.</p>
+                </div>
+            `;
             
         } catch (error) {
             console.error('Error cargando pagos pendientes:', error);
-            this.hideLoading();
             const pendingList = document.getElementById('pending-list');
             if (pendingList) {
                 pendingList.innerHTML = 
                     '<div class="error-card"><p>Error cargando pagos pendientes</p></div>';
             }
-        }
-    }
-
-    async claimPendingPayment(paymentId) {
-        try {
-            this.showLoading('Reclamando pago...');
-
-            const response = await fetch('/api/claim-payment', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    telegram_id: this.userId,
-                    payment_id: paymentId
-                })
-            });
-
-            if (!response.ok) {
-                throw new Error(`Error HTTP: ${response.status}`);
-            }
-
-            const data = await response.json();
-
-            if (data.success) {
-                this.showModal({
-                    title: '✅ ¡Pago Reclamado!',
-                    message: `Pago procesado correctamente\n\nMonto: $${data.amount || 0} ${data.currency || ''}\n\nEl saldo ha sido acreditado a tu billetera.`,
-                    icon: '💰',
-                    confirmText: 'Aceptar',
-                    onConfirm: () => {
-                        this.hideModal('confirm-modal');
-                        this.loadPendingPayments();
-                        this.loadUserData();
-                    }
-                });
-            } else {
-                this.showToast(`❌ ${data.message || 'Error al reclamar pago'}`, 'error');
-            }
-        } catch (error) {
-            console.error('Error reclamando pago:', error);
-            this.showToast('❌ Error de conexión: ' + error.message, 'error');
-        } finally {
-            this.hideLoading();
         }
     }
 
@@ -1845,6 +1887,7 @@ class CromwellWebApp {
         }
     }
 
+    // ===== FUNCIONALIDAD DE CAMBIO DE TELÉFONO =====
     showPhoneModal() {
         const currentPhoneDisplay = document.getElementById('current-phone-display');
         const newPhoneInput = document.getElementById('new-phone');
@@ -1905,6 +1948,7 @@ class CromwellWebApp {
         }
     }
 
+    // ===== FUNCIONALIDAD DE MODALES Y NOTIFICACIONES =====
     showModal(options) {
         if (typeof options === 'string') {
             // Mostrar modal por ID
