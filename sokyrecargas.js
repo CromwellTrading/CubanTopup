@@ -1,6 +1,7 @@
 require('dotenv').config();
 const axios = require('axios');
-
+const bot = require('../bot');
+const db = require('../database');
 class SokyRecargasHandler {
     constructor(bot, supabase) {
         this.bot = bot;
