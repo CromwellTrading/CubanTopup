@@ -2,6 +2,8 @@
 require('dotenv').config();
 const crypto = require('crypto');
 const axios = require('axios');
+const bot = require('../bot');
+const db = require('../database');
 
 // ============================================
 // CONFIGURACIÓN DESDE .env
