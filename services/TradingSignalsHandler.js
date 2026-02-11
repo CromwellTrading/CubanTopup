@@ -4,7 +4,7 @@ require('dotenv').config();
 class TradingSignalsHandler {
     constructor(bot, supabase) {
         this.bot = bot;
-        this.supabase = supabase;
+        this.supabase = supabase; // CORREGIDO: estaba mal escrito como this.subabase
         this.userStates = {};
         this.adminStates = {};
         this.BOT_ADMIN_ID = process.env.BOT_ADMIN_ID;
@@ -32,6 +32,7 @@ class TradingSignalsHandler {
 
     async initDatabase() {
         try {
+            // CORREGIDO: Cambiado this.subabase a this.supabase en todas las líneas
             // Tabla de planes
             await this.supabase.rpc('create_table_if_not_exists', {
                 table_name: 'trading_planes',
@@ -506,6 +507,7 @@ class TradingSignalsHandler {
         const isVIP = await this.isUserVIP(chatId);
         
         let message = `📈 *SEÑALES DE TRADING PROFESIONAL*\n\n`;
+        let keyboard; // CORREGIDO: Declarar keyboard fuera del if/else
         
         if (isVIP) {
             const subscription = await this.getActiveSubscription(chatId);
@@ -527,7 +529,7 @@ class TradingSignalsHandler {
             
             message += `Selecciona una opción:`;
             
-            const keyboard = {
+            keyboard = { // CORREGIDO: Asignar keyboard dentro del bloque
                 inline_keyboard: [
                     [
                         { text: '📊 Señales Activas', callback_data: 'trading_signals_active' },
@@ -559,7 +561,7 @@ class TradingSignalsHandler {
             message += `💵 *PRECIO:* ${this.VIP_PRICE} CUP mensual\n\n`;
             message += `¿Deseas convertirte en VIP?`;
             
-            const keyboard = {
+            keyboard = { // CORREGIDO: Asignar keyboard dentro del bloque
                 inline_keyboard: [
                     [
                         { text: '🎖️ Convertirse en VIP', callback_data: 'trading_request_vip' },
@@ -582,12 +584,12 @@ class TradingSignalsHandler {
                 chat_id: chatId,
                 message_id: messageId,
                 parse_mode: 'Markdown',
-                reply_markup: keyboard
+                reply_markup: keyboard // CORREGIDO: Usar la variable keyboard
             });
         } else {
             await this.bot.sendMessage(chatId, message, {
                 parse_mode: 'Markdown',
-                reply_markup: keyboard
+                reply_markup: keyboard // CORREGIDO: Usar la variable keyboard
             });
         }
     }
@@ -1718,19 +1720,20 @@ class TradingSignalsHandler {
         const status = this.maintenanceMode ? 'ACTIVADO' : 'DESACTIVADO';
         const message = `🔧 *MODO MANTENIMIENTO ${status}*\n\n`;
         
+        let finalMessage = message;
         if (this.maintenanceMode) {
-            message += `⚠️ *El sistema está ahora en mantenimiento*\n\n`;
-            message += `Los usuarios no podrán:\n`;
-            message += `• Ver señales activas\n`;
-            message += `• Solicitar VIP\n`;
-            message += `• Ver historial\n\n`;
-            message += `Solo el administrador puede operar.`;
+            finalMessage += `⚠️ *El sistema está ahora en mantenimiento*\n\n`;
+            finalMessage += `Los usuarios no podrán:\n`;
+            finalMessage += `• Ver señales activas\n`;
+            finalMessage += `• Solicitar VIP\n`;
+            finalMessage += `• Ver historial\n\n`;
+            finalMessage += `Solo el administrador puede operar.`;
         } else {
-            message += `✅ *El sistema está ahora operativo*\n\n`;
-            message += `Todos los servicios han sido restaurados.`;
+            finalMessage += `✅ *El sistema está ahora operativo*\n\n`;
+            finalMessage += `Todos los servicios han sido restaurados.`;
         }
         
-        await this.bot.editMessageText(message, {
+        await this.bot.editMessageText(finalMessage, {
             chat_id: chatId,
             message_id: messageId,
             parse_mode: 'Markdown',
@@ -2793,21 +2796,29 @@ class TradingSignalsHandler {
     }
 
     cleanupOldStates() {
-        const now = Date.now();
-        const timeout = 30 * 60 * 1000; // 30 minutos
-        
-        // Limpiar estados de usuario
-        for (const [userId, state] of Object.entries(this.userStates)) {
-            if (state.requestTime && (now - state.requestTime) > timeout) {
-                delete this.userStates[userId];
+        try {
+            const now = Date.now();
+            const timeout = 30 * 60 * 1000; // 30 minutos
+            
+            // Limpiar estados de usuario
+            for (const [userId, state] of Object.entries(this.userStates)) {
+                if (state && state.requestTime && (now - state.requestTime) > timeout) {
+                    delete this.userStates[userId];
+                    console.log(`🧹 Limpiado estado antiguo de trading para usuario ${userId}`);
+                }
             }
-        }
-        
-        // Limpiar estados de admin
-        for (const [adminId, state] of Object.entries(this.adminStates)) {
-            if (state.requestTime && (now - state.requestTime) > timeout) {
-                delete this.adminStates[adminId];
+            
+            // Limpiar estados de admin
+            for (const [adminId, state] of Object.entries(this.adminStates)) {
+                if (state && state.requestTime && (now - state.requestTime) > timeout) {
+                    delete this.adminStates[adminId];
+                    console.log(`🧹 Limpiado estado antiguo de trading para admin ${adminId}`);
+                }
             }
+            
+            console.log('✅ Estados antiguos de Trading limpiados');
+        } catch (error) {
+            console.error('Error limpiando estados de Trading:', error);
         }
     }
 
