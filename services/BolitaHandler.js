@@ -61,6 +61,26 @@ class BolitaHandler {
         this.userStates.delete(userId);
     }
 
+    // ==================== LIMPIAR ESTADOS ANTIGUOS ====================
+    cleanupOldStates() {
+        try {
+            const now = Date.now();
+            const timeout = 30 * 60 * 1000; // 30 minutos
+
+            // Limpiar estados de usuario
+            for (const [userId, state] of this.userStates.entries()) {
+                if (state && state.timestamp && (now - state.timestamp) > timeout) {
+                    this.userStates.delete(userId);
+                    console.log(`🧹 Limpiado estado antiguo de Bolita para usuario ${userId}`);
+                }
+            }
+
+            console.log('✅ Estados antiguos de Bolita limpiados');
+        } catch (error) {
+            console.error('Error limpiando estados de Bolita:', error);
+        }
+    }
+
     // ==================== OBTENER SESIÓN ACTIVA ====================
     async obtenerEstadoSesion(sesion) {
         try {
