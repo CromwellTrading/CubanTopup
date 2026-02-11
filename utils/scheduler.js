@@ -1,23 +1,19 @@
 const sessions = require('../handlers/sessions');
 
-function initScheduledTasks() {
+function initScheduledTasks(bolitaHandler = null, tradingHandler = null) {
     // Clean inactive sessions every 10 minutes
     setInterval(() => {
-        sessions.cleanupOldSessions();
-        
-        // Limpiar estados en handlers externos
         try {
-            const BolitaHandler = require('../services/BolitaHandler');
-            const TradingSignalsHandler = require('../services/TradingSignalsHandler');
+            sessions.cleanupOldSessions();
             
-            const bot = require('../bot');
-            const db = require('../database');
+            // Limpiar estados en handlers externos si están disponibles
+            if (bolitaHandler && typeof bolitaHandler.cleanupOldStates === 'function') {
+                bolitaHandler.cleanupOldStates();
+            }
             
-            const bolitaHandler = new BolitaHandler(bot, db.supabase);
-            const tradingHandler = new TradingSignalsHandler(bot, db.supabase);
-            
-            bolitaHandler.cleanupOldStates();
-            tradingHandler.cleanupOldStates();
+            if (tradingHandler && typeof tradingHandler.cleanupOldStates === 'function') {
+                tradingHandler.cleanupOldStates();
+            }
             
             console.log('🧹 Tareas de limpieza ejecutadas');
         } catch (error) {
@@ -30,7 +26,8 @@ function initScheduledTasks() {
     setInterval(async () => {
         try {
             // Verificar sorteos vencidos de La Bolita
-            const { data: sorteosVencidos } = await require('../database').supabase
+            const db = require('../database');
+            const { data: sorteosVencidos } = await db.supabase
                 .from('bolita_sorteos')
                 .select('*')
                 .eq('estado', 'activo')
@@ -38,7 +35,7 @@ function initScheduledTasks() {
             
             if (sorteosVencidos && sorteosVencidos.length > 0) {
                 for (const sorteo of sorteosVencidos) {
-                    await require('../database').supabase
+                    await db.supabase
                         .from('bolita_sorteos')
                         .update({ estado: 'finalizado' })
                         .eq('id', sorteo.id);
@@ -46,6 +43,12 @@ function initScheduledTasks() {
                     console.log(`📅 Sorteo ${sorteo.id} marcado como finalizado`);
                 }
             }
+            
+            // También podemos verificar renovaciones de trading si el handler está disponible
+            if (tradingHandler && typeof tradingHandler.checkRenewals === 'function') {
+                await tradingHandler.checkRenewals();
+            }
+            
         } catch (error) {
             console.error('Error verificando sorteos vencidos:', error);
         }
