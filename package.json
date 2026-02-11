@@ -1,48 +1,37 @@
 {
-  "name": "cromwell-store-bot",
-  "version": "2.0.0",
-  "description": "Bot de Telegram para Cromwell Store con WebApp integrada",
+  "name": "cromwell-bot",
+  "version": "1.0.0",
+  "description": "Bot de Telegram para Cromwell Store con WebApp",
   "main": "bot.js",
   "scripts": {
     "start": "node bot.js",
     "dev": "nodemon bot.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"No hay tests configurados\" && exit 0"
+  },
+  "dependencies": {
+    "node-telegram-bot-api": "^0.61.0",
+    "express": "^4.18.2",
+    "body-parser": "^1.20.2",
+    "express-session": "^1.17.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.0.3",
+    "bcryptjs": "^2.4.3",
+    "axios": "^1.4.0",
+    "@supabase/supabase-js": "^2.38.0"
+  },
+  "devDependencies": {
+    "nodemon": "^2.0.22"
+  },
+  "engines": {
+    "node": ">=16.0.0"
   },
   "keywords": [
     "telegram",
     "bot",
-    "cryptocurrency",
-    "wallet",
-    "webapp",
-    "games",
-    "recharge"
+    "cromwell",
+    "store",
+    "webapp"
   ],
-  "author": "Cromwell Store",
-  "license": "ISC",
-  "dependencies": {
-    "axios": "^1.6.0",
-    "bcryptjs": "^2.4.3",
-    "body-parser": "^1.20.2",
-    "cors": "^2.8.5",
-    "dotenv": "^16.3.1",
-    "express": "^4.18.2",
-    "express-session": "^1.17.3",
-    "node-telegram-bot-api": "^0.63.0",
-    "@supabase/supabase-js": "^2.38.0"
-  },
-  "devDependencies": {
-    "nodemon": "^3.0.1"
-  },
-  "engines": {
-    "node": ">=16.0.0",
-    "npm": ">=8.0.0"
-  },
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/tu-usuario/cromwell-store.git"
-  },
-  "bugs": {
-    "url": "https://github.com/tu-usuario/cromwell-store/issues"
-  },
-  "homepage": "https://github.com/tu-usuario/cromwell-store#readme"
+  "author": "Cromwell Store Team",
+  "license": "MIT"
 }
