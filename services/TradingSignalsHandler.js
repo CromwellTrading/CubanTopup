@@ -1,14 +1,14 @@
-// TradingSignalsHandler.js - Manejador de Señales de Trading
+// TradingSignalsHandler.js - Manejador de Señales de Trading (CORREGIDO Y FUNCIONAL)
 require('dotenv').config();
 
 class TradingSignalsHandler {
     constructor(bot, supabase) {
         this.bot = bot;
-        this.supabase = supabase; // CORREGIDO: estaba mal escrito como this.subabase
+        this.supabase = supabase;
         this.userStates = {};
         this.adminStates = {};
-        this.BOT_ADMIN_ID = process.env.BOT_ADMIN_ID;
-        
+        this.BOT_ADMIN_ID = process.env.BOT_ADMIN_ID ? process.env.BOT_ADMIN_ID.toString() : null;
+
         // Configuración
         this.VIP_PRICE = 3000;
         this.PROMISED_ROI = 60;
@@ -16,14 +16,20 @@ class TradingSignalsHandler {
         this.REFUND_AMOUNT = 1500;
         this.SIGNALS_PER_SESSION = 10;
         this.SESSION_TIMES = ['10:00', '22:00'];
-        this.REFERRAL_COMMISSION = 0.20; // 20% por referido
-        
+        this.REFERRAL_COMMISSION = 0.20; // 20%
+
         // Estado del sistema
         this.maintenanceMode = false;
-        
+
         // Inicializar
         this.initDatabase();
         this.startScheduledTasks();
+
+        // Log de inicio (opcional)
+        if (this.BOT_ADMIN_ID) {
+            bot.sendMessage(this.BOT_ADMIN_ID, '🧪 TradingSignalsHandler iniciado correctamente')
+                .catch(console.error);
+        }
     }
 
     // ============================================
@@ -32,7 +38,6 @@ class TradingSignalsHandler {
 
     async initDatabase() {
         try {
-            // CORREGIDO: Cambiado this.subabase a this.supabase en todas las líneas
             // Tabla de planes
             await this.supabase.rpc('create_table_if_not_exists', {
                 table_name: 'trading_planes',
@@ -62,6 +67,9 @@ class TradingSignalsHandler {
                     tx_id VARCHAR(100),
                     referido_por BIGINT,
                     comision_pagada BOOLEAN DEFAULT false,
+                    notificado_10d BOOLEAN DEFAULT false,
+                    notificado_5d BOOLEAN DEFAULT false,
+                    notificado_1d BOOLEAN DEFAULT false,
                     created_at TIMESTAMP DEFAULT NOW()
                 `
             }).catch(() => {});
@@ -224,7 +232,7 @@ class TradingSignalsHandler {
                 .from('trading_planes')
                 .select('id')
                 .eq('nombre', 'VIP Mensual')
-                .single();
+                .maybeSingle();
 
             if (!existingPlan) {
                 await this.supabase
@@ -310,77 +318,60 @@ class TradingSignalsHandler {
             case 'trading_admin_menu':
                 await this.showAdminMenu(chatId, messageId);
                 return true;
-                
             case 'trading_admin_open_session':
                 await this.openSession(chatId, messageId);
                 return true;
-                
             case 'trading_admin_close_session':
                 await this.closeSession(chatId, messageId);
                 return true;
-                
             case 'trading_admin_send_signal':
-                await this.prepareSignal(chatId, messageId);
+                await this.prepareSignal(chatId, messageId, userId);
                 return true;
-                
             case 'trading_admin_view_requests':
                 await this.viewVIPRequests(chatId, messageId);
                 return true;
-                
             case 'trading_admin_approve_request':
                 await this.approveVIPRequest(chatId, messageId, param1);
                 return true;
-                
             case 'trading_admin_reject_request':
                 await this.rejectVIPRequest(chatId, messageId, param1);
                 return true;
-                
             case 'trading_signal_profit':
                 await this.markSignalResult(chatId, messageId, param1, 'ganada');
                 return true;
-                
             case 'trading_signal_loss':
                 await this.markSignalResult(chatId, messageId, param1, 'perdida');
                 return true;
-                
             case 'trading_signal_up':
                 if (this.adminStates[userId]) {
-                    await this.sendSignalToUsers(chatId, messageId, 'alta');
+                    await this.sendSignalToUsers(chatId, messageId, userId, 'alta');
                     return true;
                 }
                 break;
-                
             case 'trading_signal_down':
                 if (this.adminStates[userId]) {
-                    await this.sendSignalToUsers(chatId, messageId, 'baja');
+                    await this.sendSignalToUsers(chatId, messageId, userId, 'baja');
                     return true;
                 }
                 break;
-                
             case 'admin_trading_stats':
                 await this.showAdminStatistics(chatId, messageId);
                 return true;
-                
             case 'admin_trading_users':
                 await this.showVIPUsers(chatId, messageId);
                 return true;
-                
             case 'admin_trading_active_signals':
                 await this.showAdminActiveSignals(chatId, messageId);
                 return true;
-                
             case 'admin_trading_maintenance':
                 await this.toggleMaintenance(chatId, messageId);
                 return true;
-                
             case 'admin_trading_test_signal':
-                await this.testSignal(chatId, messageId);
+                await this.testSignal(chatId, messageId, userId);
                 return true;
-                
             case 'admin_trading_process_refunds':
                 await this.processWeeklyRefunds(chatId, messageId);
                 return true;
-                
             case 'admin_trading_view_refunds':
                 await this.viewRefunds(chatId, messageId);
                 return true;
@@ -396,59 +387,45 @@ class TradingSignalsHandler {
             case 'trading_menu':
                 await this.showTradingMenu(chatId, messageId);
                 return true;
-                
             case 'trading_subscriptions':
                 await this.showSubscriptions(chatId, messageId);
                 return true;
-                
             case 'trading_buy_signals':
                 await this.showBuySignals(chatId, messageId);
                 return true;
-                
             case 'trading_my_signals':
                 await this.showMySignals(chatId, messageId);
                 return true;
-                
             case 'trading_how_it_works':
                 await this.showHowItWorks(chatId, messageId);
                 return true;
-                
             case 'trading_performance':
                 await this.showPerformance(chatId, messageId);
                 return true;
-                
             case 'trading_signals_active':
                 await this.showActiveSignals(chatId, messageId);
                 return true;
-                
             case 'trading_history':
                 await this.showHistory(chatId, messageId);
                 return true;
-                
             case 'trading_request_vip':
                 await this.requestVIP(chatId, messageId);
                 return true;
-                
             case 'trading_confirm_vip':
                 await this.confirmVIP(chatId, messageId, param1);
                 return true;
-                
             case 'trading_pay_vip':
                 await this.payVIP(chatId, messageId, param1);
                 return true;
-                
             case 'trading_calendar':
                 await this.showCalendar(chatId, messageId, param1);
                 return true;
-                
             case 'trading_view_date':
                 await this.viewSignalsByDate(chatId, messageId, param1);
                 return true;
-                
             case 'trading_referral':
                 await this.showReferralInfo(chatId, messageId);
                 return true;
-                
             case 'trading_notifications':
                 await this.showNotifications(chatId, messageId);
                 return true;
@@ -458,45 +435,57 @@ class TradingSignalsHandler {
     }
 
     async handleMessage(msg) {
-        const chatId = msg.chat.id;
-        const userId = msg.from.id;
-        const text = msg.text;
+        try {
+            const chatId = msg.chat.id;
+            const userId = msg.from.id;
+            const text = msg.text;
 
-        // Verificar modo mantenimiento
-        if (this.maintenanceMode && !this.esAdmin(userId)) {
-            await this.bot.sendMessage(chatId, 
-                '🔧 *SISTEMA EN MANTENIMIENTO*\n\n' +
-                'El sistema de señales está en mantenimiento.\n' +
-                'Por favor, inténtalo más tarde.',
-                { parse_mode: 'Markdown' }
-            );
+            // Log de depuración
+            console.log(`📩 Mensaje recibido de ${userId}: "${text}"`);
+            console.log(`   esAdmin: ${this.esAdmin(userId)}`);
+            console.log(`   adminState existe: ${!!this.adminStates[userId]}`);
+
+            // Verificar modo mantenimiento
+            if (this.maintenanceMode && !this.esAdmin(userId)) {
+                await this.bot.sendMessage(chatId,
+                    '🔧 *SISTEMA EN MANTENIMIENTO*\n\n' +
+                    'El sistema de señales está en mantenimiento.\n' +
+                    'Por favor, inténtalo más tarde.',
+                    { parse_mode: 'Markdown' }
+                );
+                return true;
+            }
+
+            // Admin enviando señal
+            if (this.esAdmin(userId) && this.adminStates[userId]) {
+                const state = this.adminStates[userId];
+
+                if (state.step === 'waiting_pair') {
+                    return await this.handlePairInput(chatId, userId, text);
+                }
+
+                if (state.step === 'waiting_timeframe') {
+                    return await this.handleTimeframeInput(chatId, userId, text);
+                }
+            }
+
+            // Usuario solicitando VIP
+            if (this.userStates[userId] && this.userStates[userId].step === 'waiting_quotex_id') {
+                return await this.handleQuotexIdInput(chatId, userId, text);
+            }
+
+            // Admin en modo test
+            if (this.esAdmin(userId) && this.adminStates[userId] && this.adminStates[userId].step === 'test_signal') {
+                return await this.handleTestSignal(chatId, userId, text);
+            }
+
+            return false; // No se manejó el mensaje
+
+        } catch (error) {
+            console.error('❌ Error en handleMessage:', error);
+            await this.bot.sendMessage(msg.chat.id, '❌ Ocurrió un error interno. Intenta de nuevo.');
             return true;
         }
-
-        // Admin enviando señal
-        if (this.esAdmin(userId) && this.adminStates[userId]) {
-            const state = this.adminStates[userId];
-            
-            if (state.step === 'waiting_pair') {
-                return await this.handlePairInput(chatId, text, state);
-            }
-            
-            if (state.step === 'waiting_timeframe') {
-                return await this.handleTimeframeInput(chatId, text, state);
-            }
-        }
-
-        // Usuario solicitando VIP
-        if (this.userStates[userId] && this.userStates[userId].step === 'waiting_quotex_id') {
-            return await this.handleQuotexIdInput(chatId, text, userId);
-        }
-
-        // Admin en modo test
-        if (this.esAdmin(userId) && this.adminStates[userId] && this.adminStates[userId].step === 'test_signal') {
-            return await this.handleTestSignal(chatId, text, userId);
-        }
-
-        return false;
     }
 
     // ============================================
@@ -505,31 +494,31 @@ class TradingSignalsHandler {
 
     async showTradingMenu(chatId, messageId) {
         const isVIP = await this.isUserVIP(chatId);
-        
+
         let message = `📈 *SEÑALES DE TRADING PROFESIONAL*\n\n`;
-        let keyboard; // CORREGIDO: Declarar keyboard fuera del if/else
-        
+        let keyboard;
+
         if (isVIP) {
             const subscription = await this.getActiveSubscription(chatId);
             const daysLeft = this.getDaysLeft(subscription.fecha_fin);
-            
+
             message += `🎖️ *ESTADO: VIP ACTIVO*\n`;
             message += `⏳ *Días restantes:* ${daysLeft}\n\n`;
-            
+
             // Mostrar notificaciones pendientes
             const { count } = await this.supabase
                 .from('trading_notificaciones')
                 .select('*', { count: 'exact', head: true })
                 .eq('user_id', chatId)
                 .eq('leida', false);
-            
+
             if (count > 0) {
                 message += `📬 *Tienes ${count} notificación(es) nueva(s)*\n\n`;
             }
-            
+
             message += `Selecciona una opción:`;
-            
-            keyboard = { // CORREGIDO: Asignar keyboard dentro del bloque
+
+            keyboard = {
                 inline_keyboard: [
                     [
                         { text: '📊 Señales Activas', callback_data: 'trading_signals_active' },
@@ -549,7 +538,7 @@ class TradingSignalsHandler {
                     ]
                 ]
             };
-            
+
         } else {
             message += `🔒 *ACCESO RESTRINGIDO*\n\n`;
             message += `Para recibir señales de trading necesitas ser miembro VIP.\n\n`;
@@ -560,8 +549,8 @@ class TradingSignalsHandler {
             message += `• 20% por cada referido que se haga VIP\n\n`;
             message += `💵 *PRECIO:* ${this.VIP_PRICE} CUP mensual\n\n`;
             message += `¿Deseas convertirte en VIP?`;
-            
-            keyboard = { // CORREGIDO: Asignar keyboard dentro del bloque
+
+            keyboard = {
                 inline_keyboard: [
                     [
                         { text: '🎖️ Convertirse en VIP', callback_data: 'trading_request_vip' },
@@ -578,18 +567,18 @@ class TradingSignalsHandler {
                 ]
             };
         }
-        
+
         if (messageId) {
             await this.bot.editMessageText(message, {
                 chat_id: chatId,
                 message_id: messageId,
                 parse_mode: 'Markdown',
-                reply_markup: keyboard // CORREGIDO: Usar la variable keyboard
+                reply_markup: keyboard
             });
         } else {
             await this.bot.sendMessage(chatId, message, {
                 parse_mode: 'Markdown',
-                reply_markup: keyboard // CORREGIDO: Usar la variable keyboard
+                reply_markup: keyboard
             });
         }
     }
@@ -601,8 +590,8 @@ class TradingSignalsHandler {
             .select('id')
             .eq('user_id', chatId)
             .eq('estado', 'pendiente')
-            .single();
-        
+            .maybeSingle();
+
         if (pendingRequest) {
             await this.bot.editMessageText(
                 '📝 *Ya tienes una solicitud pendiente*\n\n' +
@@ -616,19 +605,19 @@ class TradingSignalsHandler {
             );
             return;
         }
-        
+
         // Verificar referido
         let referidoPor = null;
         if (this.userStates[chatId] && this.userStates[chatId].referidoPor) {
             referidoPor = this.userStates[chatId].referidoPor;
         }
-        
+
         this.userStates[chatId] = {
             step: 'waiting_quotex_id',
             requestTime: Date.now(),
             referidoPor: referidoPor
         };
-        
+
         const message = `🎖️ *SOLICITUD DE MEMBRESÍA VIP*\n\n` +
             `Para convertirte en VIP sigue estos pasos:\n\n` +
             `1️⃣ *Crear cuenta en Quotex*\n` +
@@ -644,7 +633,7 @@ class TradingSignalsHandler {
             `• Encuentra tu ID en el perfil de Quotex\n` +
             `• Es un número único\n\n` +
             `Por favor, escribe tu ID de Quotex:`;
-        
+
         await this.bot.editMessageText(message, {
             chat_id: chatId,
             message_id: messageId,
@@ -653,16 +642,16 @@ class TradingSignalsHandler {
         });
     }
 
-    async handleQuotexIdInput(chatId, text, userId) {
+    async handleQuotexIdInput(chatId, userId, text) {
         const quotexId = text.trim();
-        
+
         if (quotexId.length < 3) {
             await this.bot.sendMessage(chatId, '❌ ID inválido. Debe tener al menos 3 caracteres.');
             return true;
         }
-        
+
         const userState = this.userStates[userId];
-        
+
         // Guardar solicitud
         const { data: request } = await this.supabase
             .from('trading_solicitudes_vip')
@@ -674,10 +663,10 @@ class TradingSignalsHandler {
             }])
             .select()
             .single();
-        
+
         // Notificar al admin
         await this.notifyAdminNewRequest(chatId, request.id, quotexId);
-        
+
         // Confirmar al usuario
         await this.bot.sendMessage(chatId,
             `✅ *Solicitud enviada exitosamente*\n\n` +
@@ -687,10 +676,10 @@ class TradingSignalsHandler {
             `El administrador revisará tu solicitud y te notificará pronto.`,
             { parse_mode: 'Markdown' }
         );
-        
+
         // Log
         await this.logAction(chatId, 'vip_request', { request_id: request.id });
-        
+
         delete this.userStates[userId];
         return true;
     }
@@ -701,7 +690,7 @@ class TradingSignalsHandler {
             .select('*, users!inner(first_name)')
             .eq('id', requestId)
             .single();
-        
+
         if (!request) {
             await this.bot.editMessageText('❌ Solicitud no encontrada.', {
                 chat_id: chatId,
@@ -709,7 +698,7 @@ class TradingSignalsHandler {
             });
             return;
         }
-        
+
         const message = `🎖️ *CONFIRMAR COMPRA DE VIP*\n\n` +
             `📋 *Plan:* VIP Mensual\n` +
             `💰 *Precio:* ${this.VIP_PRICE} CUP\n` +
@@ -721,7 +710,7 @@ class TradingSignalsHandler {
             `• 20% por referidos\n\n` +
             `El pago se realizará desde tu billetera CUP.\n\n` +
             `¿Confirmas la compra?`;
-        
+
         const keyboard = {
             inline_keyboard: [
                 [
@@ -730,7 +719,7 @@ class TradingSignalsHandler {
                 ]
             ]
         };
-        
+
         await this.bot.editMessageText(message, {
             chat_id: chatId,
             message_id: messageId,
@@ -742,7 +731,7 @@ class TradingSignalsHandler {
     async payVIP(chatId, messageId, requestId) {
         // Obtener usuario
         const user = await this.getUser(chatId);
-        
+
         if (!user) {
             await this.bot.editMessageText('❌ Usuario no encontrado.', {
                 chat_id: chatId,
@@ -750,7 +739,7 @@ class TradingSignalsHandler {
             });
             return;
         }
-        
+
         // Verificar saldo
         if (user.balance_cup < this.VIP_PRICE) {
             await this.bot.editMessageText(
@@ -767,26 +756,26 @@ class TradingSignalsHandler {
             );
             return;
         }
-        
+
         // Obtener solicitud
         const { data: request } = await this.supabase
             .from('trading_solicitudes_vip')
             .select('*, referido_por')
             .eq('id', requestId)
             .single();
-        
+
         // Obtener plan
         const { data: plan } = await this.supabase
             .from('trading_planes')
             .select('*')
             .eq('nombre', 'VIP Mensual')
             .single();
-        
+
         // Crear suscripción
         const fechaInicio = new Date();
         const fechaFin = new Date();
         fechaFin.setDate(fechaFin.getDate() + plan.duracion_dias);
-        
+
         const { data: subscription } = await this.supabase
             .from('trading_suscripciones')
             .insert([{
@@ -801,19 +790,19 @@ class TradingSignalsHandler {
             }])
             .select()
             .single();
-        
+
         // Actualizar saldo del usuario
         await this.supabase
             .from('users')
             .update({ balance_cup: user.balance_cup - this.VIP_PRICE })
             .eq('telegram_id', chatId);
-        
+
         // Actualizar solicitud
         await this.supabase
             .from('trading_solicitudes_vip')
             .update({ estado: 'aprobada', fecha_aprobacion: new Date().toISOString() })
             .eq('id', requestId);
-        
+
         // Registrar transacción
         await this.supabase
             .from('transactions')
@@ -826,18 +815,18 @@ class TradingSignalsHandler {
                 description: `Suscripción VIP Trading - ${plan.nombre}`,
                 created_at: new Date().toISOString()
             }]);
-        
+
         // Procesar comisión por referido si aplica
         if (request.referido_por) {
             await this.processReferralCommission(request.referido_por, chatId, subscription.id);
         }
-        
+
         // Enviar mensaje de bienvenida
         await this.sendWelcomeMessage(chatId, subscription.id);
-        
-        // Programar recordatorios
+
+        // Programar recordatorios (placeholder)
         this.scheduleRenewalReminders(chatId, subscription.id, fechaFin);
-        
+
         const message = `🎉 *¡FELICIDADES, ERES VIP!*\n\n` +
             `✅ *Suscripción activada exitosamente*\n\n` +
             `📋 *Detalles:*\n` +
@@ -847,18 +836,18 @@ class TradingSignalsHandler {
             `• Fin: ${fechaFin.toLocaleDateString()}\n` +
             `• Días: ${plan.duracion_dias}\n\n` +
             `📬 *Revisa tus notificaciones para más información*`;
-        
+
         await this.bot.editMessageText(message, {
             chat_id: chatId,
             message_id: messageId,
             parse_mode: 'Markdown',
             reply_markup: { inline_keyboard: [[{ text: '📈 Ir a Señales', callback_data: 'trading_menu' }]] }
         });
-        
+
         // Log
-        await this.logAction(chatId, 'vip_purchase', { 
+        await this.logAction(chatId, 'vip_purchase', {
             subscription_id: subscription.id,
-            amount: this.VIP_PRICE 
+            amount: this.VIP_PRICE
         });
     }
 
@@ -867,7 +856,8 @@ class TradingSignalsHandler {
     // ============================================
 
     esAdmin(userId) {
-        return userId && this.BOT_ADMIN_ID && userId.toString() === this.BOT_ADMIN_ID.toString();
+        return userId && this.BOT_ADMIN_ID && 
+               userId.toString() === this.BOT_ADMIN_ID.toString();
     }
 
     async showAdminMenu(chatId, messageId) {
@@ -876,12 +866,12 @@ class TradingSignalsHandler {
             .from('trading_sesiones')
             .select('*')
             .eq('estado', 'abierta')
-            .single();
-        
+            .maybeSingle();
+
         let sessionStatus = '❌ *NO HAY SESIÓN ACTIVA*';
         let sessionButtonText = '📡 Abrir Sesión';
         let sessionCallback = 'trading_admin_open_session';
-        
+
         if (activeSession) {
             sessionStatus = `✅ *SESIÓN ACTIVA*\n` +
                 `📅 ${new Date(activeSession.fecha).toLocaleDateString()} ${activeSession.hora}\n` +
@@ -889,16 +879,15 @@ class TradingSignalsHandler {
             sessionButtonText = '🔒 Cerrar Sesión';
             sessionCallback = 'trading_admin_close_session';
         }
-        
-        // Verificar modo mantenimiento
+
         const maintenanceStatus = this.maintenanceMode ? '🔧 *MODO MANTENIMIENTO ACTIVO*' : '✅ *SISTEMA OPERATIVO*';
         const maintenanceButton = this.maintenanceMode ? '🔨 Desactivar Mantenimiento' : '🔧 Activar Mantenimiento';
-        
+
         const message = `👑 *PANEL ADMIN - SEÑALES TRADING*\n\n` +
             `${sessionStatus}\n\n` +
             `${maintenanceStatus}\n\n` +
             `Selecciona una opción:`;
-        
+
         const keyboard = {
             inline_keyboard: [
                 [
@@ -926,7 +915,7 @@ class TradingSignalsHandler {
                 ]
             ]
         };
-        
+
         await this.bot.editMessageText(message, {
             chat_id: chatId,
             message_id: messageId,
@@ -947,11 +936,10 @@ class TradingSignalsHandler {
             );
             return;
         }
-        
+
         const now = new Date();
         const currentHour = now.getHours();
-        
-        // Verificar horario válido (9-11 o 21-23)
+
         if (!((currentHour >= 9 && currentHour <= 11) || (currentHour >= 21 && currentHour <= 23))) {
             await this.bot.editMessageText(
                 `❌ *Horario no válido para abrir sesión*\n\n` +
@@ -967,8 +955,7 @@ class TradingSignalsHandler {
             );
             return;
         }
-        
-        // Verificar día hábil (Lunes a Viernes)
+
         const day = now.getDay();
         if (day === 0 || day === 6) {
             await this.bot.editMessageText(
@@ -981,19 +968,17 @@ class TradingSignalsHandler {
             );
             return;
         }
-        
-        // Determinar tipo de sesión
+
         let tipo = currentHour < 12 ? 'matutina' : 'vespertina';
         const today = now.toISOString().split('T')[0];
-        
-        // Verificar si ya hay sesión hoy de este tipo
+
         const { data: existingSession } = await this.supabase
             .from('trading_sesiones')
             .select('*')
             .eq('fecha', today)
             .eq('tipo', tipo)
-            .single();
-        
+            .maybeSingle();
+
         if (existingSession) {
             await this.bot.editMessageText(
                 `❌ *Ya existe una sesión ${tipo} hoy*`,
@@ -1005,8 +990,7 @@ class TradingSignalsHandler {
             );
             return;
         }
-        
-        // Crear nueva sesión
+
         const { data: session } = await this.supabase
             .from('trading_sesiones')
             .insert([{
@@ -1020,11 +1004,10 @@ class TradingSignalsHandler {
             }])
             .select()
             .single();
-        
-        // Notificar a usuarios VIP
+
         const vipUsers = await this.getVIPUsers();
         let notifiedCount = 0;
-        
+
         for (const user of vipUsers) {
             try {
                 await this.bot.sendMessage(user.user_id,
@@ -1041,7 +1024,7 @@ class TradingSignalsHandler {
                 console.log(`No se pudo notificar al usuario ${user.user_id}:`, error.message);
             }
         }
-        
+
         const message = `✅ *SESIÓN ABIERTA EXITOSAMENTE*\n\n` +
             `📅 *Fecha:* ${today}\n` +
             `🕙 *Hora:* ${now.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}\n` +
@@ -1049,23 +1032,24 @@ class TradingSignalsHandler {
             `📡 *Señales:* ${this.SIGNALS_PER_SESSION} señales programadas\n` +
             `👥 *Usuarios notificados:* ${notifiedCount}/${vipUsers.length}\n\n` +
             `Ahora puedes enviar señales.`;
-        
+
         await this.bot.editMessageText(message, {
             chat_id: chatId,
             message_id: messageId,
             parse_mode: 'Markdown',
             reply_markup: { inline_keyboard: [[{ text: '📤 Enviar Primera Señal', callback_data: 'trading_admin_send_signal' }]] }
         });
-        
-        // Log
-        await this.logAction(chatId, 'session_opened', { 
+
+        await this.logAction(chatId, 'session_opened', {
             session_id: session.id,
             tipo: tipo,
-            users_notified: notifiedCount 
+            users_notified: notifiedCount
         });
     }
 
-    async prepareSignal(chatId, messageId) {
+    async prepareSignal(chatId, messageId, userId) {
+        console.log(`🔧 prepareSignal llamado por userId ${userId}`);
+
         if (this.maintenanceMode) {
             await this.bot.editMessageText(
                 '❌ *No se puede enviar señales en modo mantenimiento*',
@@ -1077,14 +1061,13 @@ class TradingSignalsHandler {
             );
             return;
         }
-        
-        // Verificar sesión activa
+
         const { data: activeSession } = await this.supabase
             .from('trading_sesiones')
             .select('*')
             .eq('estado', 'abierta')
-            .single();
-        
+            .maybeSingle();
+
         if (!activeSession) {
             await this.bot.editMessageText(
                 '❌ *No hay sesión activa*\n\nDebes abrir una sesión primero.',
@@ -1097,8 +1080,7 @@ class TradingSignalsHandler {
             );
             return;
         }
-        
-        // Verificar límite de señales
+
         if (activeSession.señales_enviadas >= activeSession.señales_totales) {
             await this.bot.editMessageText(
                 `❌ *Límite de señales alcanzado*\n\n` +
@@ -1113,14 +1095,17 @@ class TradingSignalsHandler {
             );
             return;
         }
-        
-        // Iniciar proceso
-        this.adminStates[chatId] = {
+
+        // Guardar estado con userId como clave
+        this.adminStates[userId] = {
             step: 'waiting_pair',
             sessionId: activeSession.id,
-            signalNumber: activeSession.señales_enviadas + 1
+            signalNumber: activeSession.señales_enviadas + 1,
+            requestTime: Date.now()
         };
-        
+
+        console.log(`✅ Estado creado para ${userId}:`, this.adminStates[userId]);
+
         const message = `📤 *PREPARANDO SEÑAL #${activeSession.señales_enviadas + 1}*\n\n` +
             `Por favor, escribe el par de divisas:\n\n` +
             `📌 *Ejemplos:*\n` +
@@ -1129,7 +1114,7 @@ class TradingSignalsHandler {
             `• XAU/USD\n` +
             `• BTC/USD\n\n` +
             `Escribe el par ahora:`;
-        
+
         await this.bot.editMessageText(message, {
             chat_id: chatId,
             message_id: messageId,
@@ -1138,13 +1123,14 @@ class TradingSignalsHandler {
         });
     }
 
-    async handlePairInput(chatId, text, state) {
+    async handlePairInput(chatId, userId, text) {
+        console.log(`🔧 handlePairInput llamado con text="${text}"`);
+
         const pair = text.trim().toUpperCase();
-        
-        // Validar formato
-        const validPairs = ['EUR/USD', 'GBP/USD', 'USD/JPY', 'AUD/USD', 'USD/CAD', 
-                          'NZD/USD', 'GBP/JPY', 'EUR/GBP', 'XAU/USD', 'BTC/USD'];
-        
+
+        const validPairs = ['EUR/USD', 'GBP/USD', 'USD/JPY', 'AUD/USD', 'USD/CAD',
+            'NZD/USD', 'GBP/JPY', 'EUR/GBP', 'XAU/USD', 'BTC/USD'];
+
         if (!pair.includes('/') || pair.length < 6) {
             await this.bot.sendMessage(chatId,
                 `❌ *Formato inválido*\n\n` +
@@ -1158,11 +1144,17 @@ class TradingSignalsHandler {
             );
             return true;
         }
-        
-        // Actualizar estado
-        this.adminStates[chatId].step = 'waiting_timeframe';
-        this.adminStates[chatId].pair = pair;
-        
+
+        // Actualizar estado usando userId
+        if (!this.adminStates[userId]) {
+            await this.bot.sendMessage(chatId, '❌ Sesión expirada. Por favor, reinicia el proceso.');
+            return true;
+        }
+
+        this.adminStates[userId].step = 'waiting_timeframe';
+        this.adminStates[userId].pair = pair;
+        this.adminStates[userId].requestTime = Date.now();
+
         await this.bot.sendMessage(chatId,
             `✅ *Par aceptado:* ${pair}\n\n` +
             `Ahora escribe la temporalidad:\n\n` +
@@ -1175,14 +1167,13 @@ class TradingSignalsHandler {
             `Escribe la temporalidad ahora:`,
             { parse_mode: 'Markdown' }
         );
-        
+
         return true;
     }
 
-    async handleTimeframeInput(chatId, text, state) {
+    async handleTimeframeInput(chatId, userId, text) {
         const timeframe = text.trim().toLowerCase();
-        
-        // Validar temporalidades
+
         const validTimeframes = ['1min', '5min', '15min', '30min', '1h', '4h'];
         if (!validTimeframes.includes(timeframe)) {
             await this.bot.sendMessage(chatId,
@@ -1199,18 +1190,21 @@ class TradingSignalsHandler {
             );
             return true;
         }
-        
-        // Actualizar estado
-        this.adminStates[chatId].step = 'waiting_direction';
-        this.adminStates[chatId].timeframe = timeframe;
-        
-        // Mostrar botones de dirección
+
+        if (!this.adminStates[userId]) {
+            await this.bot.sendMessage(chatId, '❌ Sesión expirada. Por favor, reinicia el proceso.');
+            return true;
+        }
+
+        this.adminStates[userId].step = 'waiting_direction';
+        this.adminStates[userId].timeframe = timeframe;
+
         const message = `✅ *Configuración lista:*\n\n` +
-            `📊 *Activo:* ${state.pair}\n` +
+            `📊 *Activo:* ${this.adminStates[userId].pair}\n` +
             `⏰ *Temporalidad:* ${timeframe}\n` +
-            `🔢 *Señal #:* ${state.signalNumber}\n\n` +
+            `🔢 *Señal #:* ${this.adminStates[userId].signalNumber}\n\n` +
             `Selecciona la dirección de la señal:`;
-        
+
         const keyboard = {
             inline_keyboard: [
                 [
@@ -1222,38 +1216,39 @@ class TradingSignalsHandler {
                 ]
             ]
         };
-        
+
         await this.bot.sendMessage(chatId, message, {
             parse_mode: 'Markdown',
             reply_markup: keyboard
         });
-        
+
         return true;
     }
 
-    async sendSignalToUsers(chatId, messageId, direction) {
-        const state = this.adminStates[chatId];
-        if (!state) return;
-        
+    async sendSignalToUsers(chatId, messageId, userId, direction) {
+        const state = this.adminStates[userId];
+        if (!state) {
+            await this.bot.sendMessage(chatId, '❌ Estado no encontrado. Reinicia el proceso.');
+            return;
+        }
+
         const { pair, timeframe, sessionId, signalNumber } = state;
-        
-        // Obtener sesión
+
         const { data: session } = await this.supabase
             .from('trading_sesiones')
             .select('*')
             .eq('id', sessionId)
             .single();
-        
+
         if (!session) {
             await this.bot.editMessageText('❌ Sesión no encontrada.', {
                 chat_id: chatId,
                 message_id: messageId
             });
-            delete this.adminStates[chatId];
+            delete this.adminStates[userId];
             return;
         }
-        
-        // Crear señal
+
         const { data: signal } = await this.supabase
             .from('trading_senales')
             .insert([{
@@ -1265,17 +1260,14 @@ class TradingSignalsHandler {
             }])
             .select()
             .single();
-        
-        // Incrementar contador
+
         await this.supabase
             .from('trading_sesiones')
             .update({ señales_enviadas: session.señales_enviadas + 1 })
             .eq('id', sessionId);
-        
-        // Obtener usuarios VIP
+
         const vipUsers = await this.getVIPUsers();
-        
-        // Preparar mensaje
+
         const userMessage = `🚨 *¡NUEVA SEÑAL DE TRADING!*\n\n` +
             `🎯 *Activo:* ${pair}\n` +
             `⏰ *Temporalidad:* ${timeframe}\n` +
@@ -1284,18 +1276,16 @@ class TradingSignalsHandler {
             `📅 *Hora:* ${new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}\n\n` +
             `⚡ *¡ACTÚA RÁPIDO!*\n` +
             `Esta es una señal para opciones binarias.`;
-        
-        // Enviar a cada usuario
+
         let sentCount = 0;
         let failedCount = 0;
-        
+
         for (const user of vipUsers) {
             try {
                 const msg = await this.bot.sendMessage(user.user_id, userMessage, {
                     parse_mode: 'Markdown'
                 });
-                
-                // Registrar recepción
+
                 await this.supabase
                     .from('trading_senales_usuario')
                     .insert([{
@@ -1303,22 +1293,20 @@ class TradingSignalsHandler {
                         señal_id: signal.id,
                         recibida: true
                     }]);
-                
+
                 sentCount++;
-                
+
             } catch (error) {
                 console.log(`Error enviando a ${user.user_id}:`, error.message);
                 failedCount++;
-                
-                // Registrar fallo
+
                 await this.logAction(user.user_id, 'signal_delivery_failed', {
                     signal_id: signal.id,
                     error: error.message
                 });
             }
         }
-        
-        // Mensaje para admin
+
         const adminMessage = `✅ *SEÑAL ENVIADA EXITOSAMENTE*\n\n` +
             `📊 *Activo:* ${pair}\n` +
             `⏰ *Temporalidad:* ${timeframe}\n` +
@@ -1328,7 +1316,7 @@ class TradingSignalsHandler {
             `👥 *Enviada a:* ${sentCount} usuarios\n` +
             `❌ *Fallos:* ${failedCount}\n\n` +
             `Marca el resultado de esta señal:`;
-        
+
         const adminKeyboard = {
             inline_keyboard: [
                 [
@@ -1341,34 +1329,29 @@ class TradingSignalsHandler {
                 ]
             ]
         };
-        
-        // Enviar mensaje al admin
+
         const adminMsg = await this.bot.sendMessage(chatId, adminMessage, {
             parse_mode: 'Markdown',
             reply_markup: adminKeyboard
         });
-        
-        // Guardar ID del mensaje
+
         await this.supabase
             .from('trading_senales')
             .update({ admin_message_id: adminMsg.message_id })
             .eq('id', signal.id);
-        
-        // Limpiar estado
-        delete this.adminStates[chatId];
-        
-        // Log
+
+        delete this.adminStates[userId];
+
         await this.logAction(chatId, 'signal_sent', {
             signal_id: signal.id,
             sent: sentCount,
             failed: failedCount
         });
-        
-        // Eliminar mensaje anterior si existe
+
         if (messageId) {
             try {
                 await this.bot.deleteMessage(chatId, messageId);
-            } catch (e) {}
+            } catch (e) { }
         }
     }
 
@@ -1378,10 +1361,8 @@ class TradingSignalsHandler {
 
     async processReferralCommission(referrerId, referredId, subscriptionId) {
         try {
-            // Calcular comisión (20% de 3000 = 600 CUP)
             const commission = this.VIP_PRICE * this.REFERRAL_COMMISSION;
-            
-            // Registrar referido
+
             await this.supabase
                 .from('trading_referidos')
                 .insert([{
@@ -1391,16 +1372,14 @@ class TradingSignalsHandler {
                     comision: commission,
                     pagada: false
                 }]);
-            
-            // Agregar saldo al referidor
+
             const referrer = await this.getUser(referrerId);
             if (referrer) {
                 await this.supabase
                     .from('users')
                     .update({ balance_cup: (referrer.balance_cup || 0) + commission })
                     .eq('telegram_id', referrerId);
-                
-                // Registrar transacción
+
                 await this.supabase
                     .from('transactions')
                     .insert([{
@@ -1412,25 +1391,22 @@ class TradingSignalsHandler {
                         description: `Comisión por referido ${referredId}`,
                         created_at: new Date().toISOString()
                     }]);
-                
-                // Notificar al referidor
+
                 await this.bot.sendMessage(referrerId,
                     `💰 *¡COMISIÓN POR REFERIDO!*\n\n` +
                     `Has recibido ${commission} CUP por referir a un nuevo usuario VIP.\n\n` +
                     `👤 *Referido:* ${referredId}\n` +
-                    `💰 *Comisión:* ${commission} CUP\n` +
-                    `🎯 *Total referidos:* [contador]\n\n` +
+                    `💰 *Comisión:* ${commission} CUP\n\n` +
                     `¡Sigue compartiendo tu enlace de referido!`,
                     { parse_mode: 'Markdown' }
                 );
             }
-            
-            // Log
+
             await this.logAction(referrerId, 'referral_commission', {
                 referred_id: referredId,
                 commission: commission
             });
-            
+
         } catch (error) {
             console.error('Error procesando comisión de referido:', error);
             await this.logAction(referrerId, 'referral_error', {
@@ -1440,21 +1416,20 @@ class TradingSignalsHandler {
     }
 
     async showReferralInfo(chatId, messageId) {
-        // Obtener estadísticas de referidos
         const { data: referrals } = await this.supabase
             .from('trading_referidos')
             .select('*')
             .eq('usuario_id', chatId);
-        
+
         const { data: totalCommissions } = await this.supabase
             .from('trading_referidos')
             .select('comision')
             .eq('usuario_id', chatId)
             .eq('pagada', true);
-        
+
         const total = totalCommissions?.reduce((sum, r) => sum + r.comision, 0) || 0;
         const referralLink = `https://t.me/${(await this.bot.getMe()).username}?start=ref_${chatId}`;
-        
+
         const message = `👥 *PROGRAMA DE REFERIDOS*\n\n` +
             `🎯 *Gana el 20% por cada referido* que se haga VIP\n\n` +
             `📊 *Tus estadísticas:*\n` +
@@ -1469,7 +1444,7 @@ class TradingSignalsHandler {
             `3. Se hace VIP\n` +
             `4. Recibes ${this.VIP_PRICE * this.REFERRAL_COMMISSION} CUP automáticamente\n\n` +
             `¡Entre más refieras, más ganas!`;
-        
+
         const keyboard = {
             inline_keyboard: [
                 [
@@ -1481,7 +1456,7 @@ class TradingSignalsHandler {
                 ]
             ]
         };
-        
+
         await this.bot.editMessageText(message, {
             chat_id: chatId,
             message_id: messageId,
@@ -1491,9 +1466,8 @@ class TradingSignalsHandler {
     }
 
     async sendWelcomeMessage(userId, subscriptionId) {
-        const user = await this.getUser(userId);
         const subscription = await this.getActiveSubscription(userId);
-        
+
         const message = `🎉 *¡BIENVENIDO AL CLUB VIP!*\n\n` +
             `Gracias por confiar en nuestras señales de trading.\n\n` +
             `📋 *INFORMACIÓN IMPORTANTE:*\n\n` +
@@ -1516,10 +1490,9 @@ class TradingSignalsHandler {
             `📞 *Soporte:*\n` +
             `Si tienes dudas, contacta al administrador.\n\n` +
             `¡Buena suerte en tus trades! 🚀`;
-        
+
         await this.bot.sendMessage(userId, message, { parse_mode: 'Markdown' });
-        
-        // Agregar notificación permanente
+
         await this.supabase
             .from('trading_notificaciones')
             .insert([{
@@ -1532,44 +1505,39 @@ class TradingSignalsHandler {
 
     async checkRefunds() {
         try {
-            // Obtener semanas con rentabilidad < 50% y reembolsos no procesados
             const { data: weeks } = await this.supabase
                 .from('trading_rentabilidad')
                 .select('*')
                 .lt('rentabilidad', this.MIN_ROI_FOR_REFUND)
                 .eq('reembolsos_procesados', false)
                 .order('semana', { ascending: false });
-            
+
             if (!weeks || weeks.length === 0) return;
-            
+
             for (const week of weeks) {
-                // Obtener usuarios VIP activos esa semana
                 const monday = new Date(week.semana);
                 const nextMonday = new Date(monday);
                 nextMonday.setDate(nextMonday.getDate() + 7);
-                
+
                 const { data: activeSubscriptions } = await this.supabase
                     .from('trading_suscripciones')
                     .select('user_id')
                     .eq('estado', 'activa')
                     .lte('fecha_inicio', nextMonday.toISOString())
                     .gte('fecha_fin', monday.toISOString());
-                
+
                 if (!activeSubscriptions) continue;
-                
-                // Crear reembolsos para cada usuario
+
                 for (const sub of activeSubscriptions) {
-                    // Verificar si ya tiene reembolso para esta semana
                     const { data: existingRefund } = await this.supabase
                         .from('trading_reembolsos')
                         .select('id')
                         .eq('user_id', sub.user_id)
                         .eq('semana', week.semana)
-                        .single();
-                    
+                        .maybeSingle();
+
                     if (existingRefund) continue;
-                    
-                    // Crear reembolso
+
                     await this.supabase
                         .from('trading_reembolsos')
                         .insert([{
@@ -1580,16 +1548,15 @@ class TradingSignalsHandler {
                             estado: 'pendiente'
                         }]);
                 }
-                
-                // Marcar semana como procesada
+
                 await this.supabase
                     .from('trading_rentabilidad')
                     .update({ reembolsos_procesados: true })
                     .eq('id', week.id);
             }
-            
+
             console.log('✅ Reembolsos verificados');
-            
+
         } catch (error) {
             console.error('Error verificando reembolsos:', error);
         }
@@ -1597,13 +1564,12 @@ class TradingSignalsHandler {
 
     async processWeeklyRefunds(chatId, messageId) {
         try {
-            // Obtener reembolsos pendientes
             const { data: pendingRefunds } = await this.supabase
                 .from('trading_reembolsos')
                 .select('*, users!inner(first_name, balance_cup)')
                 .eq('estado', 'pendiente')
                 .order('created_at', { ascending: true });
-            
+
             if (!pendingRefunds || pendingRefunds.length === 0) {
                 await this.bot.editMessageText(
                     '✅ *No hay reembolsos pendientes*',
@@ -1615,21 +1581,19 @@ class TradingSignalsHandler {
                 );
                 return;
             }
-            
+
             let processed = 0;
             let failed = 0;
-            
+
             for (const refund of pendingRefunds) {
                 try {
-                    // Agregar saldo al usuario
                     const newBalance = (refund.users.balance_cup || 0) + refund.monto;
-                    
+
                     await this.supabase
                         .from('users')
                         .update({ balance_cup: newBalance })
                         .eq('telegram_id', refund.user_id);
-                    
-                    // Registrar transacción
+
                     await this.supabase
                         .from('transactions')
                         .insert([{
@@ -1641,8 +1605,7 @@ class TradingSignalsHandler {
                             description: `Reembolso garantía trading - Semana ${refund.semana}`,
                             created_at: new Date().toISOString()
                         }]);
-                    
-                    // Actualizar reembolso
+
                     await this.supabase
                         .from('trading_reembolsos')
                         .update({
@@ -1651,8 +1614,7 @@ class TradingSignalsHandler {
                             tx_id: `REF-${Date.now()}-${refund.user_id}`
                         })
                         .eq('id', refund.id);
-                    
-                    // Notificar al usuario
+
                     await this.bot.sendMessage(refund.user_id,
                         `💰 *¡REEMBOLSO PROCESADO!*\n\n` +
                         `Hemos procesado tu reembolso por garantía.\n\n` +
@@ -1662,35 +1624,34 @@ class TradingSignalsHandler {
                         `El dinero ha sido depositado en tu billetera Cromwell.`,
                         { parse_mode: 'Markdown' }
                     );
-                    
+
                     processed++;
-                    
+
                 } catch (error) {
                     console.error(`Error procesando reembolso ${refund.id}:`, error);
                     failed++;
                 }
             }
-            
+
             const message = `✅ *REEMBOLSOS PROCESADOS*\n\n` +
                 `📊 *Resultados:*\n` +
                 `✅ Completados: ${processed}\n` +
                 `❌ Fallados: ${failed}\n` +
                 `📋 Total: ${pendingRefunds.length}\n\n` +
                 `Los usuarios han sido notificados y el dinero depositado en sus billeteras.`;
-            
+
             await this.bot.editMessageText(message, {
                 chat_id: chatId,
                 message_id: messageId,
                 parse_mode: 'Markdown'
             });
-            
-            // Log
+
             await this.logAction(chatId, 'refunds_processed', {
                 processed: processed,
                 failed: failed,
                 total: pendingRefunds.length
             });
-            
+
         } catch (error) {
             console.error('Error procesando reembolsos:', error);
             await this.bot.editMessageText(
@@ -1706,8 +1667,7 @@ class TradingSignalsHandler {
 
     async toggleMaintenance(chatId, messageId) {
         this.maintenanceMode = !this.maintenanceMode;
-        
-        // Guardar en base de datos
+
         await this.supabase
             .from('trading_mantenimiento')
             .insert([{
@@ -1716,11 +1676,10 @@ class TradingSignalsHandler {
                 inicio: this.maintenanceMode ? new Date().toISOString() : null,
                 fin: !this.maintenanceMode ? new Date().toISOString() : null
             }]);
-        
+
         const status = this.maintenanceMode ? 'ACTIVADO' : 'DESACTIVADO';
-        const message = `🔧 *MODO MANTENIMIENTO ${status}*\n\n`;
-        
-        let finalMessage = message;
+        let finalMessage = `🔧 *MODO MANTENIMIENTO ${status}*\n\n`;
+
         if (this.maintenanceMode) {
             finalMessage += `⚠️ *El sistema está ahora en mantenimiento*\n\n`;
             finalMessage += `Los usuarios no podrán:\n`;
@@ -1732,26 +1691,26 @@ class TradingSignalsHandler {
             finalMessage += `✅ *El sistema está ahora operativo*\n\n`;
             finalMessage += `Todos los servicios han sido restaurados.`;
         }
-        
+
         await this.bot.editMessageText(finalMessage, {
             chat_id: chatId,
             message_id: messageId,
             parse_mode: 'Markdown',
             reply_markup: { inline_keyboard: [[{ text: '🔙 Panel Admin', callback_data: 'trading_admin_menu' }]] }
         });
-        
-        // Log
+
         await this.logAction(chatId, 'maintenance_toggle', {
             mode: this.maintenanceMode ? 'on' : 'off'
         });
     }
 
-    async testSignal(chatId, messageId) {
-        this.adminStates[chatId] = {
+    async testSignal(chatId, messageId, userId) {
+        this.adminStates[userId] = {
             step: 'test_signal',
-            testMode: true
+            testMode: true,
+            requestTime: Date.now()
         };
-        
+
         const message = `🧪 *MODO TEST DE SEÑAL*\n\n` +
             `Este modo te permite probar el formato de una señal\n` +
             `sin enviarla a los usuarios.\n\n` +
@@ -1760,7 +1719,7 @@ class TradingSignalsHandler {
             `📌 *Ejemplo:*\n` +
             `\`EUR/USD 5min\`\n\n` +
             `Escribe ahora:`;
-        
+
         await this.bot.editMessageText(message, {
             chat_id: chatId,
             message_id: messageId,
@@ -1769,7 +1728,7 @@ class TradingSignalsHandler {
         });
     }
 
-    async handleTestSignal(chatId, text, userId) {
+    async handleTestSignal(chatId, userId, text) {
         const parts = text.trim().split(' ');
         if (parts.length !== 2) {
             await this.bot.sendMessage(chatId,
@@ -1781,24 +1740,22 @@ class TradingSignalsHandler {
             );
             return true;
         }
-        
+
         const [pair, timeframe] = parts;
         const pairUpper = pair.toUpperCase();
         const timeframeLower = timeframe.toLowerCase();
-        
-        // Validaciones básicas
+
         if (!pairUpper.includes('/')) {
             await this.bot.sendMessage(chatId, '❌ Formato de par inválido');
             return true;
         }
-        
+
         const validTimeframes = ['1min', '5min', '15min', '30min', '1h', '4h'];
         if (!validTimeframes.includes(timeframeLower)) {
             await this.bot.sendMessage(chatId, '❌ Temporalidad no válida');
             return true;
         }
-        
-        // Mostrar vista previa
+
         const preview = `🔍 *VISTA PREVIA DE SEÑAL*\n\n` +
             `🎯 *Activo:* ${pairUpper}\n` +
             `⏰ *Temporalidad:* ${timeframeLower}\n\n` +
@@ -1811,7 +1768,7 @@ class TradingSignalsHandler {
             `📅 *Hora:* [HORA ACTUAL]\n\n` +
             `⚡ *¡ACTÚA RÁPIDO!*\n` +
             `Esta es una señal para opciones binarias.`;
-        
+
         const keyboard = {
             inline_keyboard: [
                 [
@@ -1823,46 +1780,44 @@ class TradingSignalsHandler {
                 ]
             ]
         };
-        
+
         await this.bot.sendMessage(chatId, preview, {
             parse_mode: 'Markdown',
             reply_markup: keyboard
         });
-        
-        // Guardar para uso posterior
+
         this.adminStates[userId] = {
             step: 'waiting_direction',
             pair: pairUpper,
             timeframe: timeframeLower,
             sessionId: null,
             signalNumber: 1,
-            testMode: true
+            testMode: true,
+            requestTime: Date.now()
         };
-        
+
         return true;
     }
 
     async showAdminStatistics(chatId, messageId) {
         try {
-            // Obtener estadísticas
             const totalVIPs = await this.getVIPUsersCount();
             const totalRevenue = await this.getTotalRevenue();
             const weeklyROI = await this.getCurrentWeeklyROI();
             const successRate = await this.getSuccessRate();
             const pendingRefunds = await this.getPendingRefundsCount();
             const upcomingRenewals = await this.getUpcomingRenewalsCount();
-            
-            // Obtener señales de esta semana
+
             const monday = this.getCurrentWeekMonday();
             const { data: weeklySignals } = await this.supabase
                 .from('trading_senales')
                 .select('resultado')
                 .gte('created_at', monday.toISOString());
-            
+
             const weeklyWon = weeklySignals?.filter(s => s.resultado === 'ganada').length || 0;
             const weeklyLost = weeklySignals?.filter(s => s.resultado === 'perdida').length || 0;
             const weeklyPending = weeklySignals?.filter(s => !s.resultado).length || 0;
-            
+
             const message = `📊 *ESTADÍSTICAS DEL SISTEMA*\n\n` +
                 `👥 *Usuarios VIP:* ${totalVIPs}\n` +
                 `💰 *Ingresos totales:* ${totalRevenue} CUP\n` +
@@ -1876,7 +1831,7 @@ class TradingSignalsHandler {
                 `🔄 *Renovaciones próximas (7 días):* ${upcomingRenewals}\n\n` +
                 `🔧 *Estado del sistema:* ${this.maintenanceMode ? '🛑 MANTENIMIENTO' : '✅ OPERATIVO'}\n` +
                 `📅 *Actualizado:* ${new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}`;
-            
+
             const keyboard = {
                 inline_keyboard: [
                     [
@@ -1888,14 +1843,14 @@ class TradingSignalsHandler {
                     ]
                 ]
             };
-            
+
             await this.bot.editMessageText(message, {
                 chat_id: chatId,
                 message_id: messageId,
                 parse_mode: 'Markdown',
                 reply_markup: keyboard
             });
-            
+
         } catch (error) {
             console.error('Error mostrando estadísticas:', error);
             await this.bot.editMessageText(
@@ -1916,18 +1871,18 @@ class TradingSignalsHandler {
             .eq('estado', 'activa')
             .gte('fecha_fin', new Date().toISOString())
             .order('fecha_fin', { ascending: true });
-        
+
         let message = `👥 *USUARIOS VIP ACTIVOS*\n\n`;
-        
+
         if (!subscriptions || subscriptions.length === 0) {
             message += `📭 *No hay usuarios VIP activos*`;
         } else {
             message += `📋 *Total:* ${subscriptions.length} usuarios\n\n`;
-            
+
             subscriptions.slice(0, 10).forEach((sub, index) => {
                 const daysLeft = this.getDaysLeft(sub.fecha_fin);
                 const username = sub.users.username ? `@${sub.users.username}` : 'Sin usuario';
-                
+
                 message += `${index + 1}. *${sub.users.first_name}*\n`;
                 message += `   📱 ${username}\n`;
                 message += `   🆔 ${sub.user_id}\n`;
@@ -1935,12 +1890,12 @@ class TradingSignalsHandler {
                 message += `   📅 Vence: ${new Date(sub.fecha_fin).toLocaleDateString()}\n`;
                 message += `   ---\n`;
             });
-            
+
             if (subscriptions.length > 10) {
                 message += `\n... y ${subscriptions.length - 10} más`;
             }
         }
-        
+
         const keyboard = {
             inline_keyboard: [
                 [
@@ -1952,7 +1907,7 @@ class TradingSignalsHandler {
                 ]
             ]
         };
-        
+
         await this.bot.editMessageText(message, {
             chat_id: chatId,
             message_id: messageId,
@@ -1970,8 +1925,8 @@ class TradingSignalsHandler {
             .from('users')
             .select('*')
             .eq('telegram_id', telegramId)
-            .single();
-        
+            .maybeSingle();
+
         return data;
     }
 
@@ -1982,8 +1937,8 @@ class TradingSignalsHandler {
             .eq('user_id', userId)
             .eq('estado', 'activa')
             .gt('fecha_fin', new Date().toISOString())
-            .single();
-        
+            .maybeSingle();
+
         return !!subscription;
     }
 
@@ -1994,8 +1949,8 @@ class TradingSignalsHandler {
             .eq('user_id', userId)
             .eq('estado', 'activa')
             .gt('fecha_fin', new Date().toISOString())
-            .single();
-        
+            .maybeSingle();
+
         return subscription;
     }
 
@@ -2005,7 +1960,7 @@ class TradingSignalsHandler {
             .select('user_id')
             .eq('estado', 'activa')
             .gt('fecha_fin', new Date().toISOString());
-        
+
         return subscriptions || [];
     }
 
@@ -2015,7 +1970,7 @@ class TradingSignalsHandler {
             .select('*', { count: 'exact', head: true })
             .eq('estado', 'activa')
             .gt('fecha_fin', new Date().toISOString());
-        
+
         return count || 0;
     }
 
@@ -2025,9 +1980,9 @@ class TradingSignalsHandler {
             .select('amount')
             .eq('type', 'TRADING_SUSCRIPTION')
             .eq('status', 'completed');
-        
+
         if (!transactions) return 0;
-        
+
         return Math.abs(transactions.reduce((sum, t) => sum + (t.amount || 0), 0));
     }
 
@@ -2037,8 +1992,8 @@ class TradingSignalsHandler {
             .from('trading_rentabilidad')
             .select('rentabilidad')
             .eq('semana', monday.toISOString().split('T')[0])
-            .single();
-        
+            .maybeSingle();
+
         return week?.rentabilidad || 0;
     }
 
@@ -2047,9 +2002,9 @@ class TradingSignalsHandler {
             .from('trading_senales')
             .select('resultado')
             .not('resultado', 'is', null);
-        
+
         if (!signals || signals.length === 0) return 0;
-        
+
         const won = signals.filter(s => s.resultado === 'ganada').length;
         return ((won / signals.length) * 100).toFixed(2);
     }
@@ -2059,21 +2014,21 @@ class TradingSignalsHandler {
             .from('trading_reembolsos')
             .select('*', { count: 'exact', head: true })
             .eq('estado', 'pendiente');
-        
+
         return count || 0;
     }
 
     async getUpcomingRenewalsCount() {
         const weekFromNow = new Date();
         weekFromNow.setDate(weekFromNow.getDate() + 7);
-        
+
         const { count } = await this.supabase
             .from('trading_suscripciones')
             .select('*', { count: 'exact', head: true })
             .eq('estado', 'activa')
             .lte('fecha_fin', weekFromNow.toISOString())
             .gte('fecha_fin', new Date().toISOString());
-        
+
         return count || 0;
     }
 
@@ -2097,25 +2052,23 @@ class TradingSignalsHandler {
 
     async checkRenewals() {
         try {
-            // Verificar suscripciones que expiran en 10, 5 o 1 día
             const now = new Date();
-            
+
             for (const days of [10, 5, 1]) {
                 const targetDate = new Date(now);
                 targetDate.setDate(targetDate.getDate() + days);
-                
+
                 const { data: expiringSubs } = await this.supabase
                     .from('trading_suscripciones')
                     .select('*, users!inner(first_name)')
                     .eq('estado', 'activa')
-                    .eq('notificado_' + days + 'd', false)
+                    .eq(`notificado_${days}d`, false)
                     .gte('fecha_fin', targetDate.toISOString())
                     .lt('fecha_fin', new Date(targetDate.getTime() + 24 * 60 * 60 * 1000).toISOString());
-                
+
                 if (!expiringSubs) continue;
-                
+
                 for (const sub of expiringSubs) {
-                    // Enviar notificación
                     await this.bot.sendMessage(sub.user_id,
                         `⚠️ *RENOVACIÓN DE SUSCRIPCIÓN*\n\n` +
                         `Tu suscripción VIP vencerá en *${days} día${days !== 1 ? 's' : ''}*.\n\n` +
@@ -2128,31 +2081,27 @@ class TradingSignalsHandler {
                         `¡No pierdas el acceso a las señales!`,
                         { parse_mode: 'Markdown' }
                     );
-                    
-                    // Marcar como notificado
+
                     await this.supabase
                         .from('trading_suscripciones')
                         .update({ [`notificado_${days}d`]: true })
                         .eq('id', sub.id);
                 }
             }
-            
-            // Verificar suscripciones vencidas
+
             const { data: expiredSubs } = await this.supabase
                 .from('trading_suscripciones')
                 .select('*')
                 .eq('estado', 'activa')
                 .lt('fecha_fin', now.toISOString());
-            
+
             if (expiredSubs) {
                 for (const sub of expiredSubs) {
-                    // Desactivar suscripción
                     await this.supabase
                         .from('trading_suscripciones')
                         .update({ estado: 'expirada' })
                         .eq('id', sub.id);
-                    
-                    // Notificar al usuario
+
                     await this.bot.sendMessage(sub.user_id,
                         `❌ *SUSCRIPCIÓN VENCIDA*\n\n` +
                         `Tu suscripción VIP ha vencido.\n\n` +
@@ -2166,15 +2115,14 @@ class TradingSignalsHandler {
                     );
                 }
             }
-            
+
         } catch (error) {
             console.error('Error verificando renovaciones:', error);
         }
     }
 
     scheduleRenewalReminders(userId, subscriptionId, endDate) {
-        // Esta función sería llamada por un sistema de agenda
-        // Por ahora, solo registramos la necesidad
+        // Placeholder – implementar si se desea agenda
         console.log(`Recordatorios programados para usuario ${userId}`);
     }
 
@@ -2186,26 +2134,26 @@ class TradingSignalsHandler {
                 .eq('enviada', false)
                 .order('created_at', { ascending: true })
                 .limit(10);
-            
+
             if (!notifications) return;
-            
+
             for (const notification of notifications) {
                 try {
                     await this.bot.sendMessage(notification.user_id,
                         `🔔 *NOTIFICACIÓN*\n\n${notification.mensaje}`,
                         { parse_mode: 'Markdown' }
                     );
-                    
+
                     await this.supabase
                         .from('trading_notificaciones')
                         .update({ enviada: true, leida: true })
                         .eq('id', notification.id);
-                    
+
                 } catch (error) {
                     console.log(`Error enviando notificación ${notification.id}:`, error.message);
                 }
             }
-            
+
         } catch (error) {
             console.error('Error enviando notificaciones:', error);
         }
@@ -2229,15 +2177,15 @@ class TradingSignalsHandler {
 
     async notifyAdminNewRequest(userId, requestId, quotexId) {
         const user = await this.getUser(userId);
-        
+
         const message = `🎖️ *NUEVA SOLICITUD VIP*\n\n` +
-            `👤 *Usuario:* ${user.first_name}\n` +
+            `👤 *Usuario:* ${user?.first_name || 'Desconocido'}\n` +
             `🆔 *Telegram ID:* ${userId}\n` +
-            `📱 *Username:* @${user.username || 'N/A'}\n` +
+            `📱 *Username:* @${user?.username || 'N/A'}\n` +
             `🆔 *Quotex ID:* ${quotexId}\n\n` +
             `📅 *Fecha:* ${new Date().toLocaleString()}\n\n` +
             `¿Aprobar solicitud?`;
-        
+
         const keyboard = {
             inline_keyboard: [
                 [
@@ -2249,7 +2197,7 @@ class TradingSignalsHandler {
                 ]
             ]
         };
-        
+
         await this.bot.sendMessage(this.BOT_ADMIN_ID, message, {
             parse_mode: 'Markdown',
             reply_markup: keyboard
@@ -2262,7 +2210,7 @@ class TradingSignalsHandler {
             .select('*, users!inner(first_name, username)')
             .eq('id', requestId)
             .single();
-        
+
         if (!request) {
             await this.bot.editMessageText('❌ Solicitud no encontrada.', {
                 chat_id: chatId,
@@ -2270,8 +2218,7 @@ class TradingSignalsHandler {
             });
             return;
         }
-        
-        // Actualizar estado
+
         await this.supabase
             .from('trading_solicitudes_vip')
             .update({
@@ -2280,8 +2227,7 @@ class TradingSignalsHandler {
                 fecha_aprobacion: new Date().toISOString()
             })
             .eq('id', requestId);
-        
-        // Notificar al usuario
+
         try {
             await this.bot.sendMessage(request.user_id,
                 `🎉 *¡SOLICITUD VIP APROBADA!*\n\n` +
@@ -2296,22 +2242,21 @@ class TradingSignalsHandler {
         } catch (error) {
             console.log(`No se pudo notificar al usuario ${request.user_id}`);
         }
-        
+
         const message = `✅ *SOLICITUD APROBADA*\n\n` +
             `La solicitud VIP ha sido aprobada.\n\n` +
             `👤 Usuario: ${request.users.first_name}\n` +
             `🆔 Telegram: ${request.user_id}\n` +
             `🆔 Quotex: ${request.quotex_id}\n\n` +
             `El usuario ha sido notificado.`;
-        
+
         await this.bot.editMessageText(message, {
             chat_id: chatId,
             message_id: messageId,
             parse_mode: 'Markdown',
             reply_markup: { inline_keyboard: [[{ text: '📋 Ver Más', callback_data: 'trading_admin_view_requests' }]] }
         });
-        
-        // Log
+
         await this.logAction(chatId, 'vip_request_approved', { request_id: requestId });
     }
 
@@ -2321,7 +2266,7 @@ class TradingSignalsHandler {
             .select('*, users!inner(first_name, username)')
             .eq('id', requestId)
             .single();
-        
+
         if (!request) {
             await this.bot.editMessageText('❌ Solicitud no encontrada.', {
                 chat_id: chatId,
@@ -2329,8 +2274,7 @@ class TradingSignalsHandler {
             });
             return;
         }
-        
-        // Actualizar estado
+
         await this.supabase
             .from('trading_solicitudes_vip')
             .update({
@@ -2339,8 +2283,7 @@ class TradingSignalsHandler {
                 motivo_rechazo: 'Rechazada por el administrador'
             })
             .eq('id', requestId);
-        
-        // Notificar al usuario
+
         try {
             await this.bot.sendMessage(request.user_id,
                 `❌ *SOLICITUD VIP RECHAZADA*\n\n` +
@@ -2354,22 +2297,21 @@ class TradingSignalsHandler {
         } catch (error) {
             console.log(`No se pudo notificar al usuario ${request.user_id}`);
         }
-        
+
         const message = `❌ *SOLICITUD RECHAZADA*\n\n` +
             `La solicitud VIP ha sido rechazada.\n\n` +
             `👤 Usuario: ${request.users.first_name}\n` +
             `🆔 Telegram: ${request.user_id}\n` +
             `🆔 Quotex: ${request.quotex_id}\n\n` +
             `El usuario ha sido notificado.`;
-        
+
         await this.bot.editMessageText(message, {
             chat_id: chatId,
             message_id: messageId,
             parse_mode: 'Markdown',
             reply_markup: { inline_keyboard: [[{ text: '📋 Ver Más', callback_data: 'trading_admin_view_requests' }]] }
         });
-        
-        // Log
+
         await this.logAction(chatId, 'vip_request_rejected', { request_id: requestId });
     }
 
@@ -2379,14 +2321,14 @@ class TradingSignalsHandler {
             .select('*, users!inner(first_name, username)')
             .eq('estado', 'pendiente')
             .order('created_at', { ascending: false });
-        
+
         let message = `📋 *SOLICITUDES VIP PENDIENTES*\n\n`;
-        
+
         if (!requests || requests.length === 0) {
             message += `✅ *No hay solicitudes pendientes*`;
         } else {
             message += `Total: ${requests.length} solicitudes\n\n`;
-            
+
             requests.forEach((request, index) => {
                 message += `${index + 1}. *${request.users.first_name}*\n`;
                 message += `   🆔 Telegram: ${request.user_id}\n`;
@@ -2396,7 +2338,7 @@ class TradingSignalsHandler {
                 message += `   ---\n`;
             });
         }
-        
+
         const keyboard = {
             inline_keyboard: [
                 [
@@ -2407,7 +2349,7 @@ class TradingSignalsHandler {
                 ]
             ]
         };
-        
+
         await this.bot.editMessageText(message, {
             chat_id: chatId,
             message_id: messageId,
@@ -2417,13 +2359,12 @@ class TradingSignalsHandler {
     }
 
     async closeSession(chatId, messageId) {
-        // Obtener sesión activa
         const { data: activeSession } = await this.supabase
             .from('trading_sesiones')
             .select('*')
             .eq('estado', 'abierta')
-            .single();
-        
+            .maybeSingle();
+
         if (!activeSession) {
             await this.bot.editMessageText('❌ No hay sesión activa.', {
                 chat_id: chatId,
@@ -2431,14 +2372,12 @@ class TradingSignalsHandler {
             });
             return;
         }
-        
-        // Cerrar sesión
+
         await this.supabase
             .from('trading_sesiones')
             .update({ estado: 'cerrada' })
             .eq('id', activeSession.id);
-        
-        // Notificar a usuarios VIP
+
         const vipUsers = await this.getVIPUsers();
         for (const user of vipUsers) {
             try {
@@ -2457,7 +2396,7 @@ class TradingSignalsHandler {
                 console.log(`No se pudo notificar al usuario ${user.user_id}`);
             }
         }
-        
+
         const message = `✅ *SESIÓN CERRADA*\n\n` +
             `📅 *Fecha:* ${activeSession.fecha}\n` +
             `🕙 *Hora de cierre:* ${new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}\n` +
@@ -2465,15 +2404,14 @@ class TradingSignalsHandler {
             `📡 *Señales enviadas:* ${activeSession.señales_enviadas}/${activeSession.señales_totales}\n` +
             `👥 *Usuarios notificados:* ${vipUsers.length}\n\n` +
             `La sesión ha sido cerrada exitosamente.`;
-        
+
         await this.bot.editMessageText(message, {
             chat_id: chatId,
             message_id: messageId,
             parse_mode: 'Markdown',
             reply_markup: { inline_keyboard: [[{ text: '🔙 Panel Admin', callback_data: 'trading_admin_menu' }]] }
         });
-        
-        // Log
+
         await this.logAction(chatId, 'session_closed', {
             session_id: activeSession.id,
             señales_enviadas: activeSession.señales_enviadas
@@ -2481,13 +2419,12 @@ class TradingSignalsHandler {
     }
 
     async markSignalResult(chatId, messageId, signalId, result) {
-        // Obtener señal
         const { data: signal } = await this.supabase
             .from('trading_senales')
             .select('*')
             .eq('id', signalId)
             .single();
-        
+
         if (!signal) {
             await this.bot.editMessageText('❌ Señal no encontrada.', {
                 chat_id: chatId,
@@ -2495,10 +2432,9 @@ class TradingSignalsHandler {
             });
             return;
         }
-        
-        // Actualizar señal
+
         const profitLoss = result === 'ganada' ? 75 : -100;
-        
+
         await this.supabase
             .from('trading_senales')
             .update({
@@ -2507,8 +2443,7 @@ class TradingSignalsHandler {
                 profit_loss: profitLoss
             })
             .eq('id', signalId);
-        
-        // Actualizar señales de usuarios
+
         await this.supabase
             .from('trading_senales_usuario')
             .update({
@@ -2516,25 +2451,23 @@ class TradingSignalsHandler {
                 profit_loss_usuario: profitLoss
             })
             .eq('señal_id', signalId);
-        
-        // Obtener usuarios que recibieron esta señal
+
         const { data: userSignals } = await this.supabase
             .from('trading_senales_usuario')
             .select('user_id')
             .eq('señal_id', signalId);
-        
-        // Notificar a usuarios
+
         if (userSignals) {
-            const resultMessage = result === 'ganada' ? 
-                `✅ *SEÑAL GANADA* (+75%)` : 
+            const resultMessage = result === 'ganada' ?
+                `✅ *SEÑAL GANADA* (+75%)` :
                 `❌ *SEÑAL PERDIDA* (-100%)`;
-            
+
             const userNotification = `📊 *RESULTADO DE SEÑAL*\n\n` +
                 `📈 *Activo:* ${signal.activo} (${signal.temporalidad})\n` +
                 `${resultMessage}\n\n` +
                 `📅 *Hora cierre:* ${new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}\n` +
                 `🔢 *ID Señal:* #${signalId}`;
-            
+
             for (const userSignal of userSignals) {
                 try {
                     await this.bot.sendMessage(userSignal.user_id, userNotification, {
@@ -2545,11 +2478,9 @@ class TradingSignalsHandler {
                 }
             }
         }
-        
-        // Actualizar rentabilidad semanal
+
         await this.updateWeeklyROI();
-        
-        // Actualizar mensaje del admin si existe
+
         const updatedMessage = `📊 *RESULTADO REGISTRADO*\n\n` +
             `✅ *Señal #${signalId} marcada como ${result === 'ganada' ? 'GANADA' : 'PERDIDA'}*\n\n` +
             `📈 *Activo:* ${signal.activo} (${signal.temporalidad})\n` +
@@ -2557,7 +2488,7 @@ class TradingSignalsHandler {
             `💰 *Resultado:* ${result === 'ganada' ? '+75%' : '-100%'}\n` +
             `👥 *Usuarios notificados:* ${userSignals ? userSignals.length : 0}\n\n` +
             `¿Qué deseas hacer ahora?`;
-        
+
         const keyboard = {
             inline_keyboard: [
                 [
@@ -2569,7 +2500,7 @@ class TradingSignalsHandler {
                 ]
             ]
         };
-        
+
         if (signal.admin_message_id) {
             try {
                 await this.bot.editMessageText(updatedMessage, {
@@ -2590,8 +2521,7 @@ class TradingSignalsHandler {
                 reply_markup: keyboard
             });
         }
-        
-        // Log
+
         await this.logAction(chatId, 'signal_result', {
             signal_id: signalId,
             result: result,
@@ -2604,31 +2534,28 @@ class TradingSignalsHandler {
             const monday = this.getCurrentWeekMonday();
             const nextMonday = new Date(monday);
             nextMonday.setDate(nextMonday.getDate() + 7);
-            
-            // Obtener señales de esta semana
+
             const { data: signals } = await this.supabase
                 .from('trading_senales')
                 .select('resultado, profit_loss')
                 .gte('created_at', monday.toISOString())
                 .lt('created_at', nextMonday.toISOString())
                 .not('resultado', 'is', null);
-            
+
             if (!signals || signals.length === 0) return;
-            
-            // Calcular rentabilidad
+
             const totalProfit = signals.reduce((sum, s) => sum + (s.profit_loss || 0), 0);
             const roi = signals.length > 0 ? (totalProfit / signals.length) : 0;
-            
+
             const ganadas = signals.filter(s => s.resultado === 'ganada').length;
             const perdidas = signals.filter(s => s.resultado === 'perdida').length;
-            
-            // Verificar si ya existe registro para esta semana
+
             const { data: existing } = await this.supabase
                 .from('trading_rentabilidad')
                 .select('id')
                 .eq('semana', monday.toISOString().split('T')[0])
-                .single();
-            
+                .maybeSingle();
+
             if (existing) {
                 await this.supabase
                     .from('trading_rentabilidad')
@@ -2650,12 +2577,10 @@ class TradingSignalsHandler {
                         señales_perdidas: perdidas
                     }]);
             }
-            
-            // Verificar si necesita reembolso
+
             if (roi < this.MIN_ROI_FOR_REFUND) {
                 await this.checkRefunds();
-                
-                // Notificar al admin
+
                 await this.bot.sendMessage(this.BOT_ADMIN_ID,
                     `⚠️ *RENTABILIDAD BAJA DETECTADA*\n\n` +
                     `La rentabilidad de esta semana es del ${roi.toFixed(2)}%\n` +
@@ -2665,65 +2590,63 @@ class TradingSignalsHandler {
                     { parse_mode: 'Markdown' }
                 );
             }
-            
+
         } catch (error) {
             console.error('Error actualizando ROI:', error);
         }
     }
 
     async showAdminActiveSignals(chatId, messageId) {
-        // Obtener sesión activa
         const { data: activeSession } = await this.supabase
             .from('trading_sesiones')
             .select('*')
             .eq('estado', 'abierta')
-            .single();
-        
+            .maybeSingle();
+
         let message = `📈 *SEÑALES ACTIVAS*\n\n`;
-        
+
         if (!activeSession) {
             message += `❌ *No hay sesión activa*\n\n`;
             message += `No hay señales activas en este momento.`;
         } else {
-            // Obtener señales de esta sesión
             const { data: signals } = await this.supabase
                 .from('trading_senales')
                 .select('*')
                 .eq('sesion_id', activeSession.id)
                 .order('hora_envio', { ascending: false });
-            
+
             message += `📅 *Sesión ${activeSession.tipo}*\n`;
             message += `🕙 ${activeSession.hora}\n`;
             message += `📡 ${activeSession.señales_enviadas}/${activeSession.señales_totales} señales\n\n`;
-            
+
             if (!signals || signals.length === 0) {
                 message += `📭 *No hay señales aún*`;
             } else {
                 message += `📋 *ÚLTIMAS SEÑALES:*\n\n`;
-                
+
                 signals.slice(0, 5).forEach((signal, index) => {
-                    const hora = new Date(signal.hora_envio).toLocaleTimeString('es-ES', { 
-                        hour: '2-digit', 
-                        minute: '2-digit' 
+                    const hora = new Date(signal.hora_envio).toLocaleTimeString('es-ES', {
+                        hour: '2-digit',
+                        minute: '2-digit'
                     });
-                    
-                    const resultado = signal.resultado ? 
+
+                    const resultado = signal.resultado ?
                         (signal.resultado === 'ganada' ? '✅' : '❌') : '⏳';
-                    
+
                     message += `${index + 1}. *${signal.activo}* (${signal.temporalidad})\n`;
                     message += `   ${signal.direccion === 'alta' ? '⬆️' : '⬇️'} ${resultado}\n`;
                     message += `   🕙 ${hora}\n`;
                     message += `   🆔 #${signal.id}\n`;
-                    
+
                     if (signal.resultado) {
                         message += `   📊 ${signal.profit_loss}%\n`;
                     }
-                    
+
                     message += `\n`;
                 });
             }
         }
-        
+
         const keyboard = {
             inline_keyboard: [
                 [
@@ -2735,7 +2658,7 @@ class TradingSignalsHandler {
                 ]
             ]
         };
-        
+
         await this.bot.editMessageText(message, {
             chat_id: chatId,
             message_id: messageId,
@@ -2750,31 +2673,31 @@ class TradingSignalsHandler {
             .select('*, users!inner(first_name)')
             .order('created_at', { ascending: false })
             .limit(10);
-        
+
         let message = `💰 *REEMBOLSOS*\n\n`;
-        
+
         if (!refunds || refunds.length === 0) {
             message += `✅ *No hay reembolsos registrados*`;
         } else {
             message += `📋 *Últimos reembolsos:*\n\n`;
-            
+
             refunds.forEach((refund, index) => {
-                const estado = refund.estado === 'completado' ? '✅' : 
-                             refund.estado === 'pendiente' ? '⏳' : '❌';
-                
+                const estado = refund.estado === 'completado' ? '✅' :
+                    refund.estado === 'pendiente' ? '⏳' : '❌';
+
                 message += `${index + 1}. *${refund.users.first_name}*\n`;
                 message += `   ${estado} ${refund.monto} CUP\n`;
                 message += `   📅 ${new Date(refund.semana).toLocaleDateString()}\n`;
                 message += `   🆔 ${refund.user_id}\n`;
-                
+
                 if (refund.motivo) {
                     message += `   📝 ${refund.motivo.substring(0, 50)}...\n`;
                 }
-                
+
                 message += `\n`;
             });
         }
-        
+
         const keyboard = {
             inline_keyboard: [
                 [
@@ -2786,7 +2709,7 @@ class TradingSignalsHandler {
                 ]
             ]
         };
-        
+
         await this.bot.editMessageText(message, {
             chat_id: chatId,
             message_id: messageId,
@@ -2799,23 +2722,21 @@ class TradingSignalsHandler {
         try {
             const now = Date.now();
             const timeout = 30 * 60 * 1000; // 30 minutos
-            
-            // Limpiar estados de usuario
+
             for (const [userId, state] of Object.entries(this.userStates)) {
                 if (state && state.requestTime && (now - state.requestTime) > timeout) {
                     delete this.userStates[userId];
-                    console.log(`🧹 Limpiado estado antiguo de trading para usuario ${userId}`);
+                    console.log(`🧹 Limpiado estado antiguo de usuario ${userId}`);
                 }
             }
-            
-            // Limpiar estados de admin
+
             for (const [adminId, state] of Object.entries(this.adminStates)) {
                 if (state && state.requestTime && (now - state.requestTime) > timeout) {
                     delete this.adminStates[adminId];
-                    console.log(`🧹 Limpiado estado antiguo de trading para admin ${adminId}`);
+                    console.log(`🧹 Limpiado estado antiguo de admin ${adminId}`);
                 }
             }
-            
+
             console.log('✅ Estados antiguos de Trading limpiados');
         } catch (error) {
             console.error('Error limpiando estados de Trading:', error);
@@ -2825,6 +2746,79 @@ class TradingSignalsHandler {
     clearUserState(userId) {
         if (this.userStates[userId]) delete this.userStates[userId];
         if (this.adminStates[userId]) delete this.adminStates[userId];
+    }
+
+    // ============================================
+    // MÉTODOS PENDIENTES (stubs para evitar errores)
+    // ============================================
+    async showSubscriptions(chatId, messageId) {
+        await this.bot.editMessageText('⏳ Funcionalidad en desarrollo...', {
+            chat_id: chatId,
+            message_id: messageId
+        });
+    }
+
+    async showBuySignals(chatId, messageId) {
+        await this.bot.editMessageText('⏳ Funcionalidad en desarrollo...', {
+            chat_id: chatId,
+            message_id: messageId
+        });
+    }
+
+    async showMySignals(chatId, messageId) {
+        await this.bot.editMessageText('⏳ Funcionalidad en desarrollo...', {
+            chat_id: chatId,
+            message_id: messageId
+        });
+    }
+
+    async showHowItWorks(chatId, messageId) {
+        await this.bot.editMessageText('⏳ Funcionalidad en desarrollo...', {
+            chat_id: chatId,
+            message_id: messageId
+        });
+    }
+
+    async showPerformance(chatId, messageId) {
+        await this.bot.editMessageText('⏳ Funcionalidad en desarrollo...', {
+            chat_id: chatId,
+            message_id: messageId
+        });
+    }
+
+    async showActiveSignals(chatId, messageId) {
+        await this.bot.editMessageText('⏳ Funcionalidad en desarrollo...', {
+            chat_id: chatId,
+            message_id: messageId
+        });
+    }
+
+    async showHistory(chatId, messageId) {
+        await this.bot.editMessageText('⏳ Funcionalidad en desarrollo...', {
+            chat_id: chatId,
+            message_id: messageId
+        });
+    }
+
+    async showCalendar(chatId, messageId, param) {
+        await this.bot.editMessageText('⏳ Funcionalidad en desarrollo...', {
+            chat_id: chatId,
+            message_id: messageId
+        });
+    }
+
+    async viewSignalsByDate(chatId, messageId, param) {
+        await this.bot.editMessageText('⏳ Funcionalidad en desarrollo...', {
+            chat_id: chatId,
+            message_id: messageId
+        });
+    }
+
+    async showNotifications(chatId, messageId) {
+        await this.bot.editMessageText('⏳ Funcionalidad en desarrollo...', {
+            chat_id: chatId,
+            message_id: messageId
+        });
     }
 }
 
