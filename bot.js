@@ -63,8 +63,16 @@ const sokyHandler = new SokyRecargasHandler(bot, db.supabase);
 const bolitaHandler = new BolitaHandler(bot, db.supabase);
 const tradingHandler = new TradingSignalsHandler(bot, db.supabase);
 
-// Cargar handlers de Telegram
-require('./handlers');
+// ============================================================
+// IMPORTANTE: Inicializar handlers de Telegram PASANDO las instancias
+// ============================================================
+const handlers = require('./handlers');
+handlers.init({
+    gameHandler,
+    sokyHandler,
+    bolitaHandler,
+    tradingHandler
+});
 
 // Cargar rutas web
 app.use(require('./web'));
