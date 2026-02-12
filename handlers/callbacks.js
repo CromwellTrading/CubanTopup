@@ -1,3 +1,6 @@
+// ============================================
+// handlers/callbacks.js - MANEJO DE CALLBACKS
+// ============================================
 const bot = require('../bot');
 const db = require('../database');
 const keyboards = require('../config/keyboards');
@@ -8,17 +11,8 @@ const rechargeHandlers = require('./recharge');
 const helpHandlers = require('./help');
 const adminHandlers = require('./admin');
 
-// Import handlers externos
-const GameRechargeHandler = require('../services/game_recharges');
-const SokyRecargasHandler = require('../services/sokyrecargas');
-const BolitaHandler = require('../services/BolitaHandler');
-const TradingSignalsHandler = require('../services/TradingSignalsHandler');
-
-// Inicializar handlers
-const gameHandler = new GameRechargeHandler(bot, db.supabase);
-const sokyHandler = new SokyRecargasHandler(bot, db.supabase);
-const bolitaHandler = new BolitaHandler(bot, db.supabase);
-const tradingHandler = new TradingSignalsHandler(bot, db.supabase);
+// Importar instancias ÚNICAS desde index
+const { gameHandler, sokyHandler, bolitaHandler, tradingHandler } = require('./index');
 
 async function handleCallback(query) {
     const chatId = query.message.chat.id;
@@ -29,13 +23,17 @@ async function handleCallback(query) {
     try {
         await bot.answerCallbackQuery(query.id);
 
-        // Admin functions first
+        // --------------------------------------------------------
+        // 1️⃣ Admin callbacks (prioridad)
+        // --------------------------------------------------------
         if (adminHandlers.esAdmin(userId)) {
             const adminHandled = await adminHandlers.handleAdminCallbacks(chatId, messageId, userId, data);
             if (adminHandled) return;
         }
 
-        // Handlers externos
+        // --------------------------------------------------------
+        // 2️⃣ Handlers externos (misma instancia única)
+        // --------------------------------------------------------
         const handledByTrading = await tradingHandler.handleCallback(query);
         if (handledByTrading) return;
 
@@ -48,7 +46,9 @@ async function handleCallback(query) {
         const handledByBolita = await bolitaHandler.handleCallback(query);
         if (handledByBolita) return;
 
-        // Procesar acciones normales
+        // --------------------------------------------------------
+        // 3️⃣ Acciones normales del bot
+        // --------------------------------------------------------
         const [action, param1, param2, param3] = data.split(':');
 
         switch (action) {
@@ -139,6 +139,9 @@ async function handleCallback(query) {
     }
 }
 
+// ------------------------------------------------------------
+// FUNCIONES AUXILIARES (sin cambios)
+// ------------------------------------------------------------
 async function handleStartBack(chatId, messageId) {
     const user = await db.getUser(chatId);
     const message = `✅ *¡Bienvenido de nuevo, ${user.first_name}!*\n\n` +
@@ -199,41 +202,14 @@ async function handleTerms(chatId, messageId) {
     const terms = `📜 *Términos y Condiciones de Cromwell Store*\n\n` +
         `1. *ACEPTACIÓN*: Al usar este servicio, aceptas estos términos.\n\n` +
         `2. *PROPÓSITO*: La billetera es exclusiva para pagos en Cromwell Store. El dinero no es retirable, excepto los bonos que son utilizables para recargas.\n\n` +
-        `3. *DEPÓSITOS*:\n` +
-        `   • Mínimos: CUP=${config.MINIMO_CUP}, Saldo=${config.MINIMO_SALDO}\n` +
-        `   • Bonos solo en el primer depósito por método\n` +
-        `   • Los tokens no son retirables, solo utilizables en la tienda\n\n` +
-        `4. *TOKENS*:\n` +
-        `   • CWS: Gana ${config.CWS_PER_100_SALDO} por cada 100 de saldo\n` +
-        `   • Mínimo para usar: CWS=${config.MIN_CWS_USE}\n\n` +
-        `5. *RECARGAS DE JUEGOS*:\n` +
-        `   • 1 CWS = $10 CUP de descuento en recargas\n` +
-        `   • Puedes pagar con CUP, Saldo Móvil o CWS\n` +
-        `   • Las recargas se procesan a través de LioGames\n\n` +
-        `6. *RECARGAS ETECSA*:\n` +
-        `   • Se procesan a través de SokyRecargas\n` +
-        `   • Los precios están en CUP (1 USDT = ${config.SOKY_RATE_CUP} CUP)\n` +
-        `   • Se descuentan automáticamente de tu saldo CUP\n\n` +
-        `7. *SEÑALES DE TRADING*:\n` +
-        `   • Servicio de señales de trading profesional\n` +
-        `   • Suscripciones por tiempo determinado\n` +
-        `   • Las señales son sugerencias, no garantías de ganancia\n` +
-        `   • El trading conlleva riesgos financieros\n` +
-        `   • Rentabilidad prometida: +60% semanal\n` +
-        `   • Si baja del 50%, reembolso del 50% (1500 CUP)\n` +
-        `   • Programa de referidos: 20% por cada amigo que se haga VIP\n\n` +
-        `8. *SEGURIDAD*:\n` +
-        `   • Toma capturas de pantalla de todas las transacciones\n` +
-        `   • ETECSA puede fallar con las notificaciones SMS\n` +
-        `   • Tu responsabilidad guardar los recibos\n\n` +
-        `9. *REEMBOLSOS*:\n` +
-        `   • Si envías dinero y no se acredita pero tienes captura válida\n` +
-        `   • Contacta al administrador dentro de 24 horas\n    ` +
-        `   • Se investigará y resolverá en 48 horas máximo\n\n` +
-        `10. *PROHIBIDO*:\n` +
-        `   • Uso fraudulento o múltiples cuentas\n` +
-        `   • Lavado de dinero o actividades ilegales\n` +
-        `   • Spam o abuso del sistema\n\n` +
+        `3. *DEPÓSITOS*:\n   • Mínimos: CUP=${config.MINIMO_CUP}, Saldo=${config.MINIMO_SALDO}\n   • Bonos solo en el primer depósito por método\n   • Los tokens no son retirables, solo utilizables en la tienda\n\n` +
+        `4. *TOKENS*:\n   • CWS: Gana ${config.CWS_PER_100_SALDO} por cada 100 de saldo\n   • Mínimo para usar: CWS=${config.MIN_CWS_USE}\n\n` +
+        `5. *RECARGAS DE JUEGOS*:\n   • 1 CWS = $10 CUP de descuento en recargas\n   • Puedes pagar con CUP, Saldo Móvil o CWS\n   • Las recargas se procesan a través de LioGames\n\n` +
+        `6. *RECARGAS ETECSA*:\n   • Se procesan a través de SokyRecargas\n   • Los precios están en CUP (1 USDT = ${config.SOKY_RATE_CUP} CUP)\n   • Se descuentan automáticamente de tu saldo CUP\n\n` +
+        `7. *SEÑALES DE TRADING*:\n   • Servicio de señales de trading profesional\n   • Suscripciones por tiempo determinado\n   • Las señales son sugerencias, no garantías de ganancia\n   • El trading conlleva riesgos financieros\n   • Rentabilidad prometida: +60% semanal\n   • Si baja del 50%, reembolso del 50% (1500 CUP)\n   • Programa de referidos: 20% por cada amigo que se haga VIP\n\n` +
+        `8. *SEGURIDAD*:\n   • Toma capturas de pantalla de todas las transacciones\n   • ETECSA puede fallar con las notificaciones SMS\n   • Tu responsabilidad guardar los recibos\n\n` +
+        `9. *REEMBOLSOS*:\n   • Si envías dinero y no se acredita pero tienes captura válida\n   • Contacta al administrador dentro de 24 horas\n   • Se investigará y resolverá en 48 horas máximo\n\n` +
+        `10. *PROHIBIDO*:\n   • Uso fraudulento o múltiples cuentas\n   • Lavado de dinero o actividades ilegales\n   • Spam o abuso del sistema\n\n` +
         `11. *MODIFICACIONES*: Podemos cambiar estos términos notificando con 72 horas de anticipación.\n\n` +
         `_Última actualización: ${new Date().toLocaleDateString()}_\n\n` +
         `⚠️ *Para ver estos términos y condiciones nuevamente, visita nuestra web.*`;
