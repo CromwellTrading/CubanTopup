@@ -1,3 +1,6 @@
+// ============================================
+// handlers/messages.js - MANEJO DE MENSAJES
+// ============================================
 const bot = require('../bot');
 const db = require('../database');
 const sessions = require('./sessions');
@@ -5,16 +8,8 @@ const adminHandlers = require('./admin');
 const utils = require('../utils');
 const config = require('../config');
 
-// Import handlers
-const GameRechargeHandler = require('../services/game_recharges');
-const SokyRecargasHandler = require('../services/sokyrecargas');
-const BolitaHandler = require('../services/BolitaHandler');
-const TradingSignalsHandler = require('../services/TradingSignalsHandler');
-
-const gameHandler = new GameRechargeHandler(bot, db.supabase);
-const sokyHandler = new SokyRecargasHandler(bot, db.supabase);
-const bolitaHandler = new BolitaHandler(bot, db.supabase);
-const tradingHandler = new TradingSignalsHandler(bot, db.supabase);
+// Importar instancias ÚNICAS desde index
+const { gameHandler, sokyHandler, bolitaHandler, tradingHandler } = require('./index');
 
 async function handleMessage(msg) {
     const chatId = msg.chat.id;
@@ -23,26 +18,26 @@ async function handleMessage(msg) {
     const session = sessions.getSession(chatId);
 
     if (!text) return;
-
-    if (text.startsWith('/')) {
-        return;
-    }
+    if (text.startsWith('/')) return;
 
     try {
-        // Orden de handlers
+        // 1️⃣ Trading Signals (admin)
         const handledByTrading = await tradingHandler.handleMessage(msg);
         if (handledByTrading) return;
 
+        // 2️⃣ La Bolita
         const handledByBolita = await bolitaHandler.handleMessage(msg);
         if (handledByBolita) return;
 
+        // 3️⃣ Recargas de juegos (LioGames)
         const handledByGame = await gameHandler.handleMessage(msg);
         if (handledByGame) return;
 
+        // 4️⃣ Recargas ETECSA (Soky)
         const handledBySoky = await sokyHandler.handleMessage(chatId, text);
         if (handledBySoky) return;
 
-        // Sesiones administrativas
+        // 5️⃣ Sesiones administrativas
         if (session && adminHandlers.esAdmin(userId)) {
             switch (session.step) {
                 case 'admin_search_user':
@@ -60,7 +55,7 @@ async function handleMessage(msg) {
             return;
         }
 
-        // Sesiones normales
+        // 6️⃣ Sesiones de usuario normal
         if (session) {
             switch (session.step) {
                 case 'waiting_phone':
@@ -82,7 +77,7 @@ async function handleMessage(msg) {
             }
         }
 
-        // Detectar números de 7 dígitos para admin
+        // 7️⃣ Detectar números de 7 dígitos (admin para La Bolita)
         if (adminHandlers.esAdmin(userId) && /^\d{7}$/.test(text)) {
             await bot.sendMessage(chatId,
                 `👑 *¿Es un resultado de La Bolita?*\n\n` +
@@ -99,6 +94,9 @@ async function handleMessage(msg) {
     }
 }
 
+// ------------------------------------------------------------
+// FUNCIONES AUXILIARES (sin cambios, solo asegurar que existen)
+// ------------------------------------------------------------
 async function handlePhoneInput(chatId, phone, session) {
     let cleanPhone = phone.replace(/[^\d]/g, '');
     
@@ -137,7 +135,7 @@ async function handlePhoneInput(chatId, phone, session) {
         .select('telegram_id, first_name')
         .eq('phone_number', cleanPhone)
         .neq('telegram_id', chatId)
-        .single();
+        .maybeSingle();
 
     if (existingUser) {
         await bot.sendMessage(chatId,
@@ -188,7 +186,7 @@ async function handleSearchPaymentIdInput(chatId, txId) {
         .select('*')
         .eq('tx_id', txIdClean)
         .eq('claimed', false)
-        .single();
+        .maybeSingle();
 
     if (pendingPayment) {
         const user = await db.getUser(chatId);
