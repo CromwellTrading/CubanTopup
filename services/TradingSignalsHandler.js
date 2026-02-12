@@ -1,4 +1,4 @@
-// TradingSignalsHandler.js - Manejador de Señales de Trading (VERSIÓN FINAL CORREGIDA)
+// TradingSignalsHandler.js - Manejador de Señales de Trading (VERSIÓN ÚNICA, SIN LISTENERS PROPIOS)
 require('dotenv').config();
 
 class TradingSignalsHandler {
@@ -21,15 +21,11 @@ class TradingSignalsHandler {
         // Estado del sistema
         this.maintenanceMode = false;
 
-        // Inicializar
+        // Inicializar DB y tareas programadas (sin listeners de Telegram)
         this.initDatabase();
         this.startScheduledTasks();
 
-        // Log de inicio
-        if (this.BOT_ADMIN_ID) {
-            bot.sendMessage(this.BOT_ADMIN_ID, '🧪 TradingSignalsHandler iniciado correctamente')
-                .catch(console.error);
-        }
+        console.log('📈 TradingSignalsHandler inicializado (sin listeners propios)');
     }
 
     // ============================================
@@ -258,11 +254,11 @@ class TradingSignalsHandler {
         setInterval(() => this.checkRefunds(), 6 * 60 * 60 * 1000);
         setInterval(() => this.sendPendingNotifications(), 5 * 60 * 1000);
         setInterval(() => this.cleanupOldStates(), 30 * 60 * 1000);
-        console.log('✅ Tareas programadas iniciadas');
+        console.log('✅ Tareas programadas de Trading iniciadas');
     }
 
     // ============================================
-    // MANEJADORES PRINCIPALES
+    // MANEJADORES PRINCIPALES (llamados desde handlers centralizados)
     // ============================================
 
     async handleCallback(query) {
@@ -417,7 +413,8 @@ class TradingSignalsHandler {
             const userId = String(msg.from.id);
             const text = msg.text;
 
-            console.log(`📩 Mensaje recibido de ${userId}: "${text}"`);
+            // Log de depuración (puedes quitarlo después)
+            console.log(`📩 TradingHandler mensaje de ${userId}: "${text}"`);
             console.log(`   esAdmin: ${this.esAdmin(userId)}`);
             console.log(`   adminState existe: ${!!this.adminStates[userId]}`);
 
@@ -452,7 +449,7 @@ class TradingSignalsHandler {
 
             return false;
         } catch (error) {
-            console.error('❌ Error en handleMessage:', error);
+            console.error('❌ Error en TradingSignalsHandler.handleMessage:', error);
             await this.bot.sendMessage(msg.chat.id, '❌ Ocurrió un error interno. Intenta de nuevo.');
             return true;
         }
@@ -2263,7 +2260,9 @@ class TradingSignalsHandler {
         }
 
         await this.bot.editMessageText(message, {
-            chat_id: chatId, message_id: messageId, parse_mode: 'Markdown',
+            chat_id: chatId,
+            message_id: messageId,
+            parse_mode: 'Markdown',
             reply_markup: { inline_keyboard: [[{ text: '🔙 Menú Trading', callback_data: 'trading_menu' }]] }
         });
     }
