@@ -4,15 +4,17 @@
 const bot = require('../bot');
 const db = require('../database');
 
-// Handlers internos
+// Handlers internos (solo se importan, no se ejecutan todavía)
 const commands = require('./commands');
-const callbacks = require('./callbacks');
-const messages = require('./messages');
 const sessions = require('./sessions');
 const adminHandlers = require('./admin');
 const walletHandlers = require('./wallet');
 const rechargeHandlers = require('./recharge');
 const helpHandlers = require('./help');
+
+// Fábricas de handlers (importamos las funciones que CREAN los handlers)
+const createCallbacksHandler = require('./callbacks');
+const createMessagesHandler = require('./messages');
 
 // Variables para las instancias externas (se inyectan desde bot.js)
 let gameHandler, sokyHandler, bolitaHandler, tradingHandler;
@@ -49,14 +51,33 @@ function init(handlers) {
     });
 
     // ------------------------------------------------------------
-    // CALLBACKS
+    // CALLBACKS - Creamos el manejador con las instancias
     // ------------------------------------------------------------
-    bot.on('callback_query', callbacks.handleCallback);
+    const callbackHandler = createCallbacksHandler(bot, db, {
+        gameHandler,
+        sokyHandler,
+        bolitaHandler,
+        tradingHandler,
+        adminHandlers,
+        walletHandlers,
+        rechargeHandlers,
+        helpHandlers,
+        sessions
+    });
+    bot.on('callback_query', callbackHandler);
 
     // ------------------------------------------------------------
-    // MENSAJES
+    // MENSAJES - Creamos el manejador con las instancias
     // ------------------------------------------------------------
-    bot.on('message', messages.handleMessage);
+    const messageHandler = createMessagesHandler(bot, db, {
+        gameHandler,
+        sokyHandler,
+        bolitaHandler,
+        tradingHandler,
+        adminHandlers,
+        sessions
+    });
+    bot.on('message', messageHandler);
 
     // ------------------------------------------------------------
     // ERRORES
@@ -71,30 +92,6 @@ function init(handlers) {
     console.log('✅ Handlers de Telegram inicializados correctamente');
 }
 
-/**
- * Obtiene las instancias de los handlers externos
- */
-function getHandlers() {
-    return { gameHandler, sokyHandler, bolitaHandler, tradingHandler };
-}
-
-// Exportar para que otros módulos puedan acceder a las mismas instancias
 module.exports = {
-    init,
-    getHandlers,
-    // Getters para acceso directo (usados en messages.js y callbacks.js)
-    get gameHandler() { return gameHandler; },
-    get sokyHandler() { return sokyHandler; },
-    get bolitaHandler() { return bolitaHandler; },
-    get tradingHandler() { return tradingHandler; },
-    
-    // Re-exportar handlers internos (para que bot.js no necesite require adicional)
-    commands,
-    callbacks,
-    messages,
-    sessions,
-    adminHandlers,
-    walletHandlers,
-    rechargeHandlers,
-    helpHandlers
+    init
 };
