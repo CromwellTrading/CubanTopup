@@ -255,7 +255,7 @@ def gateway():
         mensaje = data.get("text", "")
         
         # Filtrar solo mensajes de PAGO
-        if "PAGO" not in remitente.upper():
+        if "PAGOxMOVIL" not in remitente.upper():
             print(f"❌ Mensaje ignorado (no es de PAGO): {remitente}")
             return "OK", 200
         
