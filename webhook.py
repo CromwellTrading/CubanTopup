@@ -16,7 +16,6 @@ app = Flask(__name__)
 # ==========================================
 
 # 1. Configuración de la RUTA SECRETA
-# Si no se define en .env, usa la ruta segura que pediste por defecto
 WEBHOOK_PATH = os.getenv("WEBHOOK_PATH", "/webhook/secretparserasche")
 
 # 2. Configuración de Tarjetas
@@ -47,16 +46,13 @@ def remove_accents(text):
 
 def get_webhook_config_for_card(card_number):
     """Obtiene la configuración de webhook para una tarjeta específica"""
-    # Si la tarjeta está en el diccionario
     if card_number in TARJETAS_WEBHOOKS:
         config = TARJETAS_WEBHOOKS[card_number]
-        # print(f"✅ Config encontrada para {card_number}")
         return {
             "webhook_url": config.get("webhook"),
             "secret_key": config.get("secret")
         }
     
-    # Si la tarjeta no está, buscar coincidencia parcial (últimos 4 dígitos)
     for stored_card, config in TARJETAS_WEBHOOKS.items():
         if card_number.endswith(stored_card[-4:]):
             print(f"🔄 Usando config de {stored_card} para {card_number} (coincidencia parcial)")
@@ -65,7 +61,6 @@ def get_webhook_config_for_card(card_number):
                 "secret_key": config.get("secret")
             }
     
-    # Si no encuentra, usar configuración por defecto
     webhook_default = os.getenv("WEBHOOK_DEFAULT")
     secret_default = os.getenv("WEBHOOK_SECRET_DEFAULT")
     
@@ -89,9 +84,8 @@ def send_to_webhook(payload, card_number):
             "X-Auth-Token": config["secret_key"]
         }
         
-        # Siempre incluir el token en el payload también por seguridad
         payload["auth_token"] = config["secret_key"]
-        payload["source"] = "python_sms_parser_secure" # Identificador actualizado
+        payload["source"] = "python_sms_parser_secure"
         payload["card_destination"] = card_number
         payload["timestamp"] = datetime.now().isoformat()
         
@@ -241,7 +235,6 @@ def extraer_tipo_pago_y_datos(mensaje):
 # RUTAS DE LA API
 # ==========================================
 
-# 🔒 AQUÍ ESTÁ EL CAMBIO IMPORTANTE: Usamos WEBHOOK_PATH
 @app.route(WEBHOOK_PATH, methods=['POST'])
 def gateway():
     try:
@@ -251,27 +244,35 @@ def gateway():
         print(f"🔒 ACCESO A RUTA SEGURA: {WEBHOOK_PATH}")
         print(f"📱 NUEVO SMS RECIBIDO - {datetime.now().strftime('%H:%M:%S')}")
         
+        # Mostrar el JSON completo recibido (para depuración)
+        print("📦 JSON recibido:")
+        print(json.dumps(data, indent=2, ensure_ascii=False))
+        
         remitente = data.get("dirección", "")
         mensaje = data.get("text", "")
         
-        # Filtrar solo mensajes de PAGO
-        if "PAGOxMOVIL" not in remitente.upper():
-            print(f"❌ Mensaje ignorado (no es de PAGO): {remitente}")
-            return "OK", 200
+        print(f"📞 Remitente original: {remitente}")
+        print(f"📨 Texto completo del SMS ({len(mensaje)} caracteres):")
+        print(mensaje)
         
-        print(f"✅ ¡PAGO DETECTADO! De: {remitente}")
+        # 🔓 ELIMINADO EL FILTRO DE "PAGO" - ahora se procesan todos los mensajes
         
+        # Intentar parsear el mensaje
         datos_pago = extraer_tipo_pago_y_datos(mensaje)
         
         if not datos_pago:
-            print("❌ Tipo de pago no reconocido")
+            print("ℹ️ Mensaje no reconocido como pago válido (solo se registró)")
+            # No hacemos nada más, pero respondemos OK para que Deku no reintente
+            print(f"{'='*60}\n")
             return "OK", 200
         
+        # Validar monto mínimo
         if datos_pago["monto"] <= 0:
-            print("❌ Monto inválido")
+            print("❌ Monto inválido (0 o negativo) - no se reenvía")
+            print(f"{'='*60}\n")
             return "OK", 200
         
-        print(f"📊 Datos extraídos: {datos_pago['tipo']} | ${datos_pago['monto']} | Tx: {datos_pago['trans_id']}")
+        print(f"✅ ¡PAGO DETECTADO! Tipo: {datos_pago['tipo']} | ${datos_pago['monto']} | Tx: {datos_pago['trans_id']}")
         
         tarjeta_destino = datos_pago.get("tarjeta_destino", MI_TARJETA_DEFAULT)
         
@@ -294,8 +295,6 @@ def gateway():
             print(f"✅ Enviado exitosamente")
         else:
             print(f"❌ Error al enviar al bot")
-            # Lógica de reintento/guardado en DB (Simplificada para mantener el código limpio)
-            # Aquí iría tu lógica de guardar en Supabase si falla
         
         print(f"{'='*60}\n")
         return "OK", 200
@@ -311,7 +310,7 @@ def keep_alive():
     return jsonify({
         "status": "online",
         "service": "transfermovil-parser-secure",
-        "webhook_path": WEBHOOK_PATH # Informar de la ruta actual
+        "webhook_path": WEBHOOK_PATH
     }), 200
 
 @app.route('/health', methods=['GET'])
@@ -327,10 +326,10 @@ if __name__ == "__main__":
     debug = os.getenv("DEBUG", "False").lower() == "true"
     
     print(f"\n{'='*60}")
-    print(f"🌐 PARSER PYTHON - Transfermóvil SMS Parser (SECURE MODE)")
+    print(f"🌐 PARSER PYTHON - Transfermóvil SMS Parser (MODO DEPURACIÓN TOTAL)")
     print(f"🔧 Puerto: {port}")
     print(f"🔒 RUTA SECRETA ACTIVA: {WEBHOOK_PATH}")
-    print(f"📝 Configura tu App Deku/SMS Forwarder a esta ruta.")
+    print(f"📝 TODOS LOS SMS SERÁN LOGEADOS (sin filtrar)")
     print(f"💳 Tarjetas configuradas: {len(TARJETAS_WEBHOOKS)}")
     print(f"{'='*60}\n")
     
